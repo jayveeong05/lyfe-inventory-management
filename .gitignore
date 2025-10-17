@@ -60,5 +60,8 @@ test_*_consistency.dart
 # Local configuration files
 android/local.properties
 
+# Firebase configuration (contains sensitive API keys)
+lib/firebase_options.dart
+
 # IDE files (additional)
 *.iml
