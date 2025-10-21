@@ -74,8 +74,8 @@ dependencies:
   # OCR functionality
   google_ml_kit: ^0.18.0
 
-  # PDF to image conversion (fallback approach)
-  # Using file_picker for now - will implement PDF conversion later
+  # PDF text extraction (direct approach)
+  syncfusion_flutter_pdf: ^26.2.14
 
 dev_dependencies:
   flutter_test:

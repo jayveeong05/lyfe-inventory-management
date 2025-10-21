@@ -2,36 +2,46 @@
 
 ## Overview
 
-The OCR (Optical Character Recognition) feature automatically extracts invoice numbers and dates from uploaded PDF or image files using Google ML Kit Text Recognition. This reduces manual data entry and improves accuracy.
+The OCR (Optical Character Recognition) feature automatically extracts invoice numbers and dates from uploaded PDF or image files. This reduces manual data entry and improves accuracy.
 
-**Current Status**: Due to PDF rendering package compatibility issues with newer Flutter versions, the feature currently works with image files (PNG, JPG, JPEG). PDF support is temporarily disabled but can be restored with compatible packages.
+**Hybrid Approach**:
+- **PDF Files**: Uses Syncfusion Flutter PDF library for direct text extraction (faster and more accurate)
+- **Image Files**: Uses Google ML Kit Text Recognition for OCR processing
 
 ## Features
 
-- **Image File Support**: Directly processes PNG, JPG, and JPEG image files
-- **PDF Support (Temporarily Disabled)**: PDF to image conversion temporarily unavailable due to package compatibility
-- **Text Recognition**: Uses Google ML Kit for on-device text recognition
+- **Direct PDF Text Extraction**: Uses Syncfusion Flutter PDF library for fast, accurate text extraction from PDF files
+- **Image OCR Processing**: Uses Google ML Kit for on-device text recognition from PNG, JPG, and JPEG files
 - **Smart Data Parsing**: Extracts invoice numbers and dates using multiple regex patterns
 - **Confidence Scoring**: Provides confidence levels for extracted data
 - **User Validation**: Shows confirmation dialog for low-confidence results
 - **Manual Override**: Users can always edit or manually enter data
+- **Hybrid Processing**: Automatically chooses the best extraction method based on file type
 
 ## How It Works
 
 ### 1. User Workflow
-1. User uploads a PDF invoice file
+1. User uploads a PDF or image file
 2. "Extract Invoice Data" button appears
-3. User clicks the button to start OCR extraction
-4. System processes the PDF and extracts data
+3. User clicks the button to start extraction
+4. System automatically chooses the best processing method
 5. Form fields are auto-populated with extracted data
 6. User reviews and corrects data if needed
 
 ### 2. Technical Process
-1. **PDF Conversion**: First page of PDF is converted to PNG image
-2. **OCR Processing**: Google ML Kit processes the image to extract text
-3. **Data Parsing**: Regex patterns search for invoice numbers and dates
-4. **Confidence Calculation**: System calculates confidence based on matches found
-5. **User Interaction**: High confidence results auto-fill, low confidence shows dialog
+
+**For PDF Files:**
+1. **Direct Text Extraction**: Syncfusion PDF library extracts text directly from PDF
+2. **Data Parsing**: Regex patterns search for invoice numbers and dates
+3. **Confidence Calculation**: System calculates confidence based on matches found
+
+**For Image Files:**
+1. **OCR Processing**: Google ML Kit processes the image to extract text
+2. **Data Parsing**: Regex patterns search for invoice numbers and dates
+3. **Confidence Calculation**: System calculates confidence based on matches found
+
+**Final Step:**
+4. **User Interaction**: High confidence results auto-fill, low confidence shows dialog
 
 ## Supported Invoice Formats
 
@@ -157,9 +167,8 @@ Potential improvements for future versions:
 
 ## Dependencies
 
-- `google_ml_kit: ^0.18.0` - Text recognition
-- `pdf_render: ^1.4.0` - PDF to image conversion
-- `path_provider: ^2.1.1` - Temporary file storage
+- `google_ml_kit: ^0.18.0` - Text recognition for image files
+- `syncfusion_flutter_pdf: ^26.2.14` - Direct PDF text extraction
 - `path: ^1.9.0` - File path utilities
 
 ## API Reference

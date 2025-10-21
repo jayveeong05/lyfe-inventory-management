@@ -1,8 +1,8 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:google_ml_kit/google_ml_kit.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
+import 'package:syncfusion_flutter_pdf/pdf.dart';
 
 /// Service for extracting invoice data from PDF files using OCR
 class InvoiceOcrService {
@@ -50,30 +50,30 @@ class InvoiceOcrService {
       final fileExtension = path.extension(file.path).toLowerCase();
       late final InputImage inputImage;
 
+      late final String extractedText;
+
       if (fileExtension == '.pdf') {
-        // Step 1: Convert PDF to image (first page only)
-        final imageData = await _convertPdfToImage(file);
-        if (imageData == null) {
+        // Use direct PDF text extraction (much faster and more accurate!)
+        debugPrint('📄 Using direct PDF text extraction');
+        extractedText = await _extractTextFromPdf(file);
+
+        if (extractedText.isEmpty) {
           return _createErrorResult(
-            'PDF to image conversion is currently unavailable due to package compatibility issues. '
-            'Please convert your PDF to an image (PNG/JPG) manually and try again with the image file.',
+            'No text found in PDF. The PDF might be image-based or encrypted. '
+            'Please convert to an image file and try again.',
           );
         }
-
-        // Step 2: Create InputImage from bytes
-        inputImage = InputImage.fromFilePath(await _saveImageToTemp(imageData));
       } else if (['.png', '.jpg', '.jpeg'].contains(fileExtension)) {
-        // Handle image files directly
-        debugPrint('📷 Processing image file directly');
+        // Handle image files with OCR
+        debugPrint('📷 Processing image file with OCR');
         inputImage = InputImage.fromFilePath(file.path);
+        final recognizedText = await _textRecognizer.processImage(inputImage);
+        extractedText = recognizedText.text;
       } else {
         return _createErrorResult(
           'Unsupported file format. Please use PDF, PNG, JPG, or JPEG files.',
         );
       }
-
-      final recognizedText = await _textRecognizer.processImage(inputImage);
-      final extractedText = recognizedText.text;
 
       debugPrint(
         '📄 Extracted text length: ${extractedText.length} characters',
@@ -96,40 +96,36 @@ class InvoiceOcrService {
     }
   }
 
-  /// Convert PDF first page to image bytes
-  /// Note: This is a placeholder implementation due to PDF rendering package compatibility issues
-  Future<Uint8List?> _convertPdfToImage(File pdfFile) async {
+  /// Extract text directly from PDF using Syncfusion PDF library
+  Future<String> _extractTextFromPdf(File pdfFile) async {
     try {
-      debugPrint(
-        '📄 PDF to image conversion not available due to package compatibility issues',
+      debugPrint('📄 Loading PDF document for text extraction...');
+
+      // Read PDF file bytes
+      final pdfBytes = await pdfFile.readAsBytes();
+
+      // Load the PDF document
+      final PdfDocument document = PdfDocument(inputBytes: pdfBytes);
+
+      // Create text extractor
+      final PdfTextExtractor extractor = PdfTextExtractor(document);
+
+      // Extract text from first page (where invoice data usually is)
+      final String extractedText = extractor.extractText(
+        startPageIndex: 0,
+        endPageIndex: 0,
       );
+
+      // Dispose the document
+      document.dispose();
+
       debugPrint(
-        '💡 Workaround: Convert PDF to image manually and use image files for OCR',
+        '✅ PDF text extraction completed. Text length: ${extractedText.length}',
       );
-
-      // For now, return null to indicate PDF conversion is not available
-      // This will trigger the error handling in the main extraction method
-      return null;
+      return extractedText;
     } catch (e) {
-      debugPrint('❌ PDF to image conversion failed: $e');
-      return null;
-    }
-  }
-
-  /// Save image bytes to temporary file and return path
-  Future<String> _saveImageToTemp(Uint8List imageBytes) async {
-    try {
-      final tempDir = await getTemporaryDirectory();
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final tempFile = File(path.join(tempDir.path, 'ocr_temp_$timestamp.png'));
-
-      await tempFile.writeAsBytes(imageBytes);
-      debugPrint('💾 Saved temp image: ${tempFile.path}');
-
-      return tempFile.path;
-    } catch (e) {
-      debugPrint('❌ Failed to save temp image: $e');
-      rethrow;
+      debugPrint('❌ PDF text extraction failed: $e');
+      return '';
     }
   }
 
