@@ -71,6 +71,12 @@ dependencies:
   # File operations
   path: ^1.9.0
 
+  # OCR functionality
+  google_ml_kit: ^0.18.0
+
+  # PDF to image conversion (fallback approach)
+  # Using file_picker for now - will implement PDF conversion later
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -81,6 +87,9 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
+
+  # Testing dependencies
+  fake_cloud_firestore: ^3.0.3
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

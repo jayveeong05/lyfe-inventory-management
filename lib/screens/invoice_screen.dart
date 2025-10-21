@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/invoice_service.dart';
+import '../services/invoice_ocr_service.dart';
 import '../providers/auth_provider.dart';
 
 class InvoiceScreen extends StatefulWidget {
@@ -31,6 +32,9 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   bool _isUploading = false;
   bool _isReplaceMode = false;
   bool _isLoadingInvoice = false;
+  bool _isExtractingOCR = false;
+
+  final InvoiceOcrService _ocrService = InvoiceOcrService();
 
   @override
   void initState() {
@@ -229,7 +233,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['pdf'],
+        allowedExtensions: ['pdf', 'png', 'jpg', 'jpeg'],
         allowMultiple: false,
       );
 
@@ -266,6 +270,197 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
     }
   }
 
+  Future<void> _extractInvoiceData() async {
+    if (_selectedFile == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a PDF or image file first'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isExtractingOCR = true;
+    });
+
+    try {
+      // Initialize OCR service if needed
+      await _ocrService.initialize();
+
+      // Extract data from PDF
+      final result = await _ocrService.extractInvoiceData(_selectedFile!);
+
+      if (result['success'] == true) {
+        final confidence = result['confidence'] as double;
+        final confidencePercent = (confidence * 100).toInt();
+
+        // Show validation dialog for low confidence results
+        if (confidence < 0.5) {
+          await _showLowConfidenceDialog(result, confidencePercent);
+        } else {
+          // Auto-fill the form fields with extracted data
+          if (result['invoiceNumber'] != null) {
+            _invoiceNumberController.text = result['invoiceNumber'];
+          }
+
+          if (result['invoiceDate'] != null) {
+            setState(() {
+              _selectedDate = result['invoiceDate'];
+            });
+          }
+
+          // Show success message with confidence
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'OCR extraction completed! Confidence: $confidencePercent%\n'
+                  'Please review and correct the extracted data if needed.',
+                ),
+                backgroundColor: confidencePercent > 70
+                    ? Colors.green
+                    : Colors.orange,
+                duration: const Duration(seconds: 4),
+              ),
+            );
+          }
+        }
+      } else {
+        // Show error message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result['message'] ?? 'OCR extraction failed'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('OCR extraction error: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isExtractingOCR = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _showLowConfidenceDialog(
+    Map<String, dynamic> result,
+    int confidencePercent,
+  ) async {
+    final extractedNumber = result['invoiceNumber'] as String?;
+    final extractedDate = result['invoiceDate'] as DateTime?;
+
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('⚠️ Low Confidence OCR Results'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'OCR extraction completed with low confidence ($confidencePercent%).\n'
+                  'Please review the extracted data carefully:',
+                  style: const TextStyle(fontSize: 14),
+                ),
+                const SizedBox(height: 16),
+                if (extractedNumber != null) ...[
+                  const Text(
+                    'Invoice Number:',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    extractedNumber,
+                    style: const TextStyle(fontFamily: 'monospace'),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                if (extractedDate != null) ...[
+                  const Text(
+                    'Invoice Date:',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    '${extractedDate.day}/${extractedDate.month}/${extractedDate.year}',
+                    style: const TextStyle(fontFamily: 'monospace'),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                if (extractedNumber == null && extractedDate == null) ...[
+                  const Text(
+                    'No invoice data could be extracted with sufficient confidence.',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                const Text(
+                  'Would you like to use this data or enter manually?',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                // Don't fill any fields - user will enter manually
+              },
+              child: const Text('Enter Manually'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                // Fill the fields with extracted data
+                if (extractedNumber != null) {
+                  _invoiceNumberController.text = extractedNumber;
+                }
+                if (extractedDate != null) {
+                  setState(() {
+                    _selectedDate = extractedDate;
+                  });
+                }
+                // Show reminder to review
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Data filled. Please review and correct if needed.',
+                    ),
+                    backgroundColor: Colors.orange,
+                    duration: Duration(seconds: 3),
+                  ),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Use Extracted Data'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<void> _uploadInvoice() async {
     if (!_formKey.currentState!.validate() ||
         _selectedPOId == null ||
@@ -273,7 +468,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Please fill in all required fields and select a PDF file',
+            'Please fill in all required fields and select a PDF or image file',
           ),
           backgroundColor: Colors.red,
         ),
@@ -922,13 +1117,45 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                               label: Text(
                                 _selectedFile != null
                                     ? 'Change File'
-                                    : 'Select PDF File',
+                                    : 'Select PDF or Image File',
                               ),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.blue,
                                 foregroundColor: Colors.white,
                               ),
                             ),
+
+                            // OCR Extraction Button (only show when file is selected)
+                            if (_selectedFile != null) ...[
+                              const SizedBox(height: 8),
+                              ElevatedButton.icon(
+                                onPressed: _isExtractingOCR
+                                    ? null
+                                    : _extractInvoiceData,
+                                icon: _isExtractingOCR
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor:
+                                              AlwaysStoppedAnimation<Color>(
+                                                Colors.white,
+                                              ),
+                                        ),
+                                      )
+                                    : const Icon(Icons.text_fields),
+                                label: Text(
+                                  _isExtractingOCR
+                                      ? 'Extracting...'
+                                      : 'Extract Invoice Data',
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.orange,
+                                  foregroundColor: Colors.white,
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
