@@ -283,6 +283,19 @@ class ReportService {
       }
     }
 
+    // Get all stocked out serial numbers for consistent active calculation
+    final stockedOutSerials = <String>{};
+    for (final doc in transactionSnapshot.docs) {
+      final data = doc.data() as Map<String, dynamic>;
+      final type = data['type'] as String?;
+      final status = data['status'] as String?;
+      final serialNumber = data['serial_number'] as String?;
+
+      if (type == 'Stock_Out' && status != 'Active' && serialNumber != null) {
+        stockedOutSerials.add(serialNumber);
+      }
+    }
+
     // Process each inventory item
     for (final doc in inventorySnapshot.docs) {
       final data = doc.data() as Map<String, dynamic>;
@@ -297,26 +310,40 @@ class ReportService {
             (b['transaction_id'] as int).compareTo(a['transaction_id'] as int),
       );
 
-      // Determine current status
-      String currentStatus = 'Unknown';
+      // Determine current status using consistent logic with dashboard
+      String currentStatus;
       String? currentLocation;
       DateTime? lastActivity;
 
-      if (itemTransactions.isNotEmpty) {
-        final latestTransaction = itemTransactions.first;
-        final type = latestTransaction['type'] as String?;
-        final status = latestTransaction['status'] as String?;
-        currentLocation = latestTransaction['location'] as String?;
-
-        if (type == 'Stock_In' && status == 'Active') {
-          currentStatus = 'Active';
-        } else if (type == 'Stock_Out') {
-          currentStatus = status ?? 'Reserved';
+      // Use same logic as dashboard: Active if not stocked out
+      if (stockedOutSerials.contains(serialNumber)) {
+        // Item has been stocked out - determine the stock out status
+        final stockOutTransactions = itemTransactions
+            .where((t) => t['type'] == 'Stock_Out')
+            .toList();
+        if (stockOutTransactions.isNotEmpty) {
+          final latestStockOut = stockOutTransactions.first;
+          currentStatus = latestStockOut['status'] as String? ?? 'Reserved';
+          currentLocation = latestStockOut['location'] as String?;
+          final uploadedAt = latestStockOut['uploaded_at'] as Timestamp?;
+          if (uploadedAt != null) {
+            lastActivity = uploadedAt.toDate();
+          }
+        } else {
+          currentStatus = 'Reserved'; // Fallback
         }
+      } else {
+        // Item is still active (not stocked out)
+        currentStatus = 'Active';
 
-        final uploadedAt = latestTransaction['uploaded_at'] as Timestamp?;
-        if (uploadedAt != null) {
-          lastActivity = uploadedAt.toDate();
+        // Get location and activity from latest transaction if available
+        if (itemTransactions.isNotEmpty) {
+          final latestTransaction = itemTransactions.first;
+          currentLocation = latestTransaction['location'] as String?;
+          final uploadedAt = latestTransaction['uploaded_at'] as Timestamp?;
+          if (uploadedAt != null) {
+            lastActivity = uploadedAt.toDate();
+          }
         }
       }
 
