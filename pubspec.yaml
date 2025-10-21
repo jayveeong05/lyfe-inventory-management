@@ -49,6 +49,8 @@ dependencies:
 
   # QR Code scanning
   mobile_scanner: ^5.0.0
+  zxing_lib: ^1.1.4  # Pure Dart QR decoder for desktop image upload
+  image: ^4.2.0  # Image processing for QR decoding
 
   # Image picker for QR code testing
   image_picker: ^1.1.2

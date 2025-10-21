@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/stock_service.dart';
+import '../utils/platform_features.dart';
 import 'qr_scanner_screen.dart';
 
 class StockInScreen extends StatefulWidget {
@@ -169,9 +170,15 @@ class _StockInScreenState extends State<StockInScreen> {
                           ),
                           const SizedBox(width: 10),
                           ElevatedButton.icon(
-                            onPressed: _scanQRCode,
+                            onPressed: PlatformFeatures.supportsAnyQRFeature
+                                ? _scanQRCode
+                                : null,
                             icon: const Icon(Icons.qr_code_scanner),
-                            label: const Text('Scan'),
+                            label: Text(
+                              PlatformFeatures.supportsAnyQRFeature
+                                  ? 'Scan'
+                                  : 'N/A',
+                            ),
                             style: ElevatedButton.styleFrom(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 16,

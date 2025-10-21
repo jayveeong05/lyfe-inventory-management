@@ -1,30 +1,31 @@
-# OCR Invoice Data Extraction Feature
+# PDF Text Extraction Feature
 
 ## Overview
 
-The OCR (Optical Character Recognition) feature automatically extracts invoice numbers and dates from uploaded PDF or image files. This reduces manual data entry and improves accuracy.
+The PDF text extraction feature automatically extracts invoice numbers and dates from uploaded PDF files. This reduces manual data entry and improves accuracy.
 
-**Hybrid Approach**:
-- **PDF Files**: Uses Syncfusion Flutter PDF library for direct text extraction (faster and more accurate)
-- **Image Files**: Uses Google ML Kit Text Recognition for OCR processing
+**PDF-Only Approach**:
+- **PDF Files Only**: Uses Syncfusion Flutter PDF library for direct text extraction (fast and accurate)
+- **Cross-Platform**: Works reliably on all platforms (Android, iOS, Windows, macOS, Linux, Web)
+- **Simplified**: Single file type support for consistent user experience
 
 ## Features
 
 - **Direct PDF Text Extraction**: Uses Syncfusion Flutter PDF library for fast, accurate text extraction from PDF files
-- **Image OCR Processing**: Uses Google ML Kit for on-device text recognition from PNG, JPG, and JPEG files
+- **Cross-Platform Support**: Works on all platforms (Android, iOS, Windows, macOS, Linux, Web)
 - **Smart Data Parsing**: Extracts invoice numbers and dates using multiple regex patterns
 - **Confidence Scoring**: Provides confidence levels for extracted data
 - **User Validation**: Shows confirmation dialog for low-confidence results
 - **Manual Override**: Users can always edit or manually enter data
-- **Hybrid Processing**: Automatically chooses the best extraction method based on file type
+- **Simplified Workflow**: Single file type support reduces complexity
 
 ## How It Works
 
 ### 1. User Workflow
-1. User uploads a PDF or image file
-2. "Extract Invoice Data" button appears
+1. User uploads a PDF file
+2. "Extract PDF Data" button appears
 3. User clicks the button to start extraction
-4. System automatically chooses the best processing method
+4. System extracts text directly from PDF
 5. Form fields are auto-populated with extracted data
 6. User reviews and corrects data if needed
 

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:image_picker/image_picker.dart';
+import '../utils/platform_features.dart';
+import '../services/qr_image_service.dart';
 
 class QRScannerScreen extends StatefulWidget {
   const QRScannerScreen({super.key});
@@ -85,25 +87,136 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
     );
   }
 
+  /// Upload and decode QR code from image file
+  Future<void> _uploadAndDecodeQRImage() async {
+    final String? qrData = await QRImageService.pickAndDecodeQRImage(context);
+
+    if (qrData != null && mounted) {
+      // QR code found - return it
+      Navigator.pop(context, qrData);
+    }
+    // If qrData is null, the service already showed appropriate error messages
+  }
+
+  /// Build screen for unsupported platforms
+  Widget _buildUnsupportedPlatformScreen(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('QR Code Scanner'),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.qr_code_scanner, size: 80, color: Colors.grey[400]),
+              const SizedBox(height: 24),
+              Text(
+                'QR Code Scanning Not Available',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                PlatformFeatures.qrCapabilities,
+                style: Theme.of(context).textTheme.bodyLarge,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        color: Theme.of(context).primaryColor,
+                        size: 32,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Alternative Options',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        '• Upload QR code image (see button below)\n'
+                        '• Use mobile device for QR scanning\n'
+                        '• Manually enter equipment codes\n'
+                        '• Use barcode scanner hardware',
+                        textAlign: TextAlign.left,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              // QR Image Upload Button (available on all platforms)
+              if (PlatformFeatures.supportsQRImageUpload) ...[
+                ElevatedButton.icon(
+                  onPressed: _uploadAndDecodeQRImage,
+                  icon: const Icon(Icons.upload_file),
+                  label: const Text('Upload QR Image'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 12,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              ElevatedButton.icon(
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.arrow_back),
+                label: const Text('Go Back'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Check if QR scanning is supported on current platform
+    if (!PlatformFeatures.supportsQRScanning) {
+      return _buildUnsupportedPlatformScreen(context);
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('QR Code Scanner'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.photo_library),
-            onPressed: _pickImageAndScan,
-            tooltip: 'Upload QR Image',
-          ),
-          IconButton(
-            icon: const Icon(Icons.flash_on),
-            onPressed: () async {
-              await controller.toggleTorch();
-            },
-            tooltip: 'Toggle Flash',
-          ),
+          if (PlatformFeatures.supportsCameraAccess)
+            IconButton(
+              icon: const Icon(Icons.photo_library),
+              onPressed: _pickImageAndScan,
+              tooltip: 'Upload QR Image (Camera)',
+            ),
+          if (PlatformFeatures.supportsQRImageUpload)
+            IconButton(
+              icon: const Icon(Icons.upload_file),
+              onPressed: _uploadAndDecodeQRImage,
+              tooltip: 'Upload QR Image (File)',
+            ),
+          if (PlatformFeatures.isMobile)
+            IconButton(
+              icon: const Icon(Icons.flash_on),
+              onPressed: () async {
+                await controller.toggleTorch();
+              },
+              tooltip: 'Toggle Flash',
+            ),
         ],
       ),
       body: Column(

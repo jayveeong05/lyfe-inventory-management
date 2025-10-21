@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../utils/firebase_threading_fix.dart';
 
 enum UserRole { admin, user }
 
@@ -56,8 +57,9 @@ class AuthService {
   // Get current user
   User? get currentUser => _auth.currentUser;
 
-  // Auth state stream
-  Stream<User?> get authStateChanges => _auth.authStateChanges();
+  // Auth state stream with threading fix
+  Stream<User?> get authStateChanges =>
+      FirebaseThreadingFix.safeAuthStateChanges(_auth);
 
   // Get current user profile
   Future<UserProfile?> getCurrentUserProfile() async {

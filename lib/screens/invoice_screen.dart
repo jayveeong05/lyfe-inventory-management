@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/invoice_service.dart';
 import '../services/invoice_ocr_service.dart';
 import '../providers/auth_provider.dart';
+import '../utils/platform_features.dart';
 
 class InvoiceScreen extends StatefulWidget {
   const InvoiceScreen({super.key});
@@ -233,7 +234,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['pdf', 'png', 'jpg', 'jpeg'],
+        allowedExtensions: ['pdf'],
         allowMultiple: false,
       );
 
@@ -274,7 +275,20 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
     if (_selectedFile == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please select a PDF or image file first'),
+          content: Text('Please select a PDF file first'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Check if PDF text extraction is supported
+    if (!PlatformFeatures.supportsPDFOCR) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'PDF text extraction not supported on ${PlatformFeatures.platformName}',
+          ),
           backgroundColor: Colors.red,
         ),
       );
@@ -289,7 +303,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
       // Initialize OCR service if needed
       await _ocrService.initialize();
 
-      // Extract data from PDF
+      // Extract data from file
       final result = await _ocrService.extractInvoiceData(_selectedFile!);
 
       if (result['success'] == true) {
@@ -316,7 +330,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
-                  'OCR extraction completed! Confidence: $confidencePercent%\n'
+                  'PDF text extraction completed! Confidence: $confidencePercent%\n'
                   'Please review and correct the extracted data if needed.',
                 ),
                 backgroundColor: confidencePercent > 70
@@ -332,7 +346,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(result['message'] ?? 'OCR extraction failed'),
+              content: Text(result['message'] ?? 'PDF text extraction failed'),
               backgroundColor: Colors.red,
               duration: const Duration(seconds: 3),
             ),
@@ -343,7 +357,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('OCR extraction error: $e'),
+            content: Text('PDF text extraction error: $e'),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 3),
           ),
@@ -370,14 +384,14 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
       barrierDismissible: false,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: const Text('⚠️ Low Confidence OCR Results'),
+          title: const Text('⚠️ Low Confidence Extraction Results'),
           content: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'OCR extraction completed with low confidence ($confidencePercent%).\n'
+                  'PDF text extraction completed with low confidence ($confidencePercent%).\n'
                   'Please review the extracted data carefully:',
                   style: const TextStyle(fontSize: 14),
                 ),
@@ -468,7 +482,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Please fill in all required fields and select a PDF or image file',
+            'Please fill in all required fields and select a PDF file',
           ),
           backgroundColor: Colors.red,
         ),
@@ -1117,7 +1131,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                               label: Text(
                                 _selectedFile != null
                                     ? 'Change File'
-                                    : 'Select PDF or Image File',
+                                    : 'Select PDF File',
                               ),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.blue,
@@ -1148,12 +1162,25 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                                 label: Text(
                                   _isExtractingOCR
                                       ? 'Extracting...'
-                                      : 'Extract Invoice Data',
+                                      : 'Extract PDF Data',
                                 ),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.orange,
                                   foregroundColor: Colors.white,
                                 ),
+                              ),
+                              // Platform capabilities info
+                              const SizedBox(height: 4),
+                              Text(
+                                PlatformFeatures.supportsPDFOCR
+                                    ? 'PDF text extraction supported'
+                                    : 'PDF text extraction not available on ${PlatformFeatures.platformName}',
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: Colors.grey[600],
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                textAlign: TextAlign.center,
                               ),
                             ],
                           ],

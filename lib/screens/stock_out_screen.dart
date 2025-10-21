@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import '../services/purchase_order_service.dart';
 import '../providers/auth_provider.dart';
+import '../utils/platform_features.dart';
 import 'qr_scanner_screen.dart';
 
 class StockOutScreen extends StatefulWidget {
@@ -567,9 +568,15 @@ class _StockOutScreenState extends State<StockOutScreen> {
                             ),
                             const SizedBox(width: 10),
                             ElevatedButton.icon(
-                              onPressed: _scanQRCode,
+                              onPressed: PlatformFeatures.supportsAnyQRFeature
+                                  ? _scanQRCode
+                                  : null,
                               icon: const Icon(Icons.qr_code_scanner),
-                              label: const Text('Scan'),
+                              label: Text(
+                                PlatformFeatures.supportsAnyQRFeature
+                                    ? 'Scan'
+                                    : 'N/A',
+                              ),
                               style: ElevatedButton.styleFrom(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 16,

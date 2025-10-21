@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
 
@@ -30,13 +31,21 @@ class AuthProvider extends ChangeNotifier {
         // User is signed in, ensure they have a profile and load it
         _user = user;
         _isLoading = true;
-        notifyListeners();
+
+        // Ensure UI updates happen on main thread
+        SchedulerBinding.instance.addPostFrameCallback((_) {
+          notifyListeners();
+        });
 
         await _authService.ensureUserProfile();
         await _loadUserProfile();
 
         _isLoading = false;
-        notifyListeners();
+
+        // Ensure UI updates happen on main thread
+        SchedulerBinding.instance.addPostFrameCallback((_) {
+          notifyListeners();
+        });
       } else {
         // User is signed out - clear all state completely
         _clearUserState();
@@ -137,7 +146,11 @@ class AuthProvider extends ChangeNotifier {
     _userProfile = null;
     _errorMessage = null;
     _isLoading = false;
-    notifyListeners();
+
+    // Ensure UI updates happen on main thread
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      notifyListeners();
+    });
   }
 
   // Reset password
