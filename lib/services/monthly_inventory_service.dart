@@ -119,8 +119,22 @@ class MonthlyInventoryService {
         continue;
       }
 
-      // Handle empty or null sizes for non-Others categories
-      final displaySize = size.isEmpty ? 'Unknown' : size;
+      // Only include Interactive Flat Panel items with actual sizes,
+      // or items with unknown/missing category that have sizes
+      String displaySize;
+
+      if (category.toLowerCase() == 'interactive flat panel' ||
+          category.toLowerCase() == 'ifp') {
+        // IFP items: use actual size or 'Unknown' if no size
+        displaySize = size.isEmpty ? 'Unknown' : size;
+      } else if (category.toLowerCase() == 'unknown' && size.isNotEmpty) {
+        // Unknown category items with size: use actual size
+        displaySize = size;
+      } else {
+        // Non-IFP items without proper size: group as 'Unknown'
+        displaySize = 'Unknown';
+      }
+
       stockInBySize[displaySize] = (stockInBySize[displaySize] ?? 0) + 1;
     }
 
@@ -337,7 +351,19 @@ class MonthlyInventoryService {
         }
 
         final size = data['size'] as String? ?? '';
-        return size.isEmpty ? 'Unknown' : size;
+
+        // Apply consistent category logic
+        if (category.toLowerCase() == 'interactive flat panel' ||
+            category.toLowerCase() == 'ifp') {
+          // IFP items: use actual size or 'Unknown' if no size
+          return size.isEmpty ? 'Unknown' : size;
+        } else if (category.toLowerCase() == 'unknown' && size.isNotEmpty) {
+          // Unknown category items with size: use actual size
+          return size;
+        } else {
+          // Non-IFP items without proper size: group as 'Unknown'
+          return 'Unknown';
+        }
       }
     } catch (e) {
       // If error, return Unknown
@@ -425,26 +451,8 @@ class MonthlyInventoryService {
     return _calculateRemainingFromCachedData(stockInData, stockOutData);
   }
 
-  /// Calculate remaining amounts (stock in - stock out) - DEPRECATED
-  Map<String, int> _calculateRemainingAmounts(
-    Map<String, int> stockIn,
-    Map<String, int> stockOut,
-  ) {
-    Map<String, int> remaining = {};
-
-    // Get all unique sizes
-    final allSizes = <String>{...stockIn.keys, ...stockOut.keys};
-
-    for (final size in allSizes) {
-      final stockInCount = stockIn[size] ?? 0;
-      final stockOutCount = stockOut[size] ?? 0;
-      remaining[size] = stockInCount - stockOutCount;
-    }
-
-    return remaining;
-  }
-
   /// Get size breakdown with detailed information
+  /// Filters out 'Unknown' size items as they should not appear in Panel Size breakdown
   List<Map<String, dynamic>> _getSizeBreakdown(
     Map<String, int> stockIn,
     Map<String, int> stockOut,
@@ -457,7 +465,11 @@ class MonthlyInventoryService {
       ...remaining.keys,
     };
 
-    return allSizes
+    // Filter out 'Unknown' size items from Panel Size breakdown
+    // Panel Size breakdown should only show IFP items with actual sizes (65 Inch, 75 Inch, etc.)
+    final filteredSizes = allSizes.where((size) => size != 'Unknown').toSet();
+
+    return filteredSizes
         .map(
           (size) => {
             'size': size,
@@ -747,8 +759,23 @@ class MonthlyInventoryService {
           continue;
         }
 
+        // Only include Interactive Flat Panel items with actual sizes,
+        // or items with unknown/missing category that have sizes
         final size = data['size'] as String? ?? '';
-        final displaySize = size.isEmpty ? 'Unknown' : size;
+        String displaySize;
+
+        if (category.toLowerCase() == 'interactive flat panel' ||
+            category.toLowerCase() == 'ifp') {
+          // IFP items: use actual size or 'Unknown' if no size
+          displaySize = size.isEmpty ? 'Unknown' : size;
+        } else if (category.toLowerCase() == 'unknown' && size.isNotEmpty) {
+          // Unknown category items with size: use actual size
+          displaySize = size;
+        } else {
+          // Non-IFP items without proper size: group as 'Unknown'
+          displaySize = 'Unknown';
+        }
+
         stockInData[displaySize] = (stockInData[displaySize] ?? 0) + 1;
       }
 
@@ -879,7 +906,21 @@ class MonthlyInventoryService {
             cache[serialNumber] = '__EXCLUDE__'; // Special marker for exclusion
           } else {
             final size = data['size'] as String? ?? '';
-            cache[serialNumber] = size.isEmpty ? 'Unknown' : size;
+            String displaySize;
+
+            if (category.toLowerCase() == 'interactive flat panel' ||
+                category.toLowerCase() == 'ifp') {
+              // IFP items: use actual size or 'Unknown' if no size
+              displaySize = size.isEmpty ? 'Unknown' : size;
+            } else if (category.toLowerCase() == 'unknown' && size.isNotEmpty) {
+              // Unknown category items with size: use actual size
+              displaySize = size;
+            } else {
+              // Non-IFP items without proper size: group as 'Unknown'
+              displaySize = 'Unknown';
+            }
+
+            cache[serialNumber] = displaySize;
           }
         }
       }

@@ -1,24 +1,21 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:google_ml_kit/google_ml_kit.dart';
 import 'package:path/path.dart' as path;
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 
-/// Service for extracting invoice data from PDF files using OCR
+/// Service for extracting invoice data from PDF files using direct text extraction
 class InvoiceOcrService {
   static final InvoiceOcrService _instance = InvoiceOcrService._internal();
   factory InvoiceOcrService() => _instance;
   InvoiceOcrService._internal();
 
-  late final TextRecognizer _textRecognizer;
   bool _isInitialized = false;
 
-  /// Initialize the OCR service
+  /// Initialize the service (simplified - no ML Kit needed)
   Future<void> initialize() async {
     if (_isInitialized) return;
 
     try {
-      _textRecognizer = TextRecognizer();
       _isInitialized = true;
       debugPrint('✅ InvoiceOcrService initialized successfully');
     } catch (e) {
@@ -27,16 +24,15 @@ class InvoiceOcrService {
     }
   }
 
-  /// Dispose of resources
+  /// Dispose of resources (simplified - no ML Kit to dispose)
   Future<void> dispose() async {
     if (_isInitialized) {
-      await _textRecognizer.close();
       _isInitialized = false;
       debugPrint('🗑️ InvoiceOcrService disposed');
     }
   }
 
-  /// Extract invoice data from PDF or image file
+  /// Extract invoice data from PDF files using direct text extraction
   /// Returns a map with 'invoiceNumber', 'invoiceDate', 'confidence', and 'rawText'
   Future<Map<String, dynamic>> extractInvoiceData(File file) async {
     try {
@@ -44,34 +40,24 @@ class InvoiceOcrService {
         await initialize();
       }
 
-      debugPrint('🔍 Starting OCR extraction for: ${file.path}');
+      debugPrint('🔍 Starting PDF text extraction for: ${file.path}');
 
-      // Check file type and handle accordingly
+      // Check file type - only PDF supported now
       final fileExtension = path.extension(file.path).toLowerCase();
-      late final InputImage inputImage;
 
-      late final String extractedText;
-
-      if (fileExtension == '.pdf') {
-        // Use direct PDF text extraction (much faster and more accurate!)
-        debugPrint('📄 Using direct PDF text extraction');
-        extractedText = await _extractTextFromPdf(file);
-
-        if (extractedText.isEmpty) {
-          return _createErrorResult(
-            'No text found in PDF. The PDF might be image-based or encrypted. '
-            'Please convert to an image file and try again.',
-          );
-        }
-      } else if (['.png', '.jpg', '.jpeg'].contains(fileExtension)) {
-        // Handle image files with OCR
-        debugPrint('📷 Processing image file with OCR');
-        inputImage = InputImage.fromFilePath(file.path);
-        final recognizedText = await _textRecognizer.processImage(inputImage);
-        extractedText = recognizedText.text;
-      } else {
+      if (fileExtension != '.pdf') {
         return _createErrorResult(
-          'Unsupported file format. Please use PDF, PNG, JPG, or JPEG files.',
+          'Only PDF files are supported. Please select a PDF file.',
+        );
+      }
+
+      // Use direct PDF text extraction (fast and accurate!)
+      debugPrint('📄 Using direct PDF text extraction');
+      final extractedText = await _extractTextFromPdf(file);
+
+      if (extractedText.isEmpty) {
+        return _createErrorResult(
+          'No text found in PDF. The PDF might be image-based or encrypted.',
         );
       }
 
@@ -88,11 +74,11 @@ class InvoiceOcrService {
         'invoiceDate': parsedData['invoiceDate'],
         'confidence': parsedData['confidence'],
         'rawText': extractedText,
-        'message': 'OCR extraction completed successfully',
+        'message': 'PDF text extraction completed successfully',
       };
     } catch (e) {
-      debugPrint('❌ OCR extraction failed: $e');
-      return _createErrorResult('OCR extraction failed: ${e.toString()}');
+      debugPrint('❌ PDF text extraction failed: $e');
+      return _createErrorResult('PDF text extraction failed: ${e.toString()}');
     }
   }
 

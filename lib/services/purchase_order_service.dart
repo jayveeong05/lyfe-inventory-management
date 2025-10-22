@@ -31,6 +31,11 @@ class PurchaseOrderService {
         };
       }
 
+      // Handle optional client name - use default if empty
+      final effectiveClientName = clientName.trim().isEmpty
+          ? 'N/A'
+          : clientName.trim();
+
       final currentDate = DateTime.now();
       final timestamp = Timestamp.fromDate(currentDate);
 
@@ -93,7 +98,7 @@ class PurchaseOrderService {
           'type': 'Stock_Out',
           'entry_no': nextEntryNumber,
           'customer_dealer': dealerName,
-          'customer_client': clientName,
+          'customer_client': effectiveClientName,
           'location': location,
           'equipment_category': item['equipment_category'],
           'model': item['model'],
@@ -125,7 +130,7 @@ class PurchaseOrderService {
         'status': 'Pending',
         'created_date': timestamp,
         'customer_dealer': dealerName,
-        'customer_client': clientName,
+        'customer_client': effectiveClientName,
         'transaction_ids': transactionIds, // Store all transaction IDs
         'total_items': selectedItems.length,
         'total_quantity': selectedItems.length,
@@ -176,6 +181,11 @@ class PurchaseOrderService {
         return {'success': false, 'error': 'User not authenticated.'};
       }
 
+      // Handle optional client name - use default if empty
+      final effectiveClientName = clientName.trim().isEmpty
+          ? 'N/A'
+          : clientName.trim();
+
       final currentDate = DateTime.now();
       final timestamp = Timestamp.fromDate(currentDate);
 
@@ -219,7 +229,7 @@ class PurchaseOrderService {
         'type': 'Stock_Out',
         'entry_no': nextEntryNumber,
         'customer_dealer': dealerName,
-        'customer_client': clientName,
+        'customer_client': effectiveClientName,
         'location': location,
         'equipment_category': itemDetails['equipment_category'],
         'model': itemDetails['model'],
@@ -244,7 +254,7 @@ class PurchaseOrderService {
         'status': 'Pending',
         'created_date': timestamp,
         'customer_dealer': dealerName,
-        'customer_client': clientName,
+        'customer_client': effectiveClientName,
         'transaction_ids': [nextTransactionId], // Only store transaction IDs
         'total_items': 1,
         'total_quantity': 1,

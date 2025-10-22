@@ -3,6 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
 import 'providers/auth_provider.dart';
+import 'utils/system_ui_manager.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/admin_dashboard_screen.dart';
@@ -13,6 +14,9 @@ import 'screens/invoice_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize system UI for immersive experience
+  await SystemUIManager.initialize();
 
   // Initialize Firebase with error handling
   try {
@@ -31,8 +35,47 @@ void main() async {
   );
 }
 
-class InventoryProApp extends StatelessWidget {
+class InventoryProApp extends StatefulWidget {
   const InventoryProApp({super.key});
+
+  @override
+  State<InventoryProApp> createState() => _InventoryProAppState();
+}
+
+class _InventoryProAppState extends State<InventoryProApp>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+
+    switch (state) {
+      case AppLifecycleState.resumed:
+        // App came back to foreground - restore immersive mode
+        SystemUIManager.onAppResumed();
+        break;
+      case AppLifecycleState.paused:
+        // App went to background
+        SystemUIManager.onAppPaused();
+        break;
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.detached:
+      case AppLifecycleState.hidden:
+        // Handle other states if needed
+        break;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

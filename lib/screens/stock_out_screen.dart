@@ -484,20 +484,15 @@ class _StockOutScreenState extends State<StockOutScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Client Name Input
+                    // Client Name Input (Optional)
                     TextFormField(
                       controller: _clientNameController,
                       decoration: const InputDecoration(
-                        labelText: 'Client Name *',
-                        hintText: 'Enter client name',
+                        labelText: 'Client Name (Optional)',
+                        hintText: 'Enter client name (optional)',
                         border: OutlineInputBorder(),
                       ),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'Client Name is required';
-                        }
-                        return null;
-                      },
+                      // Removed validator to make field optional
                     ),
                     const SizedBox(height: 16),
 
