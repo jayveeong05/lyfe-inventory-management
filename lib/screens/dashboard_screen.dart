@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../screens/login_screen.dart';
 import 'stock_in_screen.dart';
+import 'inventory_management_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
@@ -130,17 +131,16 @@ class DashboardScreen extends StatelessWidget {
                       ),
                       _buildDashboardButton(
                         context,
-                        'Delivery Order',
-                        'Manage deliveries',
-                        Icons.local_shipping,
-                        Colors.orange,
+                        'Inventory',
+                        'View all inventory items',
+                        Icons.inventory_2,
+                        Colors.purple,
                         () {
-                          // TODO: Navigate to Delivery Order screen
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Delivery Order feature coming soon!',
-                              ),
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  const InventoryManagementScreen(),
                             ),
                           );
                         },

@@ -5,6 +5,10 @@
     <!-- Internet permission for downloading and viewing PDFs -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Storage permissions for CSV export -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+
     <application
         android:label="InventoryPro"
         android:name="${applicationName}"

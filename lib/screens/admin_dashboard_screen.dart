@@ -12,6 +12,8 @@ import 'monthly_inventory_activity_screen.dart';
 import 'stock_in_screen.dart';
 import 'stock_out_screen.dart';
 import 'invoice_screen.dart';
+import 'inventory_management_screen.dart';
+import 'user_management_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -119,6 +121,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
                         // Core navigation buttons
                         _buildCoreNavigationSection(),
+                        const SizedBox(height: 24),
+
+                        // Management section
+                        _buildManagementSection(),
                         const SizedBox(height: 24),
 
                         // Report buttons
@@ -232,158 +238,54 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 12),
-        Row(
+        Column(
           children: [
-            Expanded(
-              child: Card(
-                elevation: 2,
-                child: InkWell(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const SalesReportScreen(),
-                      ),
-                    );
-                  },
-                  borderRadius: BorderRadius.circular(12),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      children: [
-                        Icon(
-                          Icons.analytics,
-                          size: 32,
-                          color: Colors.blue.shade600,
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Sales Report',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Purchase orders, customers, and sales analytics',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade600,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
+            _buildNavigationListItem(
+              'Sales Report',
+              Icons.analytics,
+              Colors.blue,
+              'Purchase orders, customers, and sales analytics',
+              () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const SalesReportScreen(),
                   ),
-                ),
-              ),
+                );
+              },
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Card(
-                elevation: 2,
-                child: InkWell(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const InventoryReportScreen(),
-                      ),
-                    );
-                  },
-                  borderRadius: BorderRadius.circular(12),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      children: [
-                        Icon(
-                          Icons.inventory_2,
-                          size: 32,
-                          color: Colors.green.shade600,
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Inventory Report',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Stock levels, movements, and aging analysis',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade600,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
+            const SizedBox(height: 8),
+            _buildNavigationListItem(
+              'Inventory Report',
+              Icons.inventory_2,
+              Colors.green,
+              'Stock levels, movements, and aging analysis',
+              () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const InventoryReportScreen(),
                   ),
-                ),
-              ),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+            _buildNavigationListItem(
+              'Monthly Inventory Activity',
+              Icons.calendar_view_month,
+              Colors.purple,
+              'View monthly stock in, stock out, and remaining amounts by panel size',
+              () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        const MonthlyInventoryActivityScreen(),
+                  ),
+                );
+              },
             ),
           ],
-        ),
-        const SizedBox(height: 12),
-        // Monthly Inventory Activity button (full width)
-        Card(
-          elevation: 2,
-          child: InkWell(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const MonthlyInventoryActivityScreen(),
-                ),
-              );
-            },
-            borderRadius: BorderRadius.circular(12),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.calendar_view_month,
-                    size: 32,
-                    color: Colors.purple.shade600,
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Monthly Inventory Activity',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'View monthly stock in, stock out, and remaining amounts by panel size',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(
-                    Icons.arrow_forward_ios,
-                    size: 16,
-                    color: Colors.grey.shade400,
-                  ),
-                ],
-              ),
-            ),
-          ),
         ),
       ],
     );
@@ -690,15 +592,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 12),
-        GridView.count(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 2,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-          childAspectRatio: 1.3,
+        Column(
           children: [
-            _buildNavigationCard(
+            _buildNavigationListItem(
               'Stock In',
               Icons.add_box,
               Colors.green,
@@ -712,7 +608,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 );
               },
             ),
-            _buildNavigationCard(
+            const SizedBox(height: 8),
+            _buildNavigationListItem(
               'Stock Out',
               Icons.remove_circle_outline,
               Colors.red,
@@ -726,7 +623,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 );
               },
             ),
-            _buildNavigationCard(
+            const SizedBox(height: 8),
+            _buildNavigationListItem(
               'Invoice',
               Icons.receipt_long,
               Colors.blue,
@@ -740,7 +638,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 );
               },
             ),
-            _buildNavigationCard(
+            const SizedBox(height: 8),
+            _buildNavigationListItem(
               'Delivery Order',
               Icons.local_shipping,
               Colors.orange,
@@ -760,7 +659,53 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  Widget _buildNavigationCard(
+  Widget _buildManagementSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'System Management',
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 12),
+        Column(
+          children: [
+            _buildNavigationListItem(
+              'Inventory Management',
+              Icons.inventory_2,
+              Colors.purple,
+              'View and manage all inventory items',
+              () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const InventoryManagementScreen(),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+            _buildNavigationListItem(
+              'User Management',
+              Icons.people,
+              Colors.indigo,
+              'Manage users and permissions',
+              () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const UserManagementScreen(),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNavigationListItem(
     String title,
     IconData icon,
     Color color,
@@ -769,35 +714,26 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   ) {
     return Card(
       elevation: 2,
-      child: InkWell(
+      child: ListTile(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 32, color: color),
-              const SizedBox(height: 8),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                description,
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
+        leading: CircleAvatar(
+          backgroundColor: color.withValues(alpha: 0.1),
+          child: Icon(icon, color: color, size: 24),
         ),
+        title: Text(
+          title,
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        ),
+        subtitle: Text(
+          description,
+          style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+        ),
+        trailing: Icon(
+          Icons.arrow_forward_ios,
+          size: 16,
+          color: Colors.grey.shade400,
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       ),
     );
   }

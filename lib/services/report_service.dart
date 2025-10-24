@@ -2,10 +2,100 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:csv/csv.dart';
 import 'dart:io';
+import 'dart:convert';
 import 'package:path_provider/path_provider.dart';
+import 'package:flutter/foundation.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class ReportService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  /// Get appropriate directory for saving CSV files based on platform
+  ///
+  /// - Desktop: Uses application documents directory
+  /// - Mobile: Uses downloads directory (user accessible) with permission handling
+  Future<Directory> _getExportDirectory() async {
+    if (Platform.isAndroid || Platform.isIOS) {
+      // For mobile platforms, request storage permission first
+      try {
+        if (Platform.isAndroid) {
+          // For Android, try to access public Downloads directory
+          debugPrint('🤖 Android detected - trying public Downloads access...');
+
+          // Approach 1: Try public Downloads directory directly
+          try {
+            final publicDownloads = Directory('/storage/emulated/0/Download');
+            debugPrint('📁 Testing public Downloads: ${publicDownloads.path}');
+
+            // Test write access by creating a test file
+            final testFile = File('${publicDownloads.path}/.test_write_access');
+            await testFile.writeAsString('test');
+            await testFile.delete();
+
+            debugPrint('✅ Public Downloads directory is writable!');
+            return publicDownloads;
+          } catch (e) {
+            debugPrint('❌ Public Downloads not accessible: $e');
+          }
+
+          // Approach 2: Request storage permission and try again
+          debugPrint('🔍 Requesting storage permission...');
+          final permission = await Permission.storage.request();
+          debugPrint('📋 Permission status: ${permission.toString()}');
+
+          if (permission.isGranted) {
+            try {
+              final publicDownloads = Directory('/storage/emulated/0/Download');
+              final testFile = File(
+                '${publicDownloads.path}/.test_write_access',
+              );
+              await testFile.writeAsString('test');
+              await testFile.delete();
+
+              debugPrint('✅ Public Downloads accessible after permission!');
+              return publicDownloads;
+            } catch (e) {
+              debugPrint('❌ Still cannot access public Downloads: $e');
+            }
+          } else {
+            debugPrint('❌ Storage permission denied: ${permission.toString()}');
+          }
+
+          // Final fallback to external storage directory
+          debugPrint('🔄 Falling back to external storage directory...');
+          final directory = await getExternalStorageDirectory();
+          if (directory != null) {
+            // Create a subdirectory for our app
+            final appDirectory = Directory(
+              '${directory.path}/InventoryReports',
+            );
+            if (!await appDirectory.exists()) {
+              await appDirectory.create(recursive: true);
+            }
+            debugPrint(
+              '📂 Using external storage subdirectory: ${appDirectory.path}',
+            );
+            return appDirectory;
+          }
+        } else if (Platform.isIOS) {
+          // On iOS, use application documents directory (accessible via Files app)
+          final iosDirectory = await getApplicationDocumentsDirectory();
+          debugPrint('🍎 Using iOS documents directory: ${iosDirectory.path}');
+          return iosDirectory;
+        }
+      } catch (e) {
+        // If external storage fails, fall back to application documents
+        debugPrint('❌ External storage access failed: $e');
+      }
+    }
+
+    // Desktop platforms or fallback: use application documents directory
+    final fallbackDirectory = await getApplicationDocumentsDirectory();
+    debugPrint(
+      '💻 Using fallback documents directory: ${fallbackDirectory.path}',
+    );
+    return fallbackDirectory;
+  }
 
   // Sales Report Methods
 
@@ -24,17 +114,15 @@ class ReportService {
       // Build query for purchase orders
       Query query = _firestore.collection('purchase_orders');
 
-      if (endDate != null) {
-        query = query
-            .where(
-              'created_date',
-              isGreaterThanOrEqualTo: Timestamp.fromDate(startDate),
-            )
-            .where(
-              'created_date',
-              isLessThanOrEqualTo: Timestamp.fromDate(endDate),
-            );
-      }
+      query = query
+          .where(
+            'created_date',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(startDate),
+          )
+          .where(
+            'created_date',
+            isLessThanOrEqualTo: Timestamp.fromDate(endDate),
+          );
 
       if (customerDealer != null && customerDealer.isNotEmpty) {
         query = query.where('customer_dealer', isEqualTo: customerDealer);
@@ -47,17 +135,15 @@ class ReportService {
           .collection('transactions')
           .where('type', isEqualTo: 'Stock_Out');
 
-      if (endDate != null) {
-        transactionQuery = transactionQuery
-            .where(
-              'uploaded_at',
-              isGreaterThanOrEqualTo: Timestamp.fromDate(startDate),
-            )
-            .where(
-              'uploaded_at',
-              isLessThanOrEqualTo: Timestamp.fromDate(endDate),
-            );
-      }
+      transactionQuery = transactionQuery
+          .where(
+            'uploaded_at',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(startDate),
+          )
+          .where(
+            'uploaded_at',
+            isLessThanOrEqualTo: Timestamp.fromDate(endDate),
+          );
 
       final transactionSnapshot = await transactionQuery.get();
 
@@ -556,11 +642,27 @@ class ReportService {
       // Convert to CSV string
       String csvString = const ListToCsvConverter().convert(csvData);
 
-      // Save to file
-      final directory = await getApplicationDocumentsDirectory();
+      // Debug: Check CSV content
+      debugPrint('📊 CSV Data Rows: ${csvData.length}');
+      debugPrint('📝 CSV Content Length: ${csvString.length} characters');
+      debugPrint(
+        '🔍 CSV Preview (first 200 chars): ${csvString.length > 200 ? csvString.substring(0, 200) + "..." : csvString}',
+      );
+
+      // Save to file using platform-appropriate directory
+      final directory = await _getExportDirectory();
       final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
       final file = File('${directory.path}/sales_report_$timestamp.csv');
-      await file.writeAsString(csvString);
+
+      // Write with explicit UTF-8 encoding
+      await file.writeAsString(csvString, encoding: utf8);
+
+      // Debug: Verify file was created
+      final fileExists = await file.exists();
+      final fileSize = fileExists ? await file.length() : 0;
+      debugPrint('✅ File created: $fileExists');
+      debugPrint('📏 File size: $fileSize bytes');
+      debugPrint('📂 File path: ${file.path}');
 
       return file.path;
     } catch (e) {
@@ -612,15 +714,215 @@ class ReportService {
       // Convert to CSV string
       String csvString = const ListToCsvConverter().convert(csvData);
 
-      // Save to file
-      final directory = await getApplicationDocumentsDirectory();
+      // Debug: Check CSV content
+      debugPrint('📊 Inventory CSV Data Rows: ${csvData.length}');
+      debugPrint(
+        '📝 Inventory CSV Content Length: ${csvString.length} characters',
+      );
+      debugPrint(
+        '🔍 Inventory CSV Preview (first 200 chars): ${csvString.length > 200 ? csvString.substring(0, 200) + "..." : csvString}',
+      );
+
+      // Save to file using platform-appropriate directory
+      final directory = await _getExportDirectory();
       final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
       final file = File('${directory.path}/inventory_report_$timestamp.csv');
-      await file.writeAsString(csvString);
+
+      // Write with explicit UTF-8 encoding
+      await file.writeAsString(csvString, encoding: utf8);
+
+      // Debug: Verify file was created
+      final fileExists = await file.exists();
+      final fileSize = fileExists ? await file.length() : 0;
+      debugPrint('✅ Inventory file created: $fileExists');
+      debugPrint('📏 Inventory file size: $fileSize bytes');
+      debugPrint('📂 Inventory file path: ${file.path}');
 
       return file.path;
     } catch (e) {
       print('Error exporting inventory report to CSV: $e');
+      return null;
+    }
+  }
+
+  /// Export monthly activity report to CSV
+  Future<String?> exportMonthlyActivityToCSV(
+    Map<String, dynamic> reportData,
+    List<Map<String, dynamic>> stockInItems,
+    List<Map<String, dynamic>> stockOutItems,
+    List<Map<String, dynamic>> remainingItems,
+    Map<String, dynamic> selectedMonth,
+  ) async {
+    try {
+      // Create comprehensive CSV data with multiple sheets in one file
+      List<List<dynamic>> csvData = [];
+
+      // Add header with report information
+      csvData.add([
+        'Monthly Inventory Activity Report',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+      ]);
+      csvData.add(['Month: ${selectedMonth['label']}', '', '', '', '', '', '']);
+      csvData.add([
+        'Generated: ${DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now())}',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+      ]);
+      csvData.add(['', '', '', '', '', '', '']); // Empty row
+
+      // SECTION 1: SUMMARY DATA
+      csvData.add(['SUMMARY', '', '', '', '', '', '']);
+      csvData.add([
+        'Category',
+        'Stock In',
+        'Stock Out',
+        'Remaining',
+        '',
+        '',
+        '',
+      ]);
+
+      // Add summary data by category
+      final summaryData =
+          reportData['summaryData'] as Map<String, dynamic>? ?? {};
+      summaryData.forEach((category, data) {
+        if (data is Map<String, dynamic>) {
+          csvData.add([
+            category,
+            data['stockIn'] ?? 0,
+            data['stockOut'] ?? 0,
+            data['remaining'] ?? 0,
+            '',
+            '',
+            '',
+          ]);
+        }
+      });
+
+      csvData.add(['', '', '', '', '', '', '']); // Empty row
+      csvData.add(['', '', '', '', '', '', '']); // Empty row
+
+      // SECTION 2: STOCK IN DETAILS
+      csvData.add(['STOCK IN DETAILS', '', '', '', '', '', '']);
+      csvData.add([
+        'Serial Number',
+        'Equipment Category',
+        'Model',
+        'Size',
+        'Location',
+        'Date',
+        'Remark',
+      ]);
+
+      for (var item in stockInItems) {
+        csvData.add([
+          item['serialNumber'] ?? '',
+          item['equipmentCategory'] ?? '',
+          item['model'] ?? '',
+          item['size'] ?? '',
+          item['location'] ?? '',
+          item['createdAt'] != null
+              ? DateFormat(
+                  'yyyy-MM-dd',
+                ).format((item['createdAt'] as Timestamp).toDate())
+              : '',
+          item['remark'] ?? '',
+        ]);
+      }
+
+      csvData.add(['', '', '', '', '', '', '']); // Empty row
+      csvData.add(['', '', '', '', '', '', '']); // Empty row
+
+      // SECTION 3: STOCK OUT DETAILS
+      csvData.add(['STOCK OUT DETAILS', '', '', '', '', '', '']);
+      csvData.add([
+        'Serial Number',
+        'Equipment Category',
+        'Model',
+        'Size',
+        'Customer/Dealer',
+        'Date',
+        'Remark',
+      ]);
+
+      for (var item in stockOutItems) {
+        csvData.add([
+          item['serialNumber'] ?? '',
+          item['equipmentCategory'] ?? '',
+          item['model'] ?? '',
+          item['size'] ?? '',
+          item['customerDealer'] ?? '',
+          item['createdAt'] != null
+              ? DateFormat(
+                  'yyyy-MM-dd',
+                ).format((item['createdAt'] as Timestamp).toDate())
+              : '',
+          item['remark'] ?? '',
+        ]);
+      }
+
+      csvData.add(['', '', '', '', '', '', '']); // Empty row
+      csvData.add(['', '', '', '', '', '', '']); // Empty row
+
+      // SECTION 4: REMAINING INVENTORY
+      csvData.add(['REMAINING INVENTORY', '', '', '', '', '', '']);
+      csvData.add(['Equipment Category', 'Size', 'Count', '', '', '', '']);
+
+      for (var item in remainingItems) {
+        csvData.add([
+          item['category'] ?? '',
+          item['size'] ?? '',
+          item['count'] ?? 0,
+          '',
+          '',
+          '',
+          '',
+        ]);
+      }
+
+      // Convert to CSV string
+      String csvString = const ListToCsvConverter().convert(csvData);
+
+      // Debug: Check CSV content
+      debugPrint('📊 Monthly Activity CSV Data Rows: ${csvData.length}');
+      debugPrint(
+        '📝 Monthly Activity CSV Content Length: ${csvString.length} characters',
+      );
+      debugPrint(
+        '🔍 Monthly Activity CSV Preview (first 200 chars): ${csvString.length > 200 ? csvString.substring(0, 200) + "..." : csvString}',
+      );
+
+      // Save to file using platform-appropriate directory
+      final directory = await _getExportDirectory();
+      final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+      final monthLabel =
+          selectedMonth['label']?.toString().replaceAll(' ', '_') ?? 'unknown';
+      final file = File(
+        '${directory.path}/monthly_activity_${monthLabel}_$timestamp.csv',
+      );
+
+      // Write with explicit UTF-8 encoding
+      await file.writeAsString(csvString, encoding: utf8);
+
+      // Debug: Verify file was created
+      final fileExists = await file.exists();
+      final fileSize = fileExists ? await file.length() : 0;
+      debugPrint('✅ Monthly Activity file created: $fileExists');
+      debugPrint('📏 Monthly Activity file size: $fileSize bytes');
+      debugPrint('📂 Monthly Activity file path: ${file.path}');
+
+      return file.path;
+    } catch (e) {
+      debugPrint('Error exporting monthly activity report to CSV: $e');
       return null;
     }
   }

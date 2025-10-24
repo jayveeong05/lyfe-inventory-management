@@ -94,13 +94,19 @@ class _StockOutScreenState extends State<StockOutScreen> {
         _isLoadingItems = true;
       });
 
-      // Step 1: Get ALL transactions (both Stock_In and Stock_Out) to determine latest status
+      // Step 1: Get transactions with limit to avoid performance issues
+      // Use a reasonable limit that covers most recent transactions
+      // NOTE: This approach has limitations - if you have more than 1000 transactions,
+      // some older items might not appear in the search results.
+      // For production, consider implementing a more efficient approach using
+      // a separate 'available_items' collection or status indexing.
       final allTransactionsQuery = await FirebaseFirestore.instance
           .collection('transactions')
           .orderBy(
             'transaction_id',
             descending: true,
           ) // Get latest transactions first
+          .limit(1000) // Add limit to prevent performance issues
           .get();
 
       if (allTransactionsQuery.docs.isEmpty) {

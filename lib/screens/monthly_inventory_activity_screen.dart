@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/monthly_inventory_service.dart';
+import '../services/report_service.dart';
 
 class MonthlyInventoryActivityScreen extends StatefulWidget {
   const MonthlyInventoryActivityScreen({super.key});
@@ -15,6 +16,7 @@ class _MonthlyInventoryActivityScreenState
     extends State<MonthlyInventoryActivityScreen>
     with SingleTickerProviderStateMixin {
   final MonthlyInventoryService _service = MonthlyInventoryService();
+  final ReportService _reportService = ReportService();
 
   Map<String, dynamic>? _reportData;
   List<Map<String, dynamic>> _availableMonths = [];
@@ -121,6 +123,118 @@ class _MonthlyInventoryActivityScreenState
     }
   }
 
+  Future<void> _exportReport() async {
+    if (_reportData == null || _selectedMonth == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('No data to export')));
+      }
+      return;
+    }
+
+    try {
+      final filePath = await _reportService.exportMonthlyActivityToCSV(
+        _reportData!,
+        _stockInItems,
+        _stockOutItems,
+        _remainingItems,
+        _selectedMonth!,
+      );
+
+      if (filePath != null) {
+        if (mounted) {
+          _showExportSuccessDialog(filePath);
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to export report')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Export error: $e')));
+      }
+    }
+  }
+
+  void _showExportSuccessDialog(String filePath) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          icon: const Icon(Icons.check_circle, color: Colors.purple, size: 48),
+          title: const Text('Export Successful!'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Your monthly activity report has been saved to:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  filePath,
+                  style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'How to open the CSV file:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              const Text('1. Go to Downloads folder in your file manager'),
+              const Text('2. Find the CSV file and tap on it'),
+              const Text('3. If it shows "Can\'t open file":'),
+              const Text('   • Tap "Open with" or "Share"'),
+              const Text('   • Choose Excel, Sheets, or WPS Office'),
+              const Text('   • Install a spreadsheet app if needed'),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.purple.shade50,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.purple.shade200),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.info, color: Colors.purple, size: 16),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Recommended apps: Microsoft Excel, Google Sheets, WPS Office',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Got it!'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -129,6 +243,11 @@ class _MonthlyInventoryActivityScreenState
         backgroundColor: Colors.purple.shade600,
         foregroundColor: Colors.white,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.file_download),
+            onPressed: _exportReport,
+            tooltip: 'Export to CSV',
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadReport,
