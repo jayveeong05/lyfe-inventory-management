@@ -184,17 +184,55 @@ class InventoryManagementService {
 
     // Sort transactions by date (most recent first)
     transactions.sort((a, b) {
-      final aDate = a['uploaded_at'] as Timestamp?;
-      final bDate = b['uploaded_at'] as Timestamp?;
-      if (aDate == null || bDate == null) return 0;
-      return bDate.compareTo(aDate);
+      // Handle uploaded_at which could be Timestamp or String
+      DateTime? aDateTime;
+      DateTime? bDateTime;
+
+      final aValue = a['uploaded_at'];
+      if (aValue is Timestamp) {
+        aDateTime = aValue.toDate();
+      } else if (aValue is String) {
+        try {
+          aDateTime = DateTime.parse(aValue);
+        } catch (e) {
+          // Ignore parse errors
+        }
+      }
+
+      final bValue = b['uploaded_at'];
+      if (bValue is Timestamp) {
+        bDateTime = bValue.toDate();
+      } else if (bValue is String) {
+        try {
+          bDateTime = DateTime.parse(bValue);
+        } catch (e) {
+          // Ignore parse errors
+        }
+      }
+
+      if (aDateTime == null || bDateTime == null) return 0;
+      return bDateTime.compareTo(aDateTime);
     });
 
     final latestTransaction = transactions.first;
     final transactionType = latestTransaction['type'] as String? ?? '';
     final transactionStatus = latestTransaction['status'] as String? ?? '';
     final location = latestTransaction['location'] as String? ?? 'Unknown';
-    final uploadedAt = latestTransaction['uploaded_at'] as Timestamp?;
+
+    // Handle uploaded_at which could be Timestamp or String
+    DateTime? lastActivity;
+    final uploadedAtValue = latestTransaction['uploaded_at'];
+    if (uploadedAtValue != null) {
+      if (uploadedAtValue is Timestamp) {
+        lastActivity = uploadedAtValue.toDate();
+      } else if (uploadedAtValue is String) {
+        try {
+          lastActivity = DateTime.parse(uploadedAtValue);
+        } catch (e) {
+          // Ignore parse errors
+        }
+      }
+    }
 
     // Enhanced status logic to include Reserved status:
     // - Stock_Out with status='Reserved' → Reserved
@@ -223,7 +261,7 @@ class InventoryManagementService {
     return {
       'status': status,
       'location': location,
-      'lastActivity': uploadedAt?.toDate(),
+      'lastActivity': lastActivity,
     };
   }
 

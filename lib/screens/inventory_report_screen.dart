@@ -780,9 +780,25 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
                                     final status =
                                         transaction['status'] as String? ??
                                         'Unknown';
-                                    final uploadedAt =
-                                        transaction['uploaded_at']
-                                            as Timestamp?;
+
+                                    // Handle uploaded_at which could be Timestamp or String
+                                    DateTime? uploadedAtDate;
+                                    final uploadedAtValue =
+                                        transaction['uploaded_at'];
+                                    if (uploadedAtValue != null) {
+                                      if (uploadedAtValue is Timestamp) {
+                                        uploadedAtDate = uploadedAtValue
+                                            .toDate();
+                                      } else if (uploadedAtValue is String) {
+                                        try {
+                                          uploadedAtDate = DateTime.parse(
+                                            uploadedAtValue,
+                                          );
+                                        } catch (e) {
+                                          // Ignore parse errors
+                                        }
+                                      }
+                                    }
 
                                     return Padding(
                                       padding: const EdgeInsets.symmetric(
@@ -808,11 +824,11 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
                                               ),
                                             ),
                                           ),
-                                          if (uploadedAt != null)
+                                          if (uploadedAtDate != null)
                                             Text(
                                               DateFormat(
                                                 'MMM dd',
-                                              ).format(uploadedAt.toDate()),
+                                              ).format(uploadedAtDate),
                                               style: TextStyle(
                                                 fontSize: 10,
                                                 color: Colors.grey.shade600,

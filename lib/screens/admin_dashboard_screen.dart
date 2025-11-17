@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../providers/auth_provider.dart';
 import '../services/dashboard_service.dart';
 import '../services/invoice_service.dart';
@@ -132,12 +133,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         const SizedBox(height: 24),
 
                         // Data fix utilities
-                        _buildDataFixSection(),
-                        const SizedBox(height: 24),
+                        // _buildDataFixSection(),
+                        // const SizedBox(height: 24),
 
                         // Debug section for inventory consistency
-                        _buildDebugSection(),
-                        const SizedBox(height: 24),
+                        // _buildDebugSection(),
+                        // const SizedBox(height: 24),
 
                         // Key metrics cards
                         _buildKeyMetricsSection(),
@@ -291,101 +292,101 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
-  Widget _buildDataFixSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Data Utilities',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 12),
-        Card(
-          child: InkWell(
-            onTap: _fixInvoicedTransactionStatus,
-            borderRadius: BorderRadius.circular(12),
-            child: const Padding(
-              padding: EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Icon(Icons.build_circle, size: 32, color: Colors.orange),
-                  SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Fix Transaction Status',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        SizedBox(height: 4),
-                        Text(
-                          'Fix transactions with incorrect Invoiced status',
-                          style: TextStyle(fontSize: 12, color: Colors.grey),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(Icons.arrow_forward_ios, size: 16),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+  // Widget _buildDataFixSection() {
+  //   return Column(
+  //     crossAxisAlignment: CrossAxisAlignment.start,
+  //     children: [
+  //       const Text(
+  //         'Data Utilities',
+  //         style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+  //       ),
+  //       const SizedBox(height: 12),
+  //       Card(
+  //         child: InkWell(
+  //           onTap: _fixInvoicedTransactionStatus,
+  //           borderRadius: BorderRadius.circular(12),
+  //           child: const Padding(
+  //             padding: EdgeInsets.all(16),
+  //             child: Row(
+  //               children: [
+  //                 Icon(Icons.build_circle, size: 32, color: Colors.orange),
+  //                 SizedBox(width: 16),
+  //                 Expanded(
+  //                   child: Column(
+  //                     crossAxisAlignment: CrossAxisAlignment.start,
+  //                     children: [
+  //                       Text(
+  //                         'Fix Transaction Status',
+  //                         style: TextStyle(
+  //                           fontSize: 16,
+  //                           fontWeight: FontWeight.bold,
+  //                         ),
+  //                       ),
+  //                       SizedBox(height: 4),
+  //                       Text(
+  //                         'Fix transactions with incorrect Invoiced status',
+  //                         style: TextStyle(fontSize: 12, color: Colors.grey),
+  //                       ),
+  //                     ],
+  //                   ),
+  //                 ),
+  //                 Icon(Icons.arrow_forward_ios, size: 16),
+  //               ],
+  //             ),
+  //           ),
+  //         ),
+  //       ),
+  //     ],
+  //   );
+  // }
 
-  Widget _buildDebugSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Debug Tools',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 12),
-        Card(
-          child: InkWell(
-            onTap: _verifyInventoryConsistency,
-            borderRadius: BorderRadius.circular(12),
-            child: const Padding(
-              padding: EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Icon(Icons.analytics, size: 32, color: Colors.blue),
-                  SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Verify Inventory Consistency',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        SizedBox(height: 4),
-                        Text(
-                          'Check if Dashboard Active Stock matches Monthly Remaining',
-                          style: TextStyle(fontSize: 12, color: Colors.grey),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(Icons.arrow_forward_ios, size: 16),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+  // Widget _buildDebugSection() {
+  //   return Column(
+  //     crossAxisAlignment: CrossAxisAlignment.start,
+  //     children: [
+  //       const Text(
+  //         'Debug Tools',
+  //         style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+  //       ),
+  //       const SizedBox(height: 12),
+  //       Card(
+  //         child: InkWell(
+  //           onTap: _verifyInventoryConsistency,
+  //           borderRadius: BorderRadius.circular(12),
+  //           child: const Padding(
+  //             padding: EdgeInsets.all(16),
+  //             child: Row(
+  //               children: [
+  //                 Icon(Icons.analytics, size: 32, color: Colors.blue),
+  //                 SizedBox(width: 16),
+  //                 Expanded(
+  //                   child: Column(
+  //                     crossAxisAlignment: CrossAxisAlignment.start,
+  //                     children: [
+  //                       Text(
+  //                         'Verify Inventory Consistency',
+  //                         style: TextStyle(
+  //                           fontSize: 16,
+  //                           fontWeight: FontWeight.bold,
+  //                         ),
+  //                       ),
+  //                       SizedBox(height: 4),
+  //                       Text(
+  //                         'Check if Dashboard Active Stock matches Monthly Remaining',
+  //                         style: TextStyle(fontSize: 12, color: Colors.grey),
+  //                       ),
+  //                     ],
+  //                   ),
+  //                 ),
+  //                 Icon(Icons.arrow_forward_ios, size: 16),
+  //               ],
+  //             ),
+  //           ),
+  //         ),
+  //       ),
+  //     ],
+  //   );
+  // }
 
   Future<void> _verifyInventoryConsistency() async {
     // Show loading dialog
@@ -1140,18 +1141,30 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
                   String timeAgo = 'Unknown time';
                   if (uploadedAt != null) {
-                    final timestamp = uploadedAt.toDate();
-                    final now = DateTime.now();
-                    final difference = now.difference(timestamp);
+                    DateTime? timestamp;
+                    if (uploadedAt is Timestamp) {
+                      timestamp = uploadedAt.toDate();
+                    } else if (uploadedAt is String) {
+                      try {
+                        timestamp = DateTime.parse(uploadedAt);
+                      } catch (e) {
+                        // Ignore parse errors
+                      }
+                    }
 
-                    if (difference.inDays > 0) {
-                      timeAgo = '${difference.inDays}d ago';
-                    } else if (difference.inHours > 0) {
-                      timeAgo = '${difference.inHours}h ago';
-                    } else if (difference.inMinutes > 0) {
-                      timeAgo = '${difference.inMinutes}m ago';
-                    } else {
-                      timeAgo = 'Just now';
+                    if (timestamp != null) {
+                      final now = DateTime.now();
+                      final difference = now.difference(timestamp);
+
+                      if (difference.inDays > 0) {
+                        timeAgo = '${difference.inDays}d ago';
+                      } else if (difference.inHours > 0) {
+                        timeAgo = '${difference.inHours}h ago';
+                      } else if (difference.inMinutes > 0) {
+                        timeAgo = '${difference.inMinutes}m ago';
+                      } else {
+                        timeAgo = 'Just now';
+                      }
                     }
                   }
 

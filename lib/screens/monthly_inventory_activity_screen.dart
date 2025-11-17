@@ -879,7 +879,19 @@ class _MonthlyInventoryActivityScreenState
 
   /// Build individual stock in item card with improved layout
   Widget _buildStockInItemCard(Map<String, dynamic> item) {
-    final date = item['date']?.toDate();
+    DateTime? date;
+    final dateValue = item['date'];
+    if (dateValue != null) {
+      if (dateValue is Timestamp) {
+        date = dateValue.toDate();
+      } else if (dateValue is String) {
+        try {
+          date = DateTime.parse(dateValue);
+        } catch (e) {
+          // Ignore parse errors
+        }
+      }
+    }
     final dateStr = date != null
         ? DateFormat('MMM dd, yyyy').format(date)
         : 'N/A';
@@ -1130,7 +1142,19 @@ class _MonthlyInventoryActivityScreenState
 
   /// Build individual stock out item card with improved layout
   Widget _buildStockOutItemCard(Map<String, dynamic> item) {
-    final date = item['date']?.toDate();
+    DateTime? date;
+    final dateValue = item['date'];
+    if (dateValue != null) {
+      if (dateValue is Timestamp) {
+        date = dateValue.toDate();
+      } else if (dateValue is String) {
+        try {
+          date = DateTime.parse(dateValue);
+        } catch (e) {
+          // Ignore parse errors
+        }
+      }
+    }
     final dateStr = date != null
         ? DateFormat('MMM dd, yyyy').format(date)
         : 'N/A';
@@ -1752,7 +1776,19 @@ class _MonthlyInventoryActivityScreenState
 
   /// Build individual remaining item card
   Widget _buildRemainingItemCard(Map<String, dynamic> item) {
-    final date = item['date']?.toDate();
+    DateTime? date;
+    final dateValue = item['date'];
+    if (dateValue != null) {
+      if (dateValue is Timestamp) {
+        date = dateValue.toDate();
+      } else if (dateValue is String) {
+        try {
+          date = DateTime.parse(dateValue);
+        } catch (e) {
+          // Ignore parse errors
+        }
+      }
+    }
     final dateStr = date != null
         ? DateFormat('MMM dd, yyyy').format(date)
         : 'N/A';
