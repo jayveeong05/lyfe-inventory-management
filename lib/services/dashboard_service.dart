@@ -11,9 +11,9 @@ class DashboardService {
         'totalInventoryItems': 0,
         'activeStock': 0,
         'stockedOutItems': 0,
-        'totalPurchaseOrders': 0,
-        'invoicedPOs': 0,
-        'pendingPOs': 0,
+        'totalOrders': 0,
+        'invoicedOrders': 0,
+        'pendingOrders': 0,
         'totalTransactions': 0,
         'stockInTransactions': 0,
         'stockOutTransactions': 0,
@@ -27,7 +27,7 @@ class DashboardService {
       final futures = await Future.wait([
         _getInventoryStats(),
         _getTransactionStats(),
-        _getPurchaseOrderStats(),
+        _getOrderStats(),
         _getRecentTransactions(),
         _getTopCategories(),
         _getMonthlyStats(),
@@ -142,34 +142,34 @@ class DashboardService {
     }
   }
 
-  // Get purchase order statistics
-  Future<Map<String, dynamic>> _getPurchaseOrderStats() async {
+  // Get order statistics
+  Future<Map<String, dynamic>> _getOrderStats() async {
     try {
-      final poSnapshot = await _firestore.collection('purchase_orders').get();
-      final totalPurchaseOrders = poSnapshot.docs.length;
+      final orderSnapshot = await _firestore.collection('orders').get();
+      final totalOrders = orderSnapshot.docs.length;
 
-      int invoicedPOs = 0;
-      int pendingPOs = 0;
+      int invoicedOrders = 0;
+      int pendingOrders = 0;
 
-      for (final doc in poSnapshot.docs) {
+      for (final doc in orderSnapshot.docs) {
         final data = doc.data();
         final status = data['status'] as String?;
 
         if (status == 'Invoiced') {
-          invoicedPOs++;
+          invoicedOrders++;
         } else {
-          pendingPOs++;
+          pendingOrders++;
         }
       }
 
       return {
-        'totalPurchaseOrders': totalPurchaseOrders,
-        'invoicedPOs': invoicedPOs,
-        'pendingPOs': pendingPOs,
+        'totalOrders': totalOrders,
+        'invoicedOrders': invoicedOrders,
+        'pendingOrders': pendingOrders,
       };
     } catch (e) {
-      print('Error fetching purchase order stats: $e');
-      return {'totalPurchaseOrders': 0, 'invoicedPOs': 0, 'pendingPOs': 0};
+      print('Error fetching order stats: $e');
+      return {'totalOrders': 0, 'invoicedOrders': 0, 'pendingOrders': 0};
     }
   }
 
@@ -267,9 +267,9 @@ class DashboardService {
       'totalInventoryItems': 0,
       'activeStock': 0,
       'stockedOutItems': 0,
-      'totalPurchaseOrders': 0,
-      'invoicedPOs': 0,
-      'pendingPOs': 0,
+      'totalOrders': 0,
+      'invoicedOrders': 0,
+      'pendingOrders': 0,
       'totalTransactions': 0,
       'stockInTransactions': 0,
       'stockOutTransactions': 0,

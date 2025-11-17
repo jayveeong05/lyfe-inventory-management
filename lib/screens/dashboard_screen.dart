@@ -111,8 +111,8 @@ class DashboardScreen extends StatelessWidget {
                       ),
                       _buildDashboardButton(
                         context,
-                        'Stock Out',
-                        'Create purchase orders',
+                        'Order',
+                        'Create orders',
                         Icons.remove_circle_outline,
                         Colors.red,
                         () {

@@ -7,6 +7,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/invoice_service.dart';
 import '../services/invoice_ocr_service.dart';
+import '../services/file_service.dart';
+import '../services/order_service.dart';
 import '../providers/auth_provider.dart';
 import '../utils/platform_features.dart';
 
@@ -36,10 +38,16 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   bool _isExtractingOCR = false;
 
   final InvoiceOcrService _ocrService = InvoiceOcrService();
+  late final FileService _fileService;
+  late final OrderService _orderService;
 
   @override
   void initState() {
     super.initState();
+    // Initialize services with AuthProvider
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    _orderService = OrderService(authService: authProvider.authService);
+    _fileService = FileService(authService: authProvider.authService);
     _loadAvailablePOs();
   }
 
@@ -71,10 +79,10 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
         authService: authProvider.authService,
       );
 
-      final pos = await invoiceService.getAllPurchaseOrders();
+      final orders = await invoiceService.getAllOrders();
 
       setState(() {
-        _allPOs = pos;
+        _allPOs = orders;
         _isLoadingPOs = false;
       });
     } catch (e) {
@@ -85,7 +93,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error loading purchase orders: $e'),
+            content: Text('Error loading orders: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -105,7 +113,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
         authService: authProvider.authService,
       );
 
-      final invoice = await invoiceService.getInvoiceByPoId(poId);
+      final invoice = await invoiceService.getInvoiceByOrderId(poId);
 
       setState(() {
         _currentInvoice = invoice;
@@ -475,6 +483,128 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
     );
   }
 
+  /// New file-based invoice upload using FileService and OrderService
+  Future<void> _uploadInvoiceWithFileService() async {
+    if (!_formKey.currentState!.validate() ||
+        _selectedPOId == null ||
+        _selectedFile == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Please fill in all required fields and select a PDF file',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Get the selected order to extract order_number
+    final selectedOrder = _selectedPO;
+    if (selectedOrder == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Selected order not found'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final orderNumber = selectedOrder['order_number'] as String?;
+    if (orderNumber == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Order number not found'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isUploading = true;
+    });
+
+    try {
+      // Step 1: Validate file before upload
+      final fileValidation = await _fileService.validateFile(
+        _selectedFile!,
+        'invoice',
+      );
+      if (!fileValidation['valid']) {
+        throw Exception(fileValidation['error'] ?? 'File validation failed');
+      }
+
+      // Step 2: Upload file using FileService
+      final uploadResult = await _fileService.uploadFile(
+        file: _selectedFile!,
+        orderNumber: orderNumber,
+        fileType: 'invoice',
+      );
+
+      if (!uploadResult.success) {
+        throw Exception(uploadResult.error ?? 'File upload failed');
+      }
+
+      // Step 3: Update order with file reference using OrderService
+      final orderUpdateResult = await _orderService.updateOrderWithFile(
+        orderNumber: orderNumber,
+        fileId: uploadResult.fileId!,
+        fileType: 'invoice',
+      );
+
+      if (!orderUpdateResult['success']) {
+        // If order update fails, we should clean up the uploaded file
+        // TODO: Implement file cleanup on order update failure
+        throw Exception(orderUpdateResult['error'] ?? 'Order update failed');
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Success! Invoice uploaded successfully.\n'
+              'Order status: ${orderUpdateResult['new_status']}\n'
+              'File: ${uploadResult.fileModel?.originalFilename ?? 'Unknown'}',
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+
+        // Clear form and reload data
+        _invoiceNumberController.clear();
+        _remarksController.clear();
+        setState(() {
+          _selectedPOId = null;
+          _selectedFile = null;
+          _selectedFileName = null;
+          _selectedDate = DateTime.now();
+          _currentInvoice = null;
+        });
+
+        // Reload available orders to reflect status changes
+        _loadAvailablePOs();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error uploading invoice: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    } finally {
+      setState(() {
+        _isUploading = false;
+      });
+    }
+  }
+
+  /// Legacy invoice upload method (kept for replace functionality)
   Future<void> _uploadInvoice() async {
     if (!_formKey.currentState!.validate() ||
         _selectedPOId == null ||
@@ -609,7 +739,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                   ),
                   SizedBox(height: 16),
                   Text(
-                    'No Purchase Orders Available',
+                    'No Orders Available',
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -618,7 +748,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                   ),
                   SizedBox(height: 8),
                   Text(
-                    'All purchase orders have been invoiced\nor no purchase orders exist.',
+                    'All orders have been invoiced\nor no orders exist.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Colors.grey),
                   ),
@@ -643,16 +773,16 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                         ),
                       ),
                       child: const Text(
-                        '🟠 Pending (Can upload) • 🟢 Invoiced (Processed)',
+                        '🟠 Reserved (Can upload) • 🟢 Invoiced (Processed)',
                         style: TextStyle(fontSize: 11),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     const SizedBox(height: 16),
 
-                    // Purchase Order Selection
+                    // Order Selection
                     const Text(
-                      'Select Purchase Order',
+                      'Select Order',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -669,7 +799,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                       child: DropdownButtonFormField<String>(
                         initialValue: _selectedPOId,
                         decoration: const InputDecoration(
-                          hintText: 'Choose a Purchase Order',
+                          hintText: 'Choose an Order',
                           border: InputBorder.none,
                           contentPadding: EdgeInsets.symmetric(
                             horizontal: 16,
@@ -682,7 +812,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                                 const DropdownMenuItem<String>(
                                   value: null,
                                   child: Text(
-                                    'No purchase orders available',
+                                    'No orders available',
                                     style: TextStyle(color: Colors.grey),
                                   ),
                                 ),
@@ -690,7 +820,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                             : _allPOs.map((po) {
                                 final status =
                                     po['status'] as String? ?? 'Unknown';
-                                final isPending = status == 'Pending';
+                                final isReserved = status == 'Reserved';
                                 final isInvoiced = status == 'Invoiced';
 
                                 return DropdownMenuItem<String>(
@@ -703,7 +833,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                                         height: 8,
                                         decoration: BoxDecoration(
                                           shape: BoxShape.circle,
-                                          color: isPending
+                                          color: isReserved
                                               ? Colors.orange
                                               : isInvoiced
                                               ? Colors.green
@@ -713,10 +843,10 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                                       const SizedBox(width: 12),
                                       Expanded(
                                         child: Text(
-                                          'PO: ${po['po_number']}',
+                                          'Order: ${po['order_number'] ?? 'N/A'}',
                                           style: TextStyle(
                                             fontWeight: FontWeight.w500,
-                                            color: isPending
+                                            color: isReserved
                                                 ? Colors.black87
                                                 : Colors.grey[600],
                                           ),
@@ -728,7 +858,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                                           vertical: 2,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: isPending
+                                          color: isReserved
                                               ? Colors.orange.shade100
                                               : isInvoiced
                                               ? Colors.green.shade100
@@ -742,7 +872,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                                           style: TextStyle(
                                             fontSize: 10,
                                             fontWeight: FontWeight.w500,
-                                            color: isPending
+                                            color: isReserved
                                                 ? Colors.orange.shade800
                                                 : isInvoiced
                                                 ? Colors.green.shade800
@@ -779,7 +909,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                         },
                         validator: (value) {
                           if (value == null) {
-                            return 'Please select a purchase order';
+                            return 'Please select an order';
                           }
                           return null;
                         },
@@ -811,7 +941,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                                 ),
                                 const SizedBox(width: 8),
                                 Text(
-                                  'Selected Purchase Order Details',
+                                  'Selected Order Details',
                                   style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.bold,
@@ -822,8 +952,8 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                             ),
                             const SizedBox(height: 12),
                             _buildInfoRow(
-                              'PO Number',
-                              _selectedPO!['po_number'],
+                              'Order Number',
+                              _selectedPO!['order_number'],
                             ),
                             _buildInfoRow('Status', _selectedPO!['status']),
                             _buildInfoRow(
@@ -1022,7 +1152,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                'Please select a purchase order from the dropdown above to view details',
+                                'Please select an order from the dropdown above to view details',
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: Colors.grey.shade600,
@@ -1037,7 +1167,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
 
                     // Show form only for pending POs or when in replace mode
                     if (_selectedPO != null &&
-                        (_selectedPO!['status'] == 'Pending' ||
+                        (_selectedPO!['status'] == 'Reserved' ||
                             _isReplaceMode)) ...[
                       const SizedBox(height: 24),
 
@@ -1207,7 +1337,9 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                         width: double.infinity,
                         height: 50,
                         child: ElevatedButton(
-                          onPressed: _isUploading ? null : _uploadInvoice,
+                          onPressed: _isUploading
+                              ? null
+                              : _uploadInvoiceWithFileService,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.blue,
                             foregroundColor: Colors.white,

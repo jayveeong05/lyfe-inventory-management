@@ -2,53 +2,50 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'auth_service.dart';
-import 'purchase_order_service.dart';
+import 'order_service.dart';
 
 class InvoiceService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
   final AuthService _authService;
-  late final PurchaseOrderService _purchaseOrderService;
+  late final OrderService _orderService;
 
   InvoiceService({AuthService? authService})
     : _authService = authService ?? AuthService() {
-    _purchaseOrderService = PurchaseOrderService(authService: _authService);
+    _orderService = OrderService(authService: _authService);
   }
 
-  /// Get all purchase orders (regardless of status)
-  Future<List<Map<String, dynamic>>> getAllPurchaseOrders() async {
-    return await _purchaseOrderService.getAllPurchaseOrders();
+  /// Get all orders (regardless of status)
+  Future<List<Map<String, dynamic>>> getAllOrders() async {
+    return await _orderService.getAllOrders();
   }
 
-  /// Get purchase orders with Pending status (available for invoicing)
-  Future<List<Map<String, dynamic>>> getAvailablePurchaseOrders() async {
-    return await _purchaseOrderService.getAllPurchaseOrders(status: 'Pending');
+  /// Get orders with Reserved status (available for invoicing)
+  Future<List<Map<String, dynamic>>> getAvailableOrders() async {
+    return await _orderService.getAllOrders(status: 'Reserved');
   }
 
-  /// Get purchase order by ID
-  Future<Map<String, dynamic>?> getPurchaseOrderById(String poId) async {
+  /// Get order by ID
+  Future<Map<String, dynamic>?> getOrderById(String orderId) async {
     try {
-      final doc = await _firestore
-          .collection('purchase_orders')
-          .doc(poId)
-          .get();
+      final doc = await _firestore.collection('orders').doc(orderId).get();
 
       if (doc.exists) {
         final data = doc.data() as Map<String, dynamic>;
-        final poData = <String, dynamic>{'id': doc.id, ...data};
+        final orderData = <String, dynamic>{'id': doc.id, ...data};
 
-        // Get item details from transaction IDs using purchase order service logic
+        // Get item details from transaction IDs using order service logic
         if (data['transaction_ids'] != null) {
-          final items = await _purchaseOrderService.getItemsFromTransactionIds(
+          final items = await _orderService.getItemsFromTransactionIds(
             List<int>.from(data['transaction_ids']),
           );
-          poData['items'] = items;
+          orderData['items'] = items;
         } else {
           // Fallback for old format (items array)
-          poData['items'] = data['items'] ?? [];
+          orderData['items'] = data['items'] ?? [];
         }
 
-        return poData;
+        return orderData;
       }
       return null;
     } catch (e) {
@@ -81,15 +78,15 @@ class InvoiceService {
         return {'success': false, 'error': 'File size must be less than 10MB.'};
       }
 
-      // Get purchase order details
-      final poData = await getPurchaseOrderById(poId);
-      if (poData == null) {
-        return {'success': false, 'error': 'Purchase order not found.'};
+      // Get order details
+      final orderData = await getOrderById(poId);
+      if (orderData == null) {
+        return {'success': false, 'error': 'Order not found.'};
       }
 
       // Check if invoice number already exists
       final existingInvoice = await _firestore
-          .collection('purchase_orders')
+          .collection('orders')
           .where('invoice_number', isEqualTo: invoiceNumber)
           .get();
 
@@ -125,19 +122,19 @@ class InvoiceService {
         'updated_at': FieldValue.serverTimestamp(),
       };
 
-      // Update purchase order with invoice data
-      final poRef = _firestore.collection('purchase_orders').doc(poId);
-      await poRef.update(invoiceData);
+      // Update order with invoice data
+      final orderRef = _firestore.collection('orders').doc(poId);
+      await orderRef.update(invoiceData);
 
       // Update related transactions with invoice information (but keep status as 'Reserved')
       final batch = _firestore.batch();
       List<int> transactionIds = [];
 
       // Handle new format (transaction_ids) and old format (items array)
-      if (poData['transaction_ids'] != null) {
-        transactionIds = List<int>.from(poData['transaction_ids']);
-      } else if (poData['items'] != null) {
-        final items = poData['items'] as List<dynamic>;
+      if (orderData['transaction_ids'] != null) {
+        transactionIds = List<int>.from(orderData['transaction_ids']);
+      } else if (orderData['items'] != null) {
+        final items = orderData['items'] as List<dynamic>;
         for (final item in items) {
           final transactionId = item['transaction_id'] as int?;
           if (transactionId != null) {
@@ -182,14 +179,14 @@ class InvoiceService {
     }
   }
 
-  /// Get all invoices (from purchase orders with invoice data)
+  /// Get all invoices (from orders with invoice data)
   Future<List<Map<String, dynamic>>> getAllInvoices({
     String? status,
     int? limit,
   }) async {
     try {
       Query query = _firestore
-          .collection('purchase_orders')
+          .collection('orders')
           .where('invoice_number', isNull: false)
           .orderBy('invoice_uploaded_at', descending: true);
 
@@ -211,11 +208,11 @@ class InvoiceService {
     }
   }
 
-  /// Get invoice by invoice number (from purchase orders)
+  /// Get invoice by invoice number (from orders)
   Future<Map<String, dynamic>?> getInvoiceByNumber(String invoiceNumber) async {
     try {
       final querySnapshot = await _firestore
-          .collection('purchase_orders')
+          .collection('orders')
           .where('invoice_number', isEqualTo: invoiceNumber)
           .get();
 
@@ -237,22 +234,19 @@ class InvoiceService {
         return {'success': false, 'error': 'User not authenticated.'};
       }
 
-      // Get PO data
-      final poDoc = await _firestore
-          .collection('purchase_orders')
-          .doc(poId)
-          .get();
+      // Get order data
+      final orderDoc = await _firestore.collection('orders').doc(poId).get();
 
-      if (!poDoc.exists) {
-        return {'success': false, 'error': 'Purchase Order not found.'};
+      if (!orderDoc.exists) {
+        return {'success': false, 'error': 'Order not found.'};
       }
 
-      final poData = poDoc.data() as Map<String, dynamic>;
-      final pdfPath = poData['pdf_path'] as String?;
+      final orderData = orderDoc.data() as Map<String, dynamic>;
+      final pdfPath = orderData['pdf_path'] as String?;
 
-      // Remove invoice data from PO and revert status
-      await poDoc.reference.update({
-        'status': 'Pending',
+      // Remove invoice data from order and revert status
+      await orderDoc.reference.update({
+        'status': 'Reserved',
         'invoice_number': FieldValue.delete(),
         'invoice_date': FieldValue.delete(),
         'pdf_url': FieldValue.delete(),
@@ -272,10 +266,10 @@ class InvoiceService {
       List<int> transactionIds = [];
 
       // Handle new format (transaction_ids) and old format (items array)
-      if (poData['transaction_ids'] != null) {
-        transactionIds = List<int>.from(poData['transaction_ids']);
-      } else if (poData['items'] != null) {
-        final items = poData['items'] as List<dynamic>;
+      if (orderData['transaction_ids'] != null) {
+        transactionIds = List<int>.from(orderData['transaction_ids']);
+      } else if (orderData['items'] != null) {
+        final items = orderData['items'] as List<dynamic>;
         for (final item in items) {
           final transactionId = item['transaction_id'] as int?;
           if (transactionId != null) {
@@ -327,7 +321,7 @@ class InvoiceService {
   Future<bool> invoiceNumberExists(String invoiceNumber) async {
     try {
       final querySnapshot = await _firestore
-          .collection('purchase_orders')
+          .collection('orders')
           .where('invoice_number', isEqualTo: invoiceNumber)
           .get();
 
@@ -401,13 +395,10 @@ class InvoiceService {
     }
   }
 
-  /// Get invoice by PO ID (from purchase order document)
-  Future<Map<String, dynamic>?> getInvoiceByPoId(String poId) async {
+  /// Get invoice by order ID (from order document)
+  Future<Map<String, dynamic>?> getInvoiceByOrderId(String orderId) async {
     try {
-      final doc = await _firestore
-          .collection('purchase_orders')
-          .doc(poId)
-          .get();
+      final doc = await _firestore.collection('orders').doc(orderId).get();
 
       if (doc.exists) {
         final data = doc.data() as Map<String, dynamic>;
@@ -447,18 +438,15 @@ class InvoiceService {
         return {'success': false, 'error': 'File size must be less than 10MB.'};
       }
 
-      // Get existing PO with invoice data
-      final poDoc = await _firestore
-          .collection('purchase_orders')
-          .doc(poId)
-          .get();
-      if (!poDoc.exists) {
-        return {'success': false, 'error': 'Purchase Order not found.'};
+      // Get existing order with invoice data
+      final orderDoc = await _firestore.collection('orders').doc(poId).get();
+      if (!orderDoc.exists) {
+        return {'success': false, 'error': 'Order not found.'};
       }
 
-      final poData = poDoc.data() as Map<String, dynamic>;
-      final oldPdfPath = poData['pdf_path'] as String?;
-      final currentInvoiceNumber = poData['invoice_number'] as String?;
+      final orderData = orderDoc.data() as Map<String, dynamic>;
+      final oldPdfPath = orderData['pdf_path'] as String?;
+      final currentInvoiceNumber = orderData['invoice_number'] as String?;
 
       if (currentInvoiceNumber == null) {
         return {'success': false, 'error': 'No invoice found for this PO.'};
@@ -468,7 +456,7 @@ class InvoiceService {
       if (newInvoiceNumber != null &&
           newInvoiceNumber != currentInvoiceNumber) {
         final existingInvoice = await _firestore
-            .collection('purchase_orders')
+            .collection('orders')
             .where('invoice_number', isEqualTo: newInvoiceNumber)
             .get();
 
@@ -514,8 +502,8 @@ class InvoiceService {
         updatedData['invoice_remarks'] = remarks;
       }
 
-      // Update PO with new invoice data
-      await poDoc.reference.update(updatedData);
+      // Update order with new invoice data
+      await orderDoc.reference.update(updatedData);
 
       // Update related transactions if invoice number changed
       if (newInvoiceNumber != null) {
@@ -523,10 +511,10 @@ class InvoiceService {
         List<int> transactionIds = [];
 
         // Handle new format (transaction_ids) and old format (items array)
-        if (poData['transaction_ids'] != null) {
-          transactionIds = List<int>.from(poData['transaction_ids']);
-        } else if (poData['items'] != null) {
-          final items = poData['items'] as List<dynamic>;
+        if (orderData['transaction_ids'] != null) {
+          transactionIds = List<int>.from(orderData['transaction_ids']);
+        } else if (orderData['items'] != null) {
+          final items = orderData['items'] as List<dynamic>;
           for (final item in items) {
             final transactionId = item['transaction_id'] as int?;
             if (transactionId != null) {

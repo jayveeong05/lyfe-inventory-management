@@ -1,7 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
-import '../services/purchase_order_service.dart';
+import '../services/order_service.dart';
 import '../providers/auth_provider.dart';
 import '../utils/platform_features.dart';
 import 'qr_scanner_screen.dart';
@@ -107,7 +108,16 @@ class _StockOutScreenState extends State<StockOutScreen> {
             descending: true,
           ) // Get latest transactions first
           .limit(1000) // Add limit to prevent performance issues
-          .get();
+          .get()
+          .timeout(
+            const Duration(seconds: 10),
+            onTimeout: () {
+              throw TimeoutException(
+                'Query timeout',
+                const Duration(seconds: 10),
+              );
+            },
+          );
 
       if (allTransactionsQuery.docs.isEmpty) {
         setState(() {
@@ -142,7 +152,7 @@ class _StockOutScreenState extends State<StockOutScreen> {
         // Item is available if:
         // 1. Latest transaction type is Stock_In AND status is Active
         // OR
-        // 2. No Stock_Out transaction exists for this item yet
+        // 2. No Order transaction exists for this item yet
         if (transaction['type'] == 'Stock_In' &&
             transaction['status'] == 'Active') {
           availableSerialNumbers.add(serialNumber);
@@ -234,11 +244,9 @@ class _StockOutScreenState extends State<StockOutScreen> {
     try {
       // Get the AuthService from the provider
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final purchaseOrderService = PurchaseOrderService(
-        authService: authProvider.authService,
-      );
+      final orderService = OrderService(authService: authProvider.authService);
 
-      final nextEntryNumber = await purchaseOrderService.getNextEntryNumber();
+      final nextEntryNumber = await orderService.getNextEntryNumber();
 
       if (mounted) {
         setState(() {
@@ -353,7 +361,7 @@ class _StockOutScreenState extends State<StockOutScreen> {
     });
   }
 
-  Future<void> _saveStockOut() async {
+  Future<void> _saveOrder() async {
     if (!_formKey.currentState!.validate() ||
         _selectedItems.isEmpty ||
         _selectedLocation == null) {
@@ -375,13 +383,11 @@ class _StockOutScreenState extends State<StockOutScreen> {
     try {
       // Get the AuthService from the provider
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final purchaseOrderService = PurchaseOrderService(
-        authService: authProvider.authService,
-      );
+      final orderService = OrderService(authService: authProvider.authService);
 
-      // Create the multi-item stock-out purchase order
-      final result = await purchaseOrderService.createMultiItemStockOutOrder(
-        poNumber: _poNumberController.text.trim(),
+      // Create the multi-item order
+      final result = await orderService.createMultiItemStockOutOrder(
+        orderNumber: _poNumberController.text.trim(),
         dealerName: _dealerNameController.text.trim(),
         clientName: _clientNameController.text.trim(),
         location: _selectedLocation!,
@@ -443,7 +449,7 @@ class _StockOutScreenState extends State<StockOutScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Stock Out'),
+        title: const Text('Order'),
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
       ),
@@ -456,17 +462,17 @@ class _StockOutScreenState extends State<StockOutScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // PO Number Input
+                    // Order Number Input
                     TextFormField(
                       controller: _poNumberController,
                       decoration: const InputDecoration(
-                        labelText: 'PO Number *',
-                        hintText: 'Enter purchase order number',
+                        labelText: 'Order Number *',
+                        hintText: 'Enter order number',
                         border: OutlineInputBorder(),
                       ),
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
-                          return 'PO Number is required';
+                          return 'Order Number is required';
                         }
                         return null;
                       },
@@ -888,7 +894,7 @@ class _StockOutScreenState extends State<StockOutScreen> {
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                'No items selected. Search and tap on items to add them to the purchase order.',
+                                'No items selected. Search and tap on items to add them to the order.',
                                 style: TextStyle(
                                   color: Colors.orange[700],
                                   fontSize: 14,
@@ -906,7 +912,7 @@ class _StockOutScreenState extends State<StockOutScreen> {
                       width: double.infinity,
                       height: 50,
                       child: ElevatedButton(
-                        onPressed: _isLoading ? null : _saveStockOut,
+                        onPressed: _isLoading ? null : _saveOrder,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.green,
                           foregroundColor: Colors.white,
@@ -916,7 +922,7 @@ class _StockOutScreenState extends State<StockOutScreen> {
                                 color: Colors.white,
                               )
                             : const Text(
-                                'Save Stock Out',
+                                'Save Order',
                                 style: TextStyle(fontSize: 16),
                               ),
                       ),

@@ -111,8 +111,8 @@ class ReportService {
       endDate ??= DateTime.now();
       startDate ??= endDate.subtract(const Duration(days: 30));
 
-      // Build query for purchase orders
-      Query query = _firestore.collection('purchase_orders');
+      // Build query for orders
+      Query query = _firestore.collection('orders');
 
       query = query
           .where(
@@ -164,34 +164,34 @@ class ReportService {
     }
   }
 
-  /// Process sales data from purchase orders and transactions
+  /// Process sales data from orders and transactions
   Future<Map<String, dynamic>> _processSalesData(
-    QuerySnapshot poSnapshot,
+    QuerySnapshot orderSnapshot,
     QuerySnapshot transactionSnapshot,
   ) async {
-    final purchaseOrders = <Map<String, dynamic>>[];
+    final orders = <Map<String, dynamic>>[];
     final customerStats = <String, Map<String, dynamic>>{};
     final locationStats = <String, Map<String, dynamic>>{};
     final dailySales = <String, int>{};
     final categoryStats = <String, Map<String, dynamic>>{};
 
-    int totalPOs = 0;
-    int invoicedPOs = 0;
-    int pendingPOs = 0;
+    int totalOrders = 0;
+    int invoicedOrders = 0;
+    int pendingOrders = 0;
     int totalItems = 0;
 
-    // Process purchase orders
-    for (final doc in poSnapshot.docs) {
+    // Process orders
+    for (final doc in orderSnapshot.docs) {
       final data = doc.data() as Map<String, dynamic>;
-      final poData = {'id': doc.id, ...data};
-      purchaseOrders.add(poData);
+      final orderData = {'id': doc.id, ...data};
+      orders.add(orderData);
 
-      totalPOs++;
+      totalOrders++;
       final status = data['status'] as String? ?? 'Pending';
       if (status == 'Invoiced') {
-        invoicedPOs++;
+        invoicedOrders++;
       } else {
-        pendingPOs++;
+        pendingOrders++;
       }
 
       final itemCount = data['total_items'] as int? ?? 0;
@@ -260,15 +260,15 @@ class ReportService {
 
     return {
       'summary': {
-        'total_purchase_orders': totalPOs,
-        'invoiced_orders': invoicedPOs,
-        'pending_orders': pendingPOs,
+        'total_orders': totalOrders,
+        'invoiced_orders': invoicedOrders,
+        'pending_orders': pendingOrders,
         'total_items_sold': totalItems,
-        'conversion_rate': totalPOs > 0
-            ? (invoicedPOs / totalPOs * 100).toStringAsFixed(1)
+        'conversion_rate': totalOrders > 0
+            ? (invoicedOrders / totalOrders * 100).toStringAsFixed(1)
             : '0.0',
       },
-      'purchase_orders': purchaseOrders,
+      'orders': orders,
       'top_customers': topCustomers
           .take(10)
           .map(
@@ -411,9 +411,19 @@ class ReportService {
           final latestStockOut = stockOutTransactions.first;
           currentStatus = latestStockOut['status'] as String? ?? 'Reserved';
           currentLocation = latestStockOut['location'] as String?;
-          final uploadedAt = latestStockOut['uploaded_at'] as Timestamp?;
-          if (uploadedAt != null) {
-            lastActivity = uploadedAt.toDate();
+
+          // Handle uploaded_at which could be Timestamp or String
+          final uploadedAtValue = latestStockOut['uploaded_at'];
+          if (uploadedAtValue != null) {
+            if (uploadedAtValue is Timestamp) {
+              lastActivity = uploadedAtValue.toDate();
+            } else if (uploadedAtValue is String) {
+              try {
+                lastActivity = DateTime.parse(uploadedAtValue);
+              } catch (e) {
+                // Ignore parse errors
+              }
+            }
           }
         } else {
           currentStatus = 'Reserved'; // Fallback
@@ -426,9 +436,19 @@ class ReportService {
         if (itemTransactions.isNotEmpty) {
           final latestTransaction = itemTransactions.first;
           currentLocation = latestTransaction['location'] as String?;
-          final uploadedAt = latestTransaction['uploaded_at'] as Timestamp?;
-          if (uploadedAt != null) {
-            lastActivity = uploadedAt.toDate();
+
+          // Handle uploaded_at which could be Timestamp or String
+          final uploadedAtValue = latestTransaction['uploaded_at'];
+          if (uploadedAtValue != null) {
+            if (uploadedAtValue is Timestamp) {
+              lastActivity = uploadedAtValue.toDate();
+            } else if (uploadedAtValue is String) {
+              try {
+                lastActivity = DateTime.parse(uploadedAtValue);
+              } catch (e) {
+                // Ignore parse errors
+              }
+            }
           }
         }
       }
@@ -541,7 +561,7 @@ class ReportService {
   /// Get list of unique customers for filtering
   Future<List<String>> getCustomerList() async {
     try {
-      final snapshot = await _firestore.collection('purchase_orders').get();
+      final snapshot = await _firestore.collection('orders').get();
       final customers = <String>{};
 
       for (final doc in snapshot.docs) {
@@ -608,14 +628,13 @@ class ReportService {
     Map<String, dynamic> reportData,
   ) async {
     try {
-      final purchaseOrders =
-          reportData['purchase_orders'] as List<dynamic>? ?? [];
+      final orders = reportData['orders'] as List<dynamic>? ?? [];
 
       // Prepare CSV data
       List<List<dynamic>> csvData = [
         // Header row
         [
-          'PO Number',
+          'Order Number',
           'Customer Dealer',
           'Customer Client',
           'Status',
@@ -625,14 +644,14 @@ class ReportService {
       ];
 
       // Data rows
-      for (final po in purchaseOrders) {
-        final createdDate = po['created_date'] as Timestamp?;
+      for (final order in orders) {
+        final createdDate = order['created_date'] as Timestamp?;
         csvData.add([
-          po['po_number'] ?? '',
-          po['customer_dealer'] ?? '',
-          po['customer_client'] ?? '',
-          po['status'] ?? '',
-          po['total_items'] ?? 0,
+          order['order_number'] ?? '',
+          order['customer_dealer'] ?? '',
+          order['customer_client'] ?? '',
+          order['status'] ?? '',
+          order['total_items'] ?? 0,
           createdDate != null
               ? DateFormat('yyyy-MM-dd HH:mm:ss').format(createdDate.toDate())
               : '',

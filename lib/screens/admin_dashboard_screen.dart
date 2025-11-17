@@ -148,7 +148,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         _buildInventoryOverview(),
                         const SizedBox(height: 24),
 
-                        // Sales & Purchase Orders
+                        // Sales & Orders
                         _buildSalesOverview(),
                         const SizedBox(height: 24),
 
@@ -245,7 +245,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               'Sales Report',
               Icons.analytics,
               Colors.blue,
-              'Purchase orders, customers, and sales analytics',
+              'Orders, customers, and sales analytics',
               () {
                 Navigator.push(
                   context,
@@ -611,10 +611,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             ),
             const SizedBox(height: 8),
             _buildNavigationListItem(
-              'Stock Out',
+              'Order',
               Icons.remove_circle_outline,
               Colors.red,
-              'Create purchase orders',
+              'Create orders',
               () {
                 Navigator.push(
                   context,
@@ -774,8 +774,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           children: [
             Expanded(
               child: _buildMetricCard(
-                'Total POs',
-                _analytics!['totalPurchaseOrders'].toString(),
+                'Total Orders',
+                _analytics!['totalOrders'].toString(),
                 Icons.receipt_long,
                 Colors.orange,
               ),
@@ -941,9 +941,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _buildSalesOverview() {
-    final totalPOs = _analytics!['totalPurchaseOrders'] as int;
-    final invoicedPOs = _analytics!['invoicedPOs'] as int;
-    final pendingPOs = _analytics!['pendingPOs'] as int;
+    final totalOrders = _analytics!['totalOrders'] as int;
+    final invoicedOrders = _analytics!['invoicedOrders'] as int;
+    final pendingOrders = _analytics!['pendingOrders'] as int;
 
     return Card(
       elevation: 4,
@@ -953,7 +953,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Purchase Orders & Sales',
+              'Orders & Sales',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
@@ -962,19 +962,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               children: [
                 _buildStatusIndicator(
                   'Invoiced',
-                  invoicedPOs.toString(),
+                  invoicedOrders.toString(),
                   Colors.green,
                   Icons.check_circle,
                 ),
                 _buildStatusIndicator(
                   'Pending',
-                  pendingPOs.toString(),
+                  pendingOrders.toString(),
                   Colors.orange,
                   Icons.pending,
                 ),
                 _buildStatusIndicator(
-                  'Total POs',
-                  totalPOs.toString(),
+                  'Total Orders',
+                  totalOrders.toString(),
                   Colors.blue,
                   Icons.receipt_long,
                 ),
