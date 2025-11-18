@@ -260,6 +260,143 @@ class InvoiceOcrService {
     };
   }
 
+  /// Extract delivery order data from PDF files using direct text extraction
+  /// Returns a map with 'deliveryNumber', 'deliveryDate', 'confidence', and 'rawText'
+  Future<Map<String, dynamic>> extractDeliveryData(File file) async {
+    try {
+      if (!_isInitialized) {
+        await initialize();
+      }
+
+      debugPrint(
+        '🔍 Starting PDF text extraction for delivery order: ${file.path}',
+      );
+
+      // Check file type - only PDF supported now
+      final fileExtension = path.extension(file.path).toLowerCase();
+
+      if (fileExtension != '.pdf') {
+        return _createErrorResult(
+          'Only PDF files are supported. Please select a PDF file.',
+        );
+      }
+
+      // Extract text from PDF
+      final extractedText = await _extractTextFromPdf(file);
+
+      if (extractedText.isEmpty) {
+        return _createErrorResult(
+          'No text could be extracted from the PDF. The file might be image-based or corrupted.',
+        );
+      }
+
+      debugPrint(
+        '📄 Extracted text length: ${extractedText.length} characters',
+      );
+
+      // Extract delivery number and date
+      final deliveryNumber = _extractDeliveryNumber(extractedText);
+      final deliveryDate = _extractDeliveryDate(extractedText);
+
+      // Calculate confidence based on successful extractions
+      double confidence = 0.0;
+      if (deliveryNumber.isNotEmpty) confidence += 0.5;
+      if (deliveryDate != null) confidence += 0.5;
+
+      debugPrint('🎯 Extraction results:');
+      debugPrint('   Delivery Number: $deliveryNumber');
+      debugPrint('   Delivery Date: $deliveryDate');
+      debugPrint('   Confidence: ${(confidence * 100).toInt()}%');
+
+      return {
+        'success': true,
+        'deliveryNumber': deliveryNumber,
+        'deliveryDate': deliveryDate,
+        'confidence': confidence,
+        'rawText': extractedText,
+      };
+    } catch (e) {
+      debugPrint('❌ Error extracting delivery data: $e');
+      return _createErrorResult('Failed to extract delivery data: $e');
+    }
+  }
+
+  /// Extract delivery number from text using various patterns
+  String _extractDeliveryNumber(String text) {
+    final patterns = [
+      // Common delivery number patterns
+      RegExp(
+        r'delivery\s*(?:order\s*)?(?:no\.?|number)\s*:?\s*([A-Z0-9\-/]+)',
+        caseSensitive: false,
+      ),
+      RegExp(
+        r'do\s*(?:no\.?|number)\s*:?\s*([A-Z0-9\-/]+)',
+        caseSensitive: false,
+      ),
+      RegExp(r'delivery\s*:?\s*([A-Z0-9\-/]+)', caseSensitive: false),
+      RegExp(
+        r'order\s*(?:no\.?|number)\s*:?\s*([A-Z0-9\-/]+)',
+        caseSensitive: false,
+      ),
+      // Generic patterns for alphanumeric codes
+      RegExp(r'\b([A-Z]{2,}\d{3,}|\d{3,}[A-Z]{2,})\b'),
+      RegExp(r'\b([A-Z0-9]{6,})\b'),
+    ];
+
+    for (final pattern in patterns) {
+      final match = pattern.firstMatch(text);
+      if (match != null && match.group(1) != null) {
+        final number = match.group(1)!.trim();
+        if (number.length >= 3) {
+          debugPrint(
+            '✅ Found delivery number with pattern: ${pattern.pattern}',
+          );
+          return number;
+        }
+      }
+    }
+
+    debugPrint('⚠️ No delivery number found');
+    return '';
+  }
+
+  /// Extract delivery date from text using various patterns
+  DateTime? _extractDeliveryDate(String text) {
+    final patterns = [
+      // Date patterns with delivery context
+      RegExp(
+        r'delivery\s*date\s*:?\s*(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})',
+        caseSensitive: false,
+      ),
+      RegExp(
+        r'delivered\s*(?:on\s*)?:?\s*(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})',
+        caseSensitive: false,
+      ),
+      RegExp(
+        r'date\s*:?\s*(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})',
+        caseSensitive: false,
+      ),
+      // Generic date patterns
+      RegExp(r'\b(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})\b'),
+      RegExp(r'\b(\d{2,4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2})\b'),
+    ];
+
+    for (final pattern in patterns) {
+      final match = pattern.firstMatch(text);
+      if (match != null && match.group(1) != null) {
+        final dateStr = match.group(1)!;
+        final parsedDate = _parseDate(dateStr);
+        if (parsedDate != null) {
+          debugPrint('✅ Found delivery date with pattern: ${pattern.pattern}');
+          return parsedDate;
+        }
+      }
+    }
+
+    debugPrint('⚠️ No delivery date found');
+    return null;
+  }
+
   /// Check if OCR service is available
   bool get isAvailable => _isInitialized;
 }

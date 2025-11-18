@@ -13,6 +13,7 @@ import 'monthly_inventory_activity_screen.dart';
 import 'stock_in_screen.dart';
 import 'stock_out_screen.dart';
 import 'invoice_screen.dart';
+import 'delivery_order_screen.dart';
 import 'inventory_management_screen.dart';
 import 'user_management_screen.dart';
 
@@ -646,10 +647,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               Colors.orange,
               'Manage deliveries',
               () {
-                // TODO: Navigate to Delivery Order screen
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Delivery Order feature coming soon!'),
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const DeliveryOrderScreen(),
                   ),
                 );
               },

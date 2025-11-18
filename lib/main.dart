@@ -11,6 +11,7 @@ import 'screens/stock_in_screen.dart';
 import 'screens/stock_out_screen.dart';
 import 'screens/data_upload_screen.dart';
 import 'screens/invoice_screen.dart';
+import 'screens/delivery_order_screen.dart';
 import 'screens/inventory_management_screen.dart';
 
 void main() async {
@@ -95,6 +96,7 @@ class _InventoryProAppState extends State<InventoryProApp>
         '/stock_out': (context) => const StockOutScreen(),
         '/data_upload': (context) => const DataUploadScreen(),
         '/invoice': (context) => const InvoiceScreen(),
+        '/delivery_order': (context) => const DeliveryOrderScreen(),
         '/inventory_management': (context) => const InventoryManagementScreen(),
       },
       home: Consumer<AuthProvider>(

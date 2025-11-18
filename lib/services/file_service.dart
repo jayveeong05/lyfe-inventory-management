@@ -137,11 +137,12 @@ class FileService {
     return '$basePath/$fileName';
   }
 
-  /// Upload file to Firebase Storage with retry logic
+  /// Upload file to Firebase Storage with retry logic and timeout
   Future<String> _uploadToStorage(
     File file,
     String filePath, {
-    int maxRetries = 3,
+    int maxRetries = 2,
+    Duration timeout = const Duration(seconds: 30),
   }) async {
     Exception? lastException;
 
@@ -159,11 +160,20 @@ class FileService {
           },
         );
 
-        // Upload file
+        // Upload file with timeout
         final uploadTask = ref.putFile(file, metadata);
 
-        // Wait for upload to complete
-        final snapshot = await uploadTask;
+        // Wait for upload to complete with timeout
+        final snapshot = await uploadTask.timeout(
+          timeout,
+          onTimeout: () {
+            // Cancel the upload task
+            uploadTask.cancel();
+            throw Exception(
+              'Network connection timeout. Please check your internet connection and try again.',
+            );
+          },
+        );
 
         // Get download URL
         final downloadUrl = await snapshot.ref.getDownloadURL();
@@ -173,8 +183,8 @@ class FileService {
         lastException = e is Exception ? e : Exception(e.toString());
 
         if (attempt < maxRetries) {
-          // Wait before retry with exponential backoff
-          await Future.delayed(Duration(seconds: attempt * 2));
+          // Wait before retry (shorter delay for faster feedback)
+          await Future.delayed(Duration(seconds: 2));
         }
       }
     }
@@ -343,11 +353,12 @@ class FileService {
     }
   }
 
-  /// Upload bytes to Firebase Storage with retry logic
+  /// Upload bytes to Firebase Storage with retry logic and timeout
   Future<String> _uploadBytesToStorage(
     Uint8List bytes,
     String filePath, {
-    int maxRetries = 3,
+    int maxRetries = 2,
+    Duration timeout = const Duration(seconds: 30),
   }) async {
     Exception? lastException;
 
@@ -365,11 +376,20 @@ class FileService {
           },
         );
 
-        // Upload bytes
+        // Upload bytes with timeout
         final uploadTask = ref.putData(bytes, metadata);
 
-        // Wait for upload to complete
-        final snapshot = await uploadTask;
+        // Wait for upload to complete with timeout
+        final snapshot = await uploadTask.timeout(
+          timeout,
+          onTimeout: () {
+            // Cancel the upload task
+            uploadTask.cancel();
+            throw Exception(
+              'Network connection timeout. Please check your internet connection and try again.',
+            );
+          },
+        );
 
         // Get download URL
         final downloadUrl = await snapshot.ref.getDownloadURL();
@@ -379,8 +399,8 @@ class FileService {
         lastException = e is Exception ? e : Exception(e.toString());
 
         if (attempt < maxRetries) {
-          // Wait before retry with exponential backoff
-          await Future.delayed(Duration(seconds: attempt * 2));
+          // Wait before retry (shorter delay for faster feedback)
+          await Future.delayed(Duration(seconds: 2));
         }
       }
     }

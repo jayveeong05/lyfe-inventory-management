@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart';
 import 'auth_service.dart';
 import 'order_service.dart';
 
@@ -226,8 +227,8 @@ class InvoiceService {
     }
   }
 
-  /// Delete invoice data from PO and associated file
-  Future<Map<String, dynamic>> deleteInvoice(String poId) async {
+  /// Delete invoice data from order and associated file (updated for new file-based system)
+  Future<Map<String, dynamic>> deleteInvoice(String orderId) async {
     try {
       final currentUser = _authService.currentUser;
       if (currentUser == null) {
@@ -235,34 +236,69 @@ class InvoiceService {
       }
 
       // Get order data
-      final orderDoc = await _firestore.collection('orders').doc(poId).get();
+      final orderDoc = await _firestore.collection('orders').doc(orderId).get();
 
       if (!orderDoc.exists) {
         return {'success': false, 'error': 'Order not found.'};
       }
 
       final orderData = orderDoc.data() as Map<String, dynamic>;
-      final pdfPath = orderData['pdf_path'] as String?;
+      final orderNumber = orderData['order_number'] as String?;
 
-      // Remove invoice data from order and revert status
-      await orderDoc.reference.update({
+      if (orderNumber == null) {
+        return {'success': false, 'error': 'Order number not found.'};
+      }
+
+      // Check if order has invoice status
+      if (orderData['status'] != 'Invoiced') {
+        return {'success': false, 'error': 'Order is not in Invoiced status.'};
+      }
+
+      // Use batch for atomic operations
+      final batch = _firestore.batch();
+
+      // Step 1: Remove invoice data from order and revert status
+      batch.update(orderDoc.reference, {
         'status': 'Reserved',
         'invoice_number': FieldValue.delete(),
         'invoice_date': FieldValue.delete(),
-        'pdf_url': FieldValue.delete(),
-        'pdf_path': FieldValue.delete(),
-        'file_name': FieldValue.delete(),
-        'file_size': FieldValue.delete(),
         'invoice_remarks': FieldValue.delete(),
-        'invoice_uploaded_by_uid': FieldValue.delete(),
+        'invoice_file_id': FieldValue.delete(),
         'invoice_uploaded_at': FieldValue.delete(),
-        'invoice_updated_by_uid': FieldValue.delete(),
-        'invoice_updated_at': FieldValue.delete(),
         'updated_at': FieldValue.serverTimestamp(),
       });
 
-      // Remove invoice information from related transactions (but keep status as 'Reserved')
-      final batch = _firestore.batch();
+      // Step 2: Delete ALL invoice files (all versions) from files collection and storage
+      final allInvoiceFiles = await _firestore
+          .collection('files')
+          .where('order_number', isEqualTo: orderNumber)
+          .where('file_type', isEqualTo: 'invoice')
+          .get();
+
+      for (final fileDoc in allInvoiceFiles.docs) {
+        final fileData = fileDoc.data();
+        final filePath = fileData['file_path'] as String?;
+
+        // Delete file record from files collection
+        batch.delete(fileDoc.reference);
+
+        // Delete file from Firebase Storage
+        if (filePath != null) {
+          try {
+            await _storage.ref().child(filePath).delete();
+            debugPrint('🗂️ Deleted invoice file from storage: $filePath');
+          } catch (e) {
+            // File might not exist in storage, continue anyway
+            debugPrint('⚠️ Warning: Failed to delete file from storage: $e');
+          }
+        }
+      }
+
+      debugPrint(
+        '📁 Deleted ${allInvoiceFiles.docs.length} invoice file versions for order $orderNumber',
+      );
+
+      // Step 3: Remove invoice information from related transactions (but keep status as 'Reserved')
       List<int> transactionIds = [];
 
       // Handle new format (transaction_ids) and old format (items array)
@@ -295,18 +331,8 @@ class InvoiceService {
         }
       }
 
-      if (transactionIds.isNotEmpty) {
-        await batch.commit();
-      }
-
-      // Delete file from storage
-      if (pdfPath != null) {
-        try {
-          await _storage.ref().child(pdfPath).delete();
-        } catch (e) {
-          // File might not exist, continue anyway
-        }
-      }
+      // Commit all changes atomically
+      await batch.commit();
 
       return {'success': true, 'message': 'Invoice deleted successfully.'};
     } catch (e) {
@@ -395,20 +421,64 @@ class InvoiceService {
     }
   }
 
-  /// Get invoice by order ID (from order document)
+  /// Get invoice by order ID (from files collection and order document)
   Future<Map<String, dynamic>?> getInvoiceByOrderId(String orderId) async {
     try {
-      final doc = await _firestore.collection('orders').doc(orderId).get();
+      // First get the order document to get order_number
+      final orderDoc = await _firestore.collection('orders').doc(orderId).get();
 
-      if (doc.exists) {
-        final data = doc.data() as Map<String, dynamic>;
-        // Only return if it has invoice data
-        if (data['invoice_number'] != null) {
-          return {'id': doc.id, ...data};
-        }
+      if (!orderDoc.exists) {
+        return null;
       }
-      return null;
+
+      final orderData = orderDoc.data() as Map<String, dynamic>;
+      final orderNumber = orderData['order_number'] as String?;
+
+      if (orderNumber == null) {
+        return null;
+      }
+
+      // Now get the active invoice file from files collection
+      final filesQuery = await _firestore
+          .collection('files')
+          .where('order_number', isEqualTo: orderNumber)
+          .where('file_type', isEqualTo: 'invoice')
+          .where('is_active', isEqualTo: true)
+          .limit(1)
+          .get();
+
+      if (filesQuery.docs.isEmpty) {
+        return null;
+      }
+
+      final fileDoc = filesQuery.docs.first;
+      final fileData = fileDoc.data();
+
+      // Combine order data with file data for backward compatibility
+      return {
+        'id': orderId, // Keep order ID for compatibility
+        'order_number': orderNumber,
+        'status': orderData['status'],
+        // Map file data to expected invoice fields
+        'invoice_number':
+            orderData['invoice_number'] ?? 'N/A', // From order if available
+        'invoice_date':
+            orderData['invoice_date'] ??
+            fileData['upload_date'], // Use order invoice date if available, fallback to upload date
+        'invoice_uploaded_at': fileData['upload_date'],
+        'invoice_remarks': orderData['invoice_remarks'] ?? '',
+        'pdf_url': fileData['storage_url'],
+        'file_name': fileData['original_filename'],
+        'file_size': fileData['file_size'],
+        'uploaded_by': fileData['uploaded_by'],
+        // Include file metadata
+        'file_id': fileDoc.id,
+        'file_path': fileData['file_path'],
+        'version': fileData['version'],
+      };
     } catch (e) {
+      // Log error for debugging
+      debugPrint('Error getting invoice by order ID: $e');
       return null;
     }
   }

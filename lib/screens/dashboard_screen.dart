@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../screens/login_screen.dart';
 import 'stock_in_screen.dart';
+import 'delivery_order_screen.dart';
 import 'inventory_management_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
@@ -92,7 +93,7 @@ class DashboardScreen extends StatelessWidget {
                     crossAxisCount: 2,
                     crossAxisSpacing: 12,
                     mainAxisSpacing: 12,
-                    childAspectRatio: 1.3,
+                    childAspectRatio: 1.2,
                     children: [
                       _buildDashboardButton(
                         context,
@@ -127,6 +128,16 @@ class DashboardScreen extends StatelessWidget {
                         Colors.blue,
                         () {
                           Navigator.pushNamed(context, '/invoice');
+                        },
+                      ),
+                      _buildDashboardButton(
+                        context,
+                        'Delivery Order',
+                        'Upload delivery PDFs',
+                        Icons.local_shipping,
+                        Colors.orange,
+                        () {
+                          Navigator.pushNamed(context, '/delivery_order');
                         },
                       ),
                       _buildDashboardButton(

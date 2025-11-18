@@ -176,13 +176,61 @@ class DashboardService {
   // Get recent transactions (last 10)
   Future<List<Map<String, dynamic>>> _getRecentTransactions() async {
     try {
-      final snapshot = await _firestore
-          .collection('transactions')
-          .orderBy('uploaded_at', descending: true)
-          .limit(10)
-          .get();
+      // Get all transactions without ordering first (to avoid mixed type issues)
+      final snapshot = await _firestore.collection('transactions').get();
 
-      return snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).toList();
+      // Convert all transactions and normalize timestamps
+      final allTransactions = snapshot.docs.map((doc) {
+        final data = {'id': doc.id, ...doc.data()};
+
+        // Normalize uploaded_at to DateTime for consistent sorting
+        DateTime? uploadedAt;
+        final uploadedAtField = data['uploaded_at'];
+
+        if (uploadedAtField is Timestamp) {
+          uploadedAt = uploadedAtField.toDate();
+        } else if (uploadedAtField is String) {
+          try {
+            uploadedAt = DateTime.parse(uploadedAtField);
+          } catch (e) {
+            // If parsing fails, use a very old date so it appears last
+            uploadedAt = DateTime(2000);
+          }
+        } else {
+          // If no valid timestamp, use a very old date
+          uploadedAt = DateTime(2000);
+        }
+
+        data['_normalized_uploaded_at'] = uploadedAt;
+        return data;
+      }).toList();
+
+      // Sort by normalized timestamp (most recent first), then by transaction_id (highest first)
+      allTransactions.sort((a, b) {
+        final aTime = a['_normalized_uploaded_at'] as DateTime;
+        final bTime = b['_normalized_uploaded_at'] as DateTime;
+
+        // Primary sort: by timestamp (most recent first)
+        final timeComparison = bTime.compareTo(aTime);
+        if (timeComparison != 0) {
+          return timeComparison;
+        }
+
+        // Secondary sort: by transaction_id (highest first) for same timestamps
+        final aId = a['transaction_id'] as int? ?? 0;
+        final bId = b['transaction_id'] as int? ?? 0;
+        return bId.compareTo(aId); // Descending order (highest ID first)
+      });
+
+      // Take the 10 most recent
+      final recentTransactions = allTransactions.take(10).toList();
+
+      // Remove the temporary normalized field before returning
+      for (final transaction in recentTransactions) {
+        transaction.remove('_normalized_uploaded_at');
+      }
+
+      return recentTransactions;
     } catch (e) {
       print('Error fetching recent transactions: $e');
       return [];

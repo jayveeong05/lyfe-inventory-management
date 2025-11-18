@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart';
 import 'auth_service.dart';
 import 'files_collection_service.dart';
 
@@ -556,6 +558,137 @@ class OrderService {
     }
   }
 
+  /// Update order with file reference and invoice details (for replace operations)
+  Future<Map<String, dynamic>> updateOrderWithInvoiceFile({
+    required String orderNumber,
+    required String fileId,
+    String? invoiceNumber,
+    DateTime? invoiceDate,
+    String? remarks,
+  }) async {
+    try {
+      final currentUser = _authService.currentUser;
+      if (currentUser == null) {
+        return {'success': false, 'error': 'User not authenticated.'};
+      }
+
+      // Find the order
+      final orderQuery = await _firestore
+          .collection('orders')
+          .where('order_number', isEqualTo: orderNumber)
+          .get();
+
+      if (orderQuery.docs.isEmpty) {
+        return {'success': false, 'error': 'Order $orderNumber not found.'};
+      }
+
+      final orderDoc = orderQuery.docs.first;
+      final orderData = orderDoc.data();
+
+      // Prepare update data
+      final updateData = <String, dynamic>{
+        'invoice_file_id': fileId,
+        'invoice_uploaded_at': FieldValue.serverTimestamp(),
+        'updated_at': FieldValue.serverTimestamp(),
+      };
+
+      // Add invoice details if provided
+      if (invoiceNumber != null && invoiceNumber.isNotEmpty) {
+        updateData['invoice_number'] = invoiceNumber;
+      }
+      if (invoiceDate != null) {
+        updateData['invoice_date'] = Timestamp.fromDate(invoiceDate);
+      }
+      if (remarks != null && remarks.isNotEmpty) {
+        updateData['invoice_remarks'] = remarks;
+      }
+
+      // Update the order
+      await orderDoc.reference.update(updateData);
+
+      // Update related transactions with invoice details if provided
+      if (invoiceNumber != null && invoiceNumber.isNotEmpty) {
+        await _updateTransactionInvoiceDetails(
+          orderNumber,
+          invoiceNumber,
+          invoiceDate,
+        );
+      }
+
+      return {
+        'success': true,
+        'message': 'Order $orderNumber updated with invoice file and details.',
+      };
+    } catch (e) {
+      return {
+        'success': false,
+        'error': 'Failed to update order: ${e.toString()}',
+      };
+    }
+  }
+
+  /// Update transaction invoice details
+  Future<void> _updateTransactionInvoiceDetails(
+    String orderNumber,
+    String invoiceNumber,
+    DateTime? invoiceDate,
+  ) async {
+    try {
+      // Find the order to get transaction IDs
+      final orderQuery = await _firestore
+          .collection('orders')
+          .where('order_number', isEqualTo: orderNumber)
+          .get();
+
+      if (orderQuery.docs.isEmpty) return;
+
+      final orderData = orderQuery.docs.first.data();
+      List<int> transactionIds = [];
+
+      // Handle new format (transaction_ids) and old format (items array)
+      if (orderData['transaction_ids'] != null) {
+        transactionIds = List<int>.from(orderData['transaction_ids']);
+      } else if (orderData['items'] != null) {
+        final items = orderData['items'] as List<dynamic>;
+        for (final item in items) {
+          final transactionId = item['transaction_id'] as int?;
+          if (transactionId != null) {
+            transactionIds.add(transactionId);
+          }
+        }
+      }
+
+      // Update transactions with invoice details
+      final batch = _firestore.batch();
+      for (final transactionId in transactionIds) {
+        final transactionQuery = await _firestore
+            .collection('transactions')
+            .where('transaction_id', isEqualTo: transactionId)
+            .get();
+
+        for (final transactionDoc in transactionQuery.docs) {
+          final updateData = <String, dynamic>{
+            'invoice_number': invoiceNumber,
+            'updated_at': FieldValue.serverTimestamp(),
+          };
+
+          if (invoiceDate != null) {
+            updateData['invoice_date'] = Timestamp.fromDate(invoiceDate);
+          }
+
+          batch.update(transactionDoc.reference, updateData);
+        }
+      }
+
+      if (transactionIds.isNotEmpty) {
+        await batch.commit();
+      }
+    } catch (e) {
+      // Log error but don't fail the main operation
+      debugPrint('Warning: Failed to update transaction invoice details: $e');
+    }
+  }
+
   /// Remove file reference from order and update status if needed
   Future<Map<String, dynamic>> removeFileFromOrder({
     required String orderNumber,
@@ -718,5 +851,135 @@ class OrderService {
                 orderData['delivery_file_id'] != null,
           };
         });
+  }
+
+  /// Delete order and all related data (development only)
+  /// This is a comprehensive deletion that:
+  /// 1. Deletes order document from orders collection
+  /// 2. Deletes related transaction records from transactions collection
+  /// 3. Deletes associated files (invoice/delivery PDFs) from Storage and files collection
+  /// 4. Does NOT restore inventory quantities (inventory records remain unchanged)
+  /// 5. Uses batch operations for data consistency
+  /// 6. Advanced safety checks to prevent deletion of delivered orders
+  Future<Map<String, dynamic>> deleteOrder(String orderId) async {
+    try {
+      final currentUser = _authService.currentUser;
+      if (currentUser == null) {
+        return {'success': false, 'error': 'User not authenticated.'};
+      }
+
+      // Get order data
+      final orderDoc = await _firestore.collection('orders').doc(orderId).get();
+
+      if (!orderDoc.exists) {
+        return {'success': false, 'error': 'Order not found.'};
+      }
+
+      final orderData = orderDoc.data() as Map<String, dynamic>;
+      final orderNumber = orderData['order_number'] as String?;
+      final orderStatus = orderData['status'] as String?;
+      final transactionIds = orderData['transaction_ids'] as List<dynamic>?;
+
+      if (orderNumber == null) {
+        return {'success': false, 'error': 'Order number not found.'};
+      }
+
+      // Safety check: Prevent deletion of delivered orders
+      if (orderStatus == 'Delivered') {
+        return {
+          'success': false,
+          'error':
+              'Cannot delete delivered orders. Only Reserved and Invoiced orders can be deleted.',
+        };
+      }
+
+      debugPrint(
+        '🗑️ Starting deletion of order: $orderNumber (Status: $orderStatus)',
+      );
+
+      // Use batch for atomic operations
+      final batch = _firestore.batch();
+      final deletionSummary = <String, dynamic>{
+        'order_deleted': false,
+        'transactions_deleted': 0,
+        'files_deleted': 0,
+        'storage_files_deleted': 0,
+      };
+
+      // Step 1: Delete order document
+      batch.delete(orderDoc.reference);
+      deletionSummary['order_deleted'] = true;
+      debugPrint('📄 Marked order document for deletion');
+
+      // Step 2: Delete related transaction records
+      if (transactionIds != null && transactionIds.isNotEmpty) {
+        final transactionIdsInt = transactionIds.cast<int>();
+
+        for (final transactionId in transactionIdsInt) {
+          final transactionQuery = await _firestore
+              .collection('transactions')
+              .where('transaction_id', isEqualTo: transactionId)
+              .get();
+
+          for (final transactionDoc in transactionQuery.docs) {
+            batch.delete(transactionDoc.reference);
+            deletionSummary['transactions_deleted']++;
+            debugPrint('🔄 Marked transaction $transactionId for deletion');
+          }
+        }
+      }
+
+      // Step 3: Delete ALL associated files (all versions) from files collection and storage
+      final allOrderFiles = await _firestore
+          .collection('files')
+          .where('order_number', isEqualTo: orderNumber)
+          .get();
+
+      for (final fileDoc in allOrderFiles.docs) {
+        final fileData = fileDoc.data();
+        final filePath = fileData['file_path'] as String?;
+        final fileType = fileData['file_type'] as String?;
+
+        // Delete file record from files collection
+        batch.delete(fileDoc.reference);
+        deletionSummary['files_deleted']++;
+        debugPrint(
+          '📁 Marked file record ${fileDoc.id} ($fileType) for deletion',
+        );
+
+        // Delete file from Firebase Storage
+        if (filePath != null) {
+          try {
+            await FirebaseStorage.instance.ref().child(filePath).delete();
+            deletionSummary['storage_files_deleted']++;
+            debugPrint('🗂️ Deleted file from storage: $filePath');
+          } catch (e) {
+            // Continue even if storage deletion fails
+            debugPrint('⚠️ Warning: Failed to delete file from storage: $e');
+          }
+        }
+      }
+
+      debugPrint(
+        '📁 Deleted ${allOrderFiles.docs.length} file versions for order $orderNumber',
+      );
+
+      // Commit all changes atomically
+      await batch.commit();
+      debugPrint('✅ Order deletion completed successfully');
+
+      return {
+        'success': true,
+        'message': 'Order deleted successfully.',
+        'order_number': orderNumber,
+        'deletion_summary': deletionSummary,
+      };
+    } catch (e) {
+      debugPrint('❌ Error deleting order: $e');
+      return {
+        'success': false,
+        'error': 'Failed to delete order: ${e.toString()}',
+      };
+    }
   }
 }

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
@@ -560,6 +561,24 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
         throw Exception(orderUpdateResult['error'] ?? 'Order update failed');
       }
 
+      // Step 4: Update order with invoice details (number, date, remarks)
+      final invoiceData = <String, dynamic>{
+        'invoice_number': _invoiceNumberController.text.trim(),
+        'invoice_date': Timestamp.fromDate(_selectedDate),
+        'invoice_remarks': _remarksController.text.trim(),
+        'updated_at': FieldValue.serverTimestamp(),
+      };
+
+      // Update the order document with invoice details
+      final orderQuery = await FirebaseFirestore.instance
+          .collection('orders')
+          .where('order_number', isEqualTo: orderNumber)
+          .get();
+
+      if (orderQuery.docs.isNotEmpty) {
+        await orderQuery.docs.first.reference.update(invoiceData);
+      }
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -604,6 +623,289 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
     }
   }
 
+  /// Delete invoice (development only)
+  Future<void> _deleteInvoice() async {
+    if (_currentInvoice == null) return;
+
+    // Show confirmation dialog
+    final confirmed = await _showDeleteConfirmationDialog();
+    if (!confirmed) return;
+
+    setState(() {
+      _isUploading = true;
+    });
+
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final invoiceService = InvoiceService(
+        authService: authProvider.authService,
+      );
+
+      final result = await invoiceService.deleteInvoice(_currentInvoice!['id']);
+
+      if (mounted) {
+        if (result['success']) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '✅ Invoice deleted successfully!\n'
+                'Order status reverted to Reserved.',
+              ),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+
+          // Clear current invoice and reload data
+          setState(() {
+            _currentInvoice = null;
+            _isReplaceMode = false;
+          });
+
+          // Reload available orders to reflect status changes
+          _loadAvailablePOs();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('❌ Error deleting invoice: ${result['error']}'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error deleting invoice: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUploading = false;
+        });
+      }
+    }
+  }
+
+  /// Delete order (development only)
+  Future<void> _deleteOrder() async {
+    if (_selectedPO == null) return;
+
+    // Show confirmation dialog
+    final confirmed = await _showOrderDeleteConfirmationDialog();
+    if (!confirmed) return;
+
+    setState(() {
+      _isUploading = true;
+    });
+
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final orderService = OrderService(authService: authProvider.authService);
+
+      final result = await orderService.deleteOrder(_selectedPO!['id']);
+
+      if (mounted) {
+        if (result['success']) {
+          final deletionSummary =
+              result['deletion_summary'] as Map<String, dynamic>;
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '✅ Order deleted successfully!\n'
+                '• Order: ${result['order_number']}\n'
+                '• Transactions deleted: ${deletionSummary['transactions_deleted']}\n'
+                '• Files deleted: ${deletionSummary['files_deleted']}',
+              ),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+
+          // Clear current selection and reload data
+          setState(() {
+            _selectedPOId = null;
+            _currentInvoice = null;
+            _isReplaceMode = false;
+          });
+
+          // Reload available orders to reflect changes
+          _loadAvailablePOs();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('❌ Error deleting order: ${result['error']}'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error deleting order: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUploading = false;
+        });
+      }
+    }
+  }
+
+  /// Show order delete confirmation dialog
+  Future<bool> _showOrderDeleteConfirmationDialog() async {
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.warning, color: Colors.red.shade600),
+                const SizedBox(width: 8),
+                const Text('⚠️ Delete Order'),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'This will permanently delete:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Text('• Order: ${_selectedPO!['order_number'] ?? 'N/A'}'),
+                Text('• Status: ${_selectedPO!['status'] ?? 'N/A'}'),
+                Text('• All related transaction records'),
+                Text('• All associated files (invoice/delivery PDFs)'),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    border: Border.all(color: Colors.red.shade200),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    '⚠️ IMPORTANT: This will NOT restore inventory quantities. '
+                    'Items will remain in their current status (Reserved/Delivered). '
+                    'Only the order and transaction records will be deleted.',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'This action cannot be undone. Are you sure?',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.red,
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Delete Order'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  /// Show delete confirmation dialog
+  Future<bool> _showDeleteConfirmationDialog() async {
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.warning, color: Colors.red.shade600),
+                const SizedBox(width: 8),
+                const Text('⚠️ Delete Invoice'),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'This will permanently delete:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '• Invoice: ${_currentInvoice!['invoice_number'] ?? 'N/A'}',
+                ),
+                Text('• PDF File: ${_currentInvoice!['file_name'] ?? 'N/A'}'),
+                const Text('• All invoice data from the system'),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    border: Border.all(color: Colors.orange.shade200),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'The order status will be reverted from "Invoiced" back to "Reserved".',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'This action cannot be undone. Are you sure?',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.red,
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Delete Invoice'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
   /// Legacy invoice upload method (kept for replace functionality)
   Future<void> _uploadInvoice() async {
     if (!_formKey.currentState!.validate() ||
@@ -633,18 +935,47 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
       Map<String, dynamic> result;
 
       if (_isReplaceMode && _currentInvoice != null) {
-        // Replace existing invoice
-        result = await invoiceService.replaceInvoice(
-          poId: _currentInvoice!['id'],
-          newPdfFile: _selectedFile!,
-          newInvoiceNumber: _invoiceNumberController.text.trim().isNotEmpty
-              ? _invoiceNumberController.text.trim()
-              : null,
-          newInvoiceDate: _selectedDate,
-          remarks: _remarksController.text.trim().isNotEmpty
-              ? _remarksController.text.trim()
-              : null,
+        // Replace existing invoice using new FileService
+        final orderNumber = _currentInvoice!['order_number'] as String;
+
+        // Upload replacement file using FileService
+        final uploadResult = await _fileService.replaceFile(
+          orderNumber: orderNumber,
+          fileType: 'invoice',
+          newFile: _selectedFile!,
+          originalFilename: _selectedFileName,
         );
+
+        if (uploadResult.success && uploadResult.fileId != null) {
+          // Update order with new file and invoice details using OrderService
+          final orderUpdateResult = await _orderService
+              .updateOrderWithInvoiceFile(
+                orderNumber: orderNumber,
+                fileId: uploadResult.fileId!,
+                invoiceNumber: _invoiceNumberController.text.trim().isNotEmpty
+                    ? _invoiceNumberController.text.trim()
+                    : null,
+                invoiceDate: _selectedDate,
+                remarks: _remarksController.text.trim().isNotEmpty
+                    ? _remarksController.text.trim()
+                    : null,
+              );
+
+          result = {
+            'success': orderUpdateResult['success'],
+            'message': orderUpdateResult['success']
+                ? 'Invoice replaced successfully'
+                : orderUpdateResult['error'],
+            'invoice_number': _invoiceNumberController.text.trim().isNotEmpty
+                ? _invoiceNumberController.text.trim()
+                : _currentInvoice!['invoice_number'],
+          };
+        } else {
+          result = {
+            'success': false,
+            'error': uploadResult.error ?? 'Failed to upload replacement file',
+          };
+        }
       } else {
         // Upload new invoice
         result = await invoiceService.uploadInvoice(
@@ -980,6 +1311,59 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                         ),
                       ),
 
+                      // Development-only order delete button
+                      if (kDebugMode &&
+                          _selectedPO!['status'] != 'Delivered') ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade50,
+                            border: Border.all(color: Colors.red.shade200),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.warning,
+                                color: Colors.red.shade600,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Development Mode: Delete entire order and all related data',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.red.shade700,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              ElevatedButton.icon(
+                                onPressed: _isUploading ? null : _deleteOrder,
+                                icon: const Icon(
+                                  Icons.delete_forever,
+                                  size: 16,
+                                ),
+                                label: const Text('Delete Order'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 6,
+                                  ),
+                                  textStyle: const TextStyle(fontSize: 11),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+
                       // Invoice Information Card (for invoiced POs)
                       if (_selectedPO!['status'] == 'Invoiced') ...[
                         const SizedBox(height: 16),
@@ -1075,6 +1459,31 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                                           ),
                                         ),
                                       ),
+                                      // Development-only delete button
+                                      if (kDebugMode) ...[
+                                        const SizedBox(width: 8),
+                                        ElevatedButton.icon(
+                                          onPressed: _isUploading
+                                              ? null
+                                              : _deleteInvoice,
+                                          icon: const Icon(
+                                            Icons.delete,
+                                            size: 16,
+                                          ),
+                                          label: const Text('Delete'),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.red,
+                                            foregroundColor: Colors.white,
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 8,
+                                            ),
+                                            textStyle: const TextStyle(
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ] else ...[
                                       ElevatedButton.icon(
                                         onPressed: _toggleReplaceMode,
