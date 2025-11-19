@@ -80,7 +80,8 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
         authService: authProvider.authService,
       );
 
-      final orders = await invoiceService.getAllOrders();
+      // Load orders with 'Reserved' or 'Invoiced' status only
+      final orders = await invoiceService.getOrdersForInvoicing();
 
       setState(() {
         _allPOs = orders;
@@ -580,11 +581,21 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
       }
 
       if (mounted) {
+        // Get the new status from dual status system
+        final newInvoiceStatus =
+            orderUpdateResult['new_invoice_status'] ?? 'Unknown';
+        final newDeliveryStatus =
+            orderUpdateResult['new_delivery_status'] ?? 'Unknown';
+        final displayStatus = _getDisplayStatusFromStatuses(
+          newInvoiceStatus,
+          newDeliveryStatus,
+        );
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
               'Success! Invoice uploaded successfully.\n'
-              'Order status: ${orderUpdateResult['new_status']}\n'
+              'Order status: $displayStatus\n'
               'File: ${uploadResult.fileModel?.originalFilename ?? 'Unknown'}',
             ),
             backgroundColor: Colors.green,
@@ -627,6 +638,11 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   Future<void> _deleteInvoice() async {
     if (_currentInvoice == null) return;
 
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final invoiceService = InvoiceService(
+      authService: authProvider.authService,
+    );
+
     // Show confirmation dialog
     final confirmed = await _showDeleteConfirmationDialog();
     if (!confirmed) return;
@@ -636,11 +652,6 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
     });
 
     try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final invoiceService = InvoiceService(
-        authService: authProvider.authService,
-      );
-
       final result = await invoiceService.deleteInvoice(_currentInvoice!['id']);
 
       if (mounted) {
@@ -697,6 +708,9 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   Future<void> _deleteOrder() async {
     if (_selectedPO == null) return;
 
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final orderService = OrderService(authService: authProvider.authService);
+
     // Show confirmation dialog
     final confirmed = await _showOrderDeleteConfirmationDialog();
     if (!confirmed) return;
@@ -706,9 +720,6 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
     });
 
     try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final orderService = OrderService(authService: authProvider.authService);
-
       final result = await orderService.deleteOrder(_selectedPO!['id']);
 
       if (mounted) {
@@ -790,7 +801,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text('• Order: ${_selectedPO!['order_number'] ?? 'N/A'}'),
-                Text('• Status: ${_selectedPO!['status'] ?? 'N/A'}'),
+                Text('• Status: ${_getDisplayStatus(_selectedPO!)}'),
                 Text('• All related transaction records'),
                 Text('• All associated files (invoice/delivery PDFs)'),
                 const SizedBox(height: 12),
@@ -1149,10 +1160,17 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                                 ),
                               ]
                             : _allPOs.map((po) {
+                                // Support both old single status and new dual status system
                                 final status =
                                     po['status'] as String? ?? 'Unknown';
-                                final isReserved = status == 'Reserved';
-                                final isInvoiced = status == 'Invoiced';
+                                final invoiceStatus =
+                                    po['invoice_status'] as String? ?? status;
+                                final deliveryStatus =
+                                    po['delivery_status'] as String? ??
+                                    'Pending';
+
+                                final isReserved = invoiceStatus == 'Reserved';
+                                final isInvoiced = invoiceStatus == 'Invoiced';
 
                                 return DropdownMenuItem<String>(
                                   value: po['id'] as String,
@@ -1199,7 +1217,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                                           ),
                                         ),
                                         child: Text(
-                                          status,
+                                          invoiceStatus,
                                           style: TextStyle(
                                             fontSize: 10,
                                             fontWeight: FontWeight.w500,
@@ -1233,7 +1251,16 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                             final selectedPO = _allPOs.firstWhere(
                               (po) => po['id'] == value,
                             );
-                            if (selectedPO['status'] == 'Invoiced') {
+                            // Check if order is invoiced (support both dual and legacy status)
+                            final invoiceStatus =
+                                selectedPO['invoice_status'] as String?;
+                            final legacyStatus =
+                                selectedPO['status'] as String?;
+                            final isInvoiced =
+                                (invoiceStatus == 'Invoiced') ||
+                                (legacyStatus == 'Invoiced');
+
+                            if (isInvoiced) {
                               _loadInvoiceForPO(value);
                             }
                           }
@@ -1286,7 +1313,10 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                               'Order Number',
                               _selectedPO!['order_number'],
                             ),
-                            _buildInfoRow('Status', _selectedPO!['status']),
+                            _buildInfoRow(
+                              'Status',
+                              _getDisplayStatus(_selectedPO!),
+                            ),
                             _buildInfoRow(
                               'Dealer',
                               _selectedPO!['customer_dealer'],
@@ -1301,7 +1331,9 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                                 'Created Date',
                                 _formatDate(_selectedPO!['created_date']),
                               ),
-                            if (_selectedPO!['status'] == 'Invoiced' &&
+                            if ((_selectedPO!['invoice_status'] ??
+                                        _selectedPO!['status']) ==
+                                    'Invoiced' &&
                                 _selectedPO!['invoice_number'] != null)
                               _buildInfoRow(
                                 'Invoice Number',
@@ -1312,8 +1344,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                       ),
 
                       // Development-only order delete button
-                      if (kDebugMode &&
-                          _selectedPO!['status'] != 'Delivered') ...[
+                      if (kDebugMode && !_isOrderDelivered(_selectedPO!)) ...[
                         const SizedBox(height: 12),
                         Container(
                           width: double.infinity,
@@ -1365,7 +1396,9 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                       ],
 
                       // Invoice Information Card (for invoiced POs)
-                      if (_selectedPO!['status'] == 'Invoiced') ...[
+                      if ((_selectedPO!['invoice_status'] ??
+                              _selectedPO!['status']) ==
+                          'Invoiced') ...[
                         const SizedBox(height: 16),
                         if (_isLoadingInvoice)
                           Container(
@@ -1576,7 +1609,9 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
 
                     // Show form only for pending POs or when in replace mode
                     if (_selectedPO != null &&
-                        (_selectedPO!['status'] == 'Reserved' ||
+                        ((_selectedPO!['invoice_status'] ??
+                                    _selectedPO!['status']) ==
+                                'Reserved' ||
                             _isReplaceMode)) ...[
                       const SizedBox(height: 24),
 
@@ -1902,6 +1937,72 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
         ],
       ),
     );
+  }
+
+  // Helper method to get display status from individual status values
+  String _getDisplayStatusFromStatuses(
+    String invoiceStatus,
+    String deliveryStatus,
+  ) {
+    if (invoiceStatus == 'Reserved' && deliveryStatus == 'Pending') {
+      return 'Reserved';
+    } else if (invoiceStatus == 'Invoiced' && deliveryStatus == 'Pending') {
+      return 'Invoiced';
+    } else if (invoiceStatus == 'Invoiced' && deliveryStatus == 'Issued') {
+      return 'Issued';
+    } else if (invoiceStatus == 'Invoiced' && deliveryStatus == 'Delivered') {
+      return 'Delivered';
+    } else {
+      return '$invoiceStatus / $deliveryStatus';
+    }
+  }
+
+  // Helper method to check if order is delivered (dual status system support)
+  bool _isOrderDelivered(Map<String, dynamic> order) {
+    final deliveryStatus = order['delivery_status'] as String?;
+    final legacyStatus = order['status'] as String?;
+
+    // For dual status system
+    if (deliveryStatus != null) {
+      return deliveryStatus == 'Delivered';
+    }
+
+    // For legacy single status system
+    if (legacyStatus != null) {
+      return legacyStatus == 'Delivered';
+    }
+
+    return false;
+  }
+
+  // Helper method to get display status for dual status system
+  String _getDisplayStatus(Map<String, dynamic> order) {
+    final invoiceStatus = order['invoice_status'] as String?;
+    final deliveryStatus = order['delivery_status'] as String?;
+    final legacyStatus = order['status'] as String?;
+
+    // For dual status system, show combined status
+    if (invoiceStatus != null && deliveryStatus != null) {
+      if (invoiceStatus == 'Reserved' && deliveryStatus == 'Pending') {
+        return 'Reserved';
+      } else if (invoiceStatus == 'Invoiced' && deliveryStatus == 'Pending') {
+        return 'Invoiced';
+      } else if (invoiceStatus == 'Invoiced' && deliveryStatus == 'Issued') {
+        return 'Issued';
+      } else if (invoiceStatus == 'Invoiced' && deliveryStatus == 'Delivered') {
+        return 'Delivered';
+      } else {
+        return '$invoiceStatus / $deliveryStatus';
+      }
+    }
+
+    // For legacy single status system
+    if (legacyStatus != null) {
+      return legacyStatus;
+    }
+
+    // Fallback
+    return 'Unknown';
   }
 
   // Helper method to build info rows in the PO details card

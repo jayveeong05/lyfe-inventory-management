@@ -91,9 +91,11 @@ class _StockOutScreenState extends State<StockOutScreen> {
 
   Future<void> _loadActiveItems() async {
     try {
-      setState(() {
-        _isLoadingItems = true;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoadingItems = true;
+        });
+      }
 
       // Step 1: Get transactions with limit to avoid performance issues
       // Use a reasonable limit that covers most recent transactions
@@ -219,15 +221,19 @@ class _StockOutScreenState extends State<StockOutScreen> {
         }
       }
 
-      setState(() {
-        _activeItems = activeItems;
-        _filteredItems = activeItems; // Initialize filtered items
-        _isLoadingItems = false;
-      });
+      if (mounted) {
+        setState(() {
+          _activeItems = activeItems;
+          _filteredItems = activeItems; // Initialize filtered items
+          _isLoadingItems = false;
+        });
+      }
     } catch (e) {
-      setState(() {
-        _isLoadingItems = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoadingItems = false;
+        });
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

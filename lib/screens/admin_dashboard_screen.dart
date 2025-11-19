@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -24,15 +25,117 @@ class AdminDashboardScreen extends StatefulWidget {
   State<AdminDashboardScreen> createState() => _AdminDashboardScreenState();
 }
 
-class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
+class _AdminDashboardScreenState extends State<AdminDashboardScreen>
+    with WidgetsBindingObserver {
   final DashboardService _dashboardService = DashboardService();
   Map<String, dynamic>? _analytics;
   bool _isLoading = true;
+  Timer? _refreshTimer;
+  Map<String, dynamic>? _lastKnownActivity;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadAnalytics();
+    _startRefreshTimer();
+  }
+
+  void _startRefreshTimer() {
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      // Smart background checking - only refresh UI if data changed
+      if (mounted && !_isLoading) {
+        _checkForDataChanges();
+      }
+    });
+  }
+
+  Future<void> _checkForDataChanges() async {
+    try {
+      // Get lightweight activity info for comparison
+      final currentActivity = await _dashboardService.getLatestActivityInfo();
+
+      // If this is the first check, store the activity and return
+      if (_lastKnownActivity == null) {
+        _lastKnownActivity = currentActivity;
+        return;
+      }
+
+      // Compare with last known activity
+      if (_hasDataChanged(currentActivity)) {
+        print('Data changed detected - refreshing dashboard UI...');
+        _lastKnownActivity = currentActivity;
+        _loadAnalytics();
+      }
+    } catch (e) {
+      print('Error checking for data changes: $e');
+    }
+  }
+
+  bool _hasDataChanged(Map<String, dynamic> currentActivity) {
+    if (_lastKnownActivity == null) return true;
+
+    // Compare basic counts
+    final currentCounts =
+        currentActivity['basicCounts'] as Map<String, dynamic>;
+    final lastCounts =
+        _lastKnownActivity!['basicCounts'] as Map<String, dynamic>;
+
+    if (currentCounts['totalTransactions'] != lastCounts['totalTransactions'] ||
+        currentCounts['totalOrders'] != lastCounts['totalOrders']) {
+      return true;
+    }
+
+    // Compare order status counts (this will detect invoice uploads)
+    final currentOrderCounts =
+        currentActivity['orderStatusCounts'] as Map<String, dynamic>;
+    final lastOrderCounts =
+        _lastKnownActivity!['orderStatusCounts'] as Map<String, dynamic>;
+
+    if (currentOrderCounts['reserved'] != lastOrderCounts['reserved'] ||
+        currentOrderCounts['invoiced'] != lastOrderCounts['invoiced'] ||
+        currentOrderCounts['issued'] != lastOrderCounts['issued'] ||
+        currentOrderCounts['delivered'] != lastOrderCounts['delivered']) {
+      return true;
+    }
+
+    // Compare latest transaction
+    final currentTransaction = currentActivity['latestTransaction'];
+    final lastTransaction = _lastKnownActivity!['latestTransaction'];
+
+    // If one is null and the other isn't, data changed
+    if ((currentTransaction == null) != (lastTransaction == null)) {
+      return true;
+    }
+
+    // If both are null, no change
+    if (currentTransaction == null && lastTransaction == null) {
+      return false;
+    }
+
+    // Compare transaction IDs
+    final currentId = currentTransaction['transaction_id'];
+    final lastId = lastTransaction['transaction_id'];
+
+    return currentId != lastId;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) {
+      // App came back to foreground - refresh immediately
+      print('App resumed - refreshing dashboard...');
+      _loadAnalytics();
+    }
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   Future<void> _loadAnalytics() async {
@@ -76,6 +179,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 onPressed: _loadAnalytics,
                 tooltip: 'Refresh Data',
               ),
+
               IconButton(
                 icon: const Icon(Icons.logout),
                 onPressed: () async {

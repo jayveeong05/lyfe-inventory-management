@@ -153,9 +153,11 @@ class DashboardService {
 
       for (final doc in orderSnapshot.docs) {
         final data = doc.data();
+        // Support both old single status and new dual status system
         final status = data['status'] as String?;
+        final invoiceStatus = data['invoice_status'] as String? ?? status;
 
-        if (status == 'Invoiced') {
+        if (invoiceStatus == 'Invoiced') {
           invoicedOrders++;
         } else {
           pendingOrders++;
@@ -309,6 +311,108 @@ class DashboardService {
     }
   }
 
+  // Get lightweight data for background checking (just latest activity info)
+  Future<Map<String, dynamic>> getLatestActivityInfo() async {
+    try {
+      // Get just the most recent transaction, basic counts, and order status info
+      final futures = await Future.wait([
+        _getLatestTransaction(),
+        _getBasicCounts(),
+        _getOrderStatusCounts(),
+      ]);
+
+      return {
+        'latestTransaction': futures[0],
+        'basicCounts': futures[1],
+        'orderStatusCounts': futures[2],
+      };
+    } catch (e) {
+      print('Error fetching latest activity info: $e');
+      return {
+        'latestTransaction': null,
+        'basicCounts': {'totalTransactions': 0, 'totalOrders': 0},
+        'orderStatusCounts': {
+          'reserved': 0,
+          'invoiced': 0,
+          'issued': 0,
+          'delivered': 0,
+        },
+      };
+    }
+  }
+
+  // Get just the most recent transaction for comparison
+  Future<Map<String, dynamic>?> _getLatestTransaction() async {
+    try {
+      final snapshot = await _firestore
+          .collection('transactions')
+          .limit(50) // Get more to handle mixed timestamp types
+          .get();
+
+      if (snapshot.docs.isEmpty) return null;
+
+      // Convert and normalize timestamps like in _getRecentTransactions
+      final allTransactions = snapshot.docs.map((doc) {
+        final data = {'id': doc.id, ...doc.data()};
+
+        DateTime? uploadedAt;
+        final uploadedAtField = data['uploaded_at'];
+
+        if (uploadedAtField is Timestamp) {
+          uploadedAt = uploadedAtField.toDate();
+        } else if (uploadedAtField is String) {
+          try {
+            uploadedAt = DateTime.parse(uploadedAtField);
+          } catch (e) {
+            uploadedAt = DateTime(2000);
+          }
+        } else {
+          uploadedAt = DateTime(2000);
+        }
+
+        data['_normalized_uploaded_at'] = uploadedAt;
+        return data;
+      }).toList();
+
+      // Sort and get the most recent
+      allTransactions.sort((a, b) {
+        final aTime = a['_normalized_uploaded_at'] as DateTime;
+        final bTime = b['_normalized_uploaded_at'] as DateTime;
+        final timeComparison = bTime.compareTo(aTime);
+        if (timeComparison != 0) return timeComparison;
+
+        final aId = a['transaction_id'] as int? ?? 0;
+        final bId = b['transaction_id'] as int? ?? 0;
+        return bId.compareTo(aId);
+      });
+
+      final latest = allTransactions.first;
+      latest.remove('_normalized_uploaded_at');
+      return latest;
+    } catch (e) {
+      print('Error fetching latest transaction: $e');
+      return null;
+    }
+  }
+
+  // Get basic counts for comparison
+  Future<Map<String, int>> _getBasicCounts() async {
+    try {
+      final futures = await Future.wait([
+        _firestore.collection('transactions').count().get(),
+        _firestore.collection('orders').count().get(),
+      ]);
+
+      return {
+        'totalTransactions': futures[0].count ?? 0,
+        'totalOrders': futures[1].count ?? 0,
+      };
+    } catch (e) {
+      print('Error fetching basic counts: $e');
+      return {'totalTransactions': 0, 'totalOrders': 0};
+    }
+  }
+
   // Return empty analytics in case of error
   Map<String, dynamic> _getEmptyAnalytics() {
     return {
@@ -330,5 +434,43 @@ class DashboardService {
         'monthlyTotal': 0,
       },
     };
+  }
+
+  // Get order status counts for change detection (using dual status system)
+  Future<Map<String, int>> _getOrderStatusCounts() async {
+    try {
+      final snapshot = await _firestore.collection('orders').get();
+
+      final counts = {
+        'reserved': 0,
+        'invoiced': 0,
+        'issued': 0,
+        'delivered': 0,
+      };
+
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        // Support both old single status and new dual status system
+        final status = data['status'] as String?;
+        final invoiceStatus = data['invoice_status'] as String? ?? status;
+        final deliveryStatus = data['delivery_status'] as String? ?? 'Pending';
+
+        // Count based on combined status logic
+        if (invoiceStatus == 'Reserved') {
+          counts['reserved'] = counts['reserved']! + 1;
+        } else if (invoiceStatus == 'Invoiced' && deliveryStatus == 'Pending') {
+          counts['invoiced'] = counts['invoiced']! + 1;
+        } else if (deliveryStatus == 'Issued') {
+          counts['issued'] = counts['issued']! + 1;
+        } else if (deliveryStatus == 'Delivered') {
+          counts['delivered'] = counts['delivered']! + 1;
+        }
+      }
+
+      return counts;
+    } catch (e) {
+      print('Error fetching order status counts: $e');
+      return {'reserved': 0, 'invoiced': 0, 'issued': 0, 'delivered': 0};
+    }
   }
 }

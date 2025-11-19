@@ -114,8 +114,9 @@ class OrderService {
       // Prepare order data (simplified - only store transaction IDs)
       final orderData = {
         'order_number': orderNumber,
-        'status':
-            'Reserved', // Changed from 'Pending' to 'Reserved' for new file-based system
+        // DUAL STATUS SYSTEM
+        'invoice_status': 'Reserved', // Reserved | Invoiced
+        'delivery_status': 'Pending', // Pending | Issued | Delivered
         'created_date': timestamp,
         'customer_dealer': dealerName,
         'customer_client': effectiveClientName,
@@ -128,7 +129,9 @@ class OrderService {
         // File reference fields for new file-based status system
         'invoice_file_id': null, // Will be set when invoice PDF is uploaded
         'delivery_file_id':
-            null, // Will be set when delivery order PDF is uploaded
+            null, // Will be set when normal delivery order PDF is uploaded
+        'signed_delivery_file_id':
+            null, // Will be set when signed delivery order PDF is uploaded
         'invoice_uploaded_at': null, // Timestamp when invoice was uploaded
         'delivery_uploaded_at':
             null, // Timestamp when delivery order was uploaded
@@ -269,8 +272,11 @@ class OrderService {
   }
 
   /// Get all orders (with optional status filter)
+  /// Supports both old single status and new dual status system
   Future<List<Map<String, dynamic>>> getAllOrders({
-    String? status,
+    String? status, // Legacy single status filter
+    String? invoiceStatus, // New invoice status filter
+    String? deliveryStatus, // New delivery status filter
     int? limit,
   }) async {
     try {
@@ -278,8 +284,21 @@ class OrderService {
           .collection('orders')
           .orderBy('created_date', descending: true);
 
+      // Apply filters based on available parameters
       if (status != null) {
+        // Legacy single status filter (for backward compatibility)
         query = query.where('status', isEqualTo: status);
+      }
+
+      if (invoiceStatus != null) {
+        // New invoice status filter with fallback to legacy status
+        // This handles orders that might not have invoice_status field yet
+        query = query.where('invoice_status', isEqualTo: invoiceStatus);
+      }
+
+      if (deliveryStatus != null) {
+        // New delivery status filter
+        query = query.where('delivery_status', isEqualTo: deliveryStatus);
       }
 
       if (limit != null) {
@@ -309,6 +328,85 @@ class OrderService {
       }
 
       return orders;
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /// Get orders for invoice operations (Reserved and Invoiced invoice status)
+  Future<List<Map<String, dynamic>>> getOrdersForInvoicing() async {
+    try {
+      // Get all orders and filter for invoice operations
+      // This handles both new dual status and legacy single status systems
+      final allOrders = await getAllOrders();
+
+      final invoiceOrders = allOrders.where((order) {
+        // Support both new dual status and legacy single status
+        final invoiceStatus = order['invoice_status'] as String?;
+        final legacyStatus = order['status'] as String?;
+
+        if (invoiceStatus != null) {
+          // New dual status system: invoice_status can be 'Reserved' or 'Invoiced'
+          return ['Reserved', 'Invoiced'].contains(invoiceStatus);
+        } else if (legacyStatus != null) {
+          // Legacy single status system: all statuses are valid for invoice operations
+          return [
+            'Reserved',
+            'Invoiced',
+            'Issued',
+            'Delivered',
+          ].contains(legacyStatus);
+        }
+
+        return false;
+      }).toList();
+
+      // Sort by created_date (newest first)
+      invoiceOrders.sort((a, b) {
+        final aDate = a['created_date'] as Timestamp?;
+        final bDate = b['created_date'] as Timestamp?;
+        if (aDate == null || bDate == null) return 0;
+        return bDate.compareTo(aDate);
+      });
+
+      return invoiceOrders;
+    } catch (e) {
+      return [];
+    }
+  }
+
+  /// Get orders for delivery operations (Invoiced invoice status with various delivery statuses)
+  Future<List<Map<String, dynamic>>> getOrdersForDelivery() async {
+    try {
+      // Get all orders and filter for delivery operations
+      // This handles both new dual status and legacy single status systems
+      final allOrders = await getAllOrders();
+
+      final deliveryOrders = allOrders.where((order) {
+        // Support both new dual status and legacy single status
+        final invoiceStatus = order['invoice_status'] as String?;
+        final legacyStatus = order['status'] as String?;
+
+        if (invoiceStatus != null) {
+          // New dual status system: invoice_status must be 'Invoiced'
+          return invoiceStatus == 'Invoiced';
+        } else if (legacyStatus != null) {
+          // Legacy single status system: status must be 'Invoiced', 'Issued', or 'Delivered'
+          return ['Invoiced', 'Issued', 'Delivered'].contains(legacyStatus);
+        }
+
+        return false;
+      }).toList();
+
+      // Sort by created_date (newest first)
+      deliveryOrders.sort((a, b) {
+        final aDate = a['created_date'] as Timestamp?;
+        final bDate = b['created_date'] as Timestamp?;
+        if (aDate == null || bDate == null) return 0;
+        return bDate.compareTo(aDate);
+      });
+
+      return deliveryOrders;
     } catch (e) {
       return [];
     }
@@ -508,33 +606,49 @@ class OrderService {
 
       final orderDoc = orderQuery.docs.first;
       final orderData = orderDoc.data();
-      final currentStatus = orderData['status'] as String;
+
+      // Get current statuses
+      final currentInvoiceStatus =
+          orderData['invoice_status'] as String? ?? 'Reserved';
+      final currentDeliveryStatus =
+          orderData['delivery_status'] as String? ?? 'Pending';
 
       // Prepare update data based on file type
       final updateData = <String, dynamic>{
         'updated_at': FieldValue.serverTimestamp(),
       };
 
-      String newStatus = currentStatus;
+      String newInvoiceStatus = currentInvoiceStatus;
+      String newDeliveryStatus = currentDeliveryStatus;
 
       if (fileType == 'invoice') {
         updateData['invoice_file_id'] = fileId;
         updateData['invoice_uploaded_at'] = FieldValue.serverTimestamp();
 
-        // Update status to Invoiced if currently Reserved
-        if (currentStatus == 'Reserved') {
-          newStatus = 'Invoiced';
-          updateData['status'] = newStatus;
+        // Update invoice status to Invoiced if currently Reserved
+        if (currentInvoiceStatus == 'Reserved') {
+          newInvoiceStatus = 'Invoiced';
+          updateData['invoice_status'] = newInvoiceStatus;
         }
       } else if (fileType == 'delivery_order') {
         updateData['delivery_file_id'] = fileId;
         updateData['delivery_uploaded_at'] = FieldValue.serverTimestamp();
 
-        // Update status to Delivered if currently Invoiced and has invoice file
-        if (currentStatus == 'Invoiced' ||
-            orderData['invoice_file_id'] != null) {
-          newStatus = 'Delivered';
-          updateData['status'] = newStatus;
+        // Update delivery status to Issued if invoice is ready and delivery is pending
+        if (currentInvoiceStatus == 'Invoiced' &&
+            currentDeliveryStatus == 'Pending') {
+          newDeliveryStatus = 'Issued';
+          updateData['delivery_status'] = newDeliveryStatus;
+        }
+      } else if (fileType == 'signed_delivery_order') {
+        updateData['signed_delivery_file_id'] = fileId;
+        updateData['signed_delivery_uploaded_at'] =
+            FieldValue.serverTimestamp();
+
+        // Update delivery status to Delivered if currently Issued
+        if (currentDeliveryStatus == 'Issued') {
+          newDeliveryStatus = 'Delivered';
+          updateData['delivery_status'] = newDeliveryStatus;
 
           // Also update related transactions to Delivered
           await _updateTransactionStatusForOrder(orderNumber, 'Delivered');
@@ -547,7 +661,8 @@ class OrderService {
       return {
         'success': true,
         'message': 'Order $orderNumber updated with $fileType file.',
-        'new_status': newStatus,
+        'new_invoice_status': newInvoiceStatus,
+        'new_delivery_status': newDeliveryStatus,
         'file_id': fileId,
       };
     } catch (e) {
@@ -762,13 +877,18 @@ class OrderService {
         'status': orderData['status'],
         'has_invoice': orderData['invoice_file_id'] != null,
         'has_delivery_order': orderData['delivery_file_id'] != null,
+        'has_signed_delivery_order':
+            orderData['signed_delivery_file_id'] != null,
         'invoice_file_id': orderData['invoice_file_id'],
         'delivery_file_id': orderData['delivery_file_id'],
+        'signed_delivery_file_id': orderData['signed_delivery_file_id'],
         'invoice_uploaded_at': orderData['invoice_uploaded_at'],
         'delivery_uploaded_at': orderData['delivery_uploaded_at'],
+        'signed_delivery_uploaded_at': orderData['signed_delivery_uploaded_at'],
         'is_complete':
             orderData['invoice_file_id'] != null &&
-            orderData['delivery_file_id'] != null,
+            (orderData['delivery_file_id'] != null ||
+                orderData['signed_delivery_file_id'] != null),
       };
     } catch (e) {
       return {
@@ -980,6 +1100,197 @@ class OrderService {
         'success': false,
         'error': 'Failed to delete order: ${e.toString()}',
       };
+    }
+  }
+
+  /// Migrate existing orders from single status to dual status system
+  /// This method should be called once during the migration process
+  Future<Map<String, dynamic>> migrateOrdersToDualStatus() async {
+    try {
+      final currentUser = _authService.currentUser;
+      if (currentUser == null) {
+        return {'success': false, 'error': 'User not authenticated.'};
+      }
+
+      // Get all orders that don't have dual status fields yet
+      final ordersQuery = await _firestore
+          .collection('orders')
+          .where('invoice_status', isNull: true)
+          .get();
+
+      if (ordersQuery.docs.isEmpty) {
+        return {
+          'success': true,
+          'message': 'No orders need migration.',
+          'migrated_count': 0,
+        };
+      }
+
+      final batch = _firestore.batch();
+      int migratedCount = 0;
+
+      for (final doc in ordersQuery.docs) {
+        final data = doc.data();
+        final currentStatus = data['status'] as String? ?? 'Reserved';
+
+        // Map single status to dual status
+        String invoiceStatus;
+        String deliveryStatus;
+
+        switch (currentStatus) {
+          case 'Reserved':
+            invoiceStatus = 'Reserved';
+            deliveryStatus = 'Pending';
+            break;
+          case 'Invoiced':
+            invoiceStatus = 'Invoiced';
+            deliveryStatus = 'Pending';
+            break;
+          case 'Issued':
+            invoiceStatus = 'Invoiced';
+            deliveryStatus = 'Issued';
+            break;
+          case 'Delivered':
+            invoiceStatus = 'Invoiced';
+            deliveryStatus = 'Delivered';
+            break;
+          default:
+            invoiceStatus = 'Reserved';
+            deliveryStatus = 'Pending';
+        }
+
+        // Update the document with dual status fields
+        batch.update(doc.reference, {
+          'invoice_status': invoiceStatus,
+          'delivery_status': deliveryStatus,
+          'updated_at': FieldValue.serverTimestamp(),
+        });
+
+        migratedCount++;
+      }
+
+      // Commit all updates
+      await batch.commit();
+
+      return {
+        'success': true,
+        'message':
+            'Successfully migrated $migratedCount orders to dual status system.',
+        'migrated_count': migratedCount,
+      };
+    } catch (e) {
+      return {
+        'success': false,
+        'error': 'Failed to migrate orders: ${e.toString()}',
+      };
+    }
+  }
+
+  /// Delete delivery data and revert delivery status to Pending
+  Future<Map<String, dynamic>> deleteDeliveryData(String orderId) async {
+    try {
+      final batch = _firestore.batch();
+      final deletedFiles = <String>[];
+
+      // Get order document
+      final orderDoc = await _firestore.collection('orders').doc(orderId).get();
+      if (!orderDoc.exists) {
+        return {'success': false, 'error': 'Order not found'};
+      }
+
+      final orderData = orderDoc.data()!;
+
+      // Get delivery order document if it exists
+      final deliveryOrderQuery = await _firestore
+          .collection('delivery_orders')
+          .where('order_id', isEqualTo: orderId)
+          .get();
+
+      String? deliveryOrderId;
+      Map<String, dynamic>? deliveryOrderData;
+
+      if (deliveryOrderQuery.docs.isNotEmpty) {
+        deliveryOrderId = deliveryOrderQuery.docs.first.id;
+        deliveryOrderData = deliveryOrderQuery.docs.first.data();
+      }
+
+      // Delete delivery PDF files if they exist
+      if (deliveryOrderData != null) {
+        // Delete normal delivery PDF
+        if (deliveryOrderData['delivery_order'] != null) {
+          final deliveryFileName =
+              deliveryOrderData['delivery_order'] as String;
+          try {
+            await FirebaseStorage.instance
+                .ref()
+                .child('delivery_orders/$deliveryFileName')
+                .delete();
+            deletedFiles.add(deliveryFileName);
+          } catch (e) {
+            debugPrint(
+              'Warning: Could not delete delivery file $deliveryFileName: $e',
+            );
+          }
+        }
+
+        // Delete signed delivery PDF
+        if (deliveryOrderData['signed_delivery'] != null) {
+          final signedFileName = deliveryOrderData['signed_delivery'] as String;
+          try {
+            await FirebaseStorage.instance
+                .ref()
+                .child('delivery_orders/$signedFileName')
+                .delete();
+            deletedFiles.add(signedFileName);
+          } catch (e) {
+            debugPrint(
+              'Warning: Could not delete signed delivery file $signedFileName: $e',
+            );
+          }
+        }
+
+        // Delete delivery order document
+        batch.delete(
+          _firestore.collection('delivery_orders').doc(deliveryOrderId!),
+        );
+      }
+
+      // Update order status - revert delivery_status to Pending
+      final orderUpdateData = <String, dynamic>{};
+
+      // For dual status system
+      if (orderData.containsKey('delivery_status')) {
+        orderUpdateData['delivery_status'] = 'Pending';
+      }
+
+      // For legacy single status system - revert to Invoiced
+      if (orderData.containsKey('status') &&
+          !orderData.containsKey('delivery_status')) {
+        orderUpdateData['status'] = 'Invoiced';
+      }
+
+      if (orderUpdateData.isNotEmpty) {
+        batch.update(
+          _firestore.collection('orders').doc(orderId),
+          orderUpdateData,
+        );
+      }
+
+      // Commit the batch
+      await batch.commit();
+
+      return {
+        'success': true,
+        'deletion_summary': {
+          'files_deleted': deletedFiles.length,
+          'deleted_files': deletedFiles,
+          'delivery_order_removed': deliveryOrderId != null,
+          'status_reverted': true,
+        },
+      };
+    } catch (e) {
+      debugPrint('Error deleting delivery data: $e');
+      return {'success': false, 'error': 'Failed to delete delivery data: $e'};
     }
   }
 }

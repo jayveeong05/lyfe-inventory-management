@@ -23,7 +23,18 @@ class InvoiceService {
 
   /// Get orders with Reserved status (available for invoicing)
   Future<List<Map<String, dynamic>>> getAvailableOrders() async {
-    return await _orderService.getAllOrders(status: 'Reserved');
+    // Use new dual status system - get orders for invoicing operations
+    return await _orderService.getOrdersForInvoicing();
+  }
+
+  /// Get orders for invoicing (Reserved and Invoiced status only)
+  Future<List<Map<String, dynamic>>> getOrdersForInvoicing() async {
+    try {
+      // Use OrderService method that handles both dual status and legacy single status systems
+      return await _orderService.getOrdersForInvoicing();
+    } catch (e) {
+      return [];
+    }
   }
 
   /// Get order by ID
@@ -109,8 +120,7 @@ class InvoiceService {
       final downloadUrl = await snapshot.ref.getDownloadURL();
 
       // Prepare invoice data to add to PO document
-      final invoiceData = {
-        'status': 'Invoiced',
+      final invoiceData = <String, dynamic>{
         'invoice_number': invoiceNumber,
         'invoice_date': Timestamp.fromDate(invoiceDate),
         'pdf_url': downloadUrl,
@@ -122,6 +132,15 @@ class InvoiceService {
         'invoice_uploaded_at': FieldValue.serverTimestamp(),
         'updated_at': FieldValue.serverTimestamp(),
       };
+
+      // Update status based on system type
+      if (orderData.containsKey('invoice_status')) {
+        // New dual status system
+        invoiceData['invoice_status'] = 'Invoiced';
+      } else {
+        // Legacy single status system
+        invoiceData['status'] = 'Invoiced';
+      }
 
       // Update order with invoice data
       final orderRef = _firestore.collection('orders').doc(poId);
@@ -182,7 +201,9 @@ class InvoiceService {
 
   /// Get all invoices (from orders with invoice data)
   Future<List<Map<String, dynamic>>> getAllInvoices({
-    String? status,
+    String? status, // Legacy status filter
+    String? invoiceStatus, // New invoice status filter
+    String? deliveryStatus, // New delivery status filter
     int? limit,
   }) async {
     try {
@@ -191,8 +212,20 @@ class InvoiceService {
           .where('invoice_number', isNull: false)
           .orderBy('invoice_uploaded_at', descending: true);
 
+      // Apply filters based on available parameters
       if (status != null) {
+        // Legacy single status filter (for backward compatibility)
         query = query.where('status', isEqualTo: status);
+      }
+
+      if (invoiceStatus != null) {
+        // New invoice status filter
+        query = query.where('invoice_status', isEqualTo: invoiceStatus);
+      }
+
+      if (deliveryStatus != null) {
+        // New delivery status filter
+        query = query.where('delivery_status', isEqualTo: deliveryStatus);
       }
 
       if (limit != null) {
@@ -249,8 +282,20 @@ class InvoiceService {
         return {'success': false, 'error': 'Order number not found.'};
       }
 
-      // Check if order has invoice status
-      if (orderData['status'] != 'Invoiced') {
+      // Check if order has invoice status (support both dual and legacy status)
+      final invoiceStatus = orderData['invoice_status'] as String?;
+      final legacyStatus = orderData['status'] as String?;
+
+      bool canDeleteInvoice = false;
+      if (invoiceStatus != null) {
+        // New dual status system
+        canDeleteInvoice = invoiceStatus == 'Invoiced';
+      } else if (legacyStatus != null) {
+        // Legacy single status system
+        canDeleteInvoice = legacyStatus == 'Invoiced';
+      }
+
+      if (!canDeleteInvoice) {
         return {'success': false, 'error': 'Order is not in Invoiced status.'};
       }
 
@@ -258,15 +303,25 @@ class InvoiceService {
       final batch = _firestore.batch();
 
       // Step 1: Remove invoice data from order and revert status
-      batch.update(orderDoc.reference, {
-        'status': 'Reserved',
+      final orderUpdateData = <String, dynamic>{
         'invoice_number': FieldValue.delete(),
         'invoice_date': FieldValue.delete(),
         'invoice_remarks': FieldValue.delete(),
         'invoice_file_id': FieldValue.delete(),
         'invoice_uploaded_at': FieldValue.delete(),
         'updated_at': FieldValue.serverTimestamp(),
-      });
+      };
+
+      // Revert status based on system type
+      if (invoiceStatus != null) {
+        // New dual status system - revert invoice_status to Reserved
+        orderUpdateData['invoice_status'] = 'Reserved';
+      } else {
+        // Legacy single status system - revert status to Reserved
+        orderUpdateData['status'] = 'Reserved';
+      }
+
+      batch.update(orderDoc.reference, orderUpdateData);
 
       // Step 2: Delete ALL invoice files (all versions) from files collection and storage
       final allInvoiceFiles = await _firestore

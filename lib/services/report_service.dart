@@ -665,7 +665,7 @@ class ReportService {
       debugPrint('📊 CSV Data Rows: ${csvData.length}');
       debugPrint('📝 CSV Content Length: ${csvString.length} characters');
       debugPrint(
-        '🔍 CSV Preview (first 200 chars): ${csvString.length > 200 ? csvString.substring(0, 200) + "..." : csvString}',
+        '🔍 CSV Preview (first 200 chars): ${csvString.length > 200 ? "${csvString.substring(0, 200)}..." : csvString}',
       );
 
       // Save to file using platform-appropriate directory
@@ -739,7 +739,7 @@ class ReportService {
         '📝 Inventory CSV Content Length: ${csvString.length} characters',
       );
       debugPrint(
-        '🔍 Inventory CSV Preview (first 200 chars): ${csvString.length > 200 ? csvString.substring(0, 200) + "..." : csvString}',
+        '🔍 Inventory CSV Preview (first 200 chars): ${csvString.length > 200 ? "${csvString.substring(0, 200)}..." : csvString}',
       );
 
       // Save to file using platform-appropriate directory
@@ -917,7 +917,7 @@ class ReportService {
         '📝 Monthly Activity CSV Content Length: ${csvString.length} characters',
       );
       debugPrint(
-        '🔍 Monthly Activity CSV Preview (first 200 chars): ${csvString.length > 200 ? csvString.substring(0, 200) + "..." : csvString}',
+        '🔍 Monthly Activity CSV Preview (first 200 chars): ${csvString.length > 200 ? "${csvString.substring(0, 200)}..." : csvString}',
       );
 
       // Save to file using platform-appropriate directory
