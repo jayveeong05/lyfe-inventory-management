@@ -13,6 +13,8 @@ import 'screens/data_upload_screen.dart';
 import 'screens/invoice_screen.dart';
 import 'screens/delivery_order_screen.dart';
 import 'screens/inventory_management_screen.dart';
+import 'screens/demo_screen.dart';
+import 'screens/demo_return_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -98,6 +100,8 @@ class _InventoryProAppState extends State<InventoryProApp>
         '/invoice': (context) => const InvoiceScreen(),
         '/delivery_order': (context) => const DeliveryOrderScreen(),
         '/inventory_management': (context) => const InventoryManagementScreen(),
+        '/demo': (context) => const DemoScreen(),
+        '/demo_return': (context) => const DemoReturnScreen(),
       },
       home: Consumer<AuthProvider>(
         builder: (context, authProvider, child) {

@@ -1313,10 +1313,8 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                               'Order Number',
                               _selectedPO!['order_number'],
                             ),
-                            _buildInfoRow(
-                              'Status',
-                              _getDisplayStatus(_selectedPO!),
-                            ),
+                            // Show separate status lines for dual status system
+                            ..._buildStatusRows(_selectedPO!),
                             _buildInfoRow(
                               'Dealer',
                               _selectedPO!['customer_dealer'],
@@ -1937,6 +1935,29 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
         ],
       ),
     );
+  }
+
+  // Helper method to build separate status rows for dual status system
+  List<Widget> _buildStatusRows(Map<String, dynamic> order) {
+    final invoiceStatus = order['invoice_status'] as String?;
+    final deliveryStatus = order['delivery_status'] as String?;
+    final legacyStatus = order['status'] as String?;
+
+    // For dual status system, show separate lines
+    if (invoiceStatus != null && deliveryStatus != null) {
+      return [
+        _buildInfoRow('Invoice Status', invoiceStatus),
+        _buildInfoRow('Delivery Status', deliveryStatus),
+      ];
+    }
+
+    // For legacy single status system, show single status
+    if (legacyStatus != null) {
+      return [_buildInfoRow('Status', legacyStatus)];
+    }
+
+    // Fallback
+    return [_buildInfoRow('Status', 'Unknown')];
   }
 
   // Helper method to get display status from individual status values

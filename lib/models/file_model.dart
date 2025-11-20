@@ -4,7 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class FileModel {
   final String fileId;
   final String orderNumber;
-  final String fileType; // 'invoice' or 'delivery_order'
+  final String
+  fileType; // 'invoice', 'delivery_order', or 'signed_delivery_order'
   final String filePath;
   final String storageUrl;
   final DateTime uploadDate;
@@ -31,7 +32,7 @@ class FileModel {
   /// Create FileModel from Firestore document
   factory FileModel.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
-    
+
     return FileModel(
       fileId: doc.id,
       orderNumber: data['order_number'] ?? '',
@@ -97,7 +98,7 @@ class FileModel {
   /// Helper method to parse DateTime from Firestore
   static DateTime _parseDateTime(dynamic value) {
     if (value == null) return DateTime.now();
-    
+
     if (value is Timestamp) {
       return value.toDate();
     } else if (value is String) {
@@ -107,7 +108,7 @@ class FileModel {
         return DateTime.now();
       }
     }
-    
+
     return DateTime.now();
   }
 
@@ -148,7 +149,7 @@ class FileModel {
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
-    
+
     return other is FileModel &&
         other.fileId == fileId &&
         other.orderNumber == orderNumber &&
@@ -168,7 +169,8 @@ class FileModel {
 /// Enum for file types
 enum FileType {
   invoice('invoice'),
-  deliveryOrder('delivery_order');
+  deliveryOrder('delivery_order'),
+  signedDeliveryOrder('signed_delivery_order');
 
   const FileType(this.value);
   final String value;
@@ -179,6 +181,8 @@ enum FileType {
         return FileType.invoice;
       case 'delivery_order':
         return FileType.deliveryOrder;
+      case 'signed_delivery_order':
+        return FileType.signedDeliveryOrder;
       default:
         throw ArgumentError('Unknown file type: $value');
     }
@@ -188,7 +192,7 @@ enum FileType {
 /// Constants for file collection
 class FileConstants {
   static const String collectionName = 'files';
-  
+
   // Field names
   static const String fieldOrderNumber = 'order_number';
   static const String fieldFileType = 'file_type';
@@ -202,19 +206,20 @@ class FileConstants {
   static const String fieldIsActive = 'is_active';
   static const String fieldCreatedAt = 'created_at';
   static const String fieldUpdatedAt = 'updated_at';
-  
+
   // File type values
   static const String fileTypeInvoice = 'invoice';
   static const String fileTypeDeliveryOrder = 'delivery_order';
-  
+  static const String fileTypeSignedDeliveryOrder = 'signed_delivery_order';
+
   // Storage paths
   static const String storagePathInvoices = 'files/invoices';
   static const String storagePathDeliveryOrders = 'files/delivery_orders';
-  
+
   // File constraints
   static const int maxFileSizeBytes = 5 * 1024 * 1024; // 5MB
   static const List<String> allowedExtensions = ['.pdf'];
-  
+
   // Query limits
   static const int defaultQueryLimit = 50;
   static const int maxQueryLimit = 100;

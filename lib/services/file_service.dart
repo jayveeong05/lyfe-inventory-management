@@ -92,10 +92,15 @@ class FileService {
       }
 
       // Validate file type
-      if (!['invoice', 'delivery_order'].contains(fileType)) {
+      if (![
+        'invoice',
+        'delivery_order',
+        'signed_delivery_order',
+      ].contains(fileType)) {
         return {
           'valid': false,
-          'error': 'Invalid file type. Must be "invoice" or "delivery_order"',
+          'error':
+              'Invalid file type. Must be "invoice", "delivery_order", or "signed_delivery_order"',
         };
       }
 
@@ -130,9 +135,16 @@ class FileService {
         ? FileConstants.storagePathInvoices
         : FileConstants.storagePathDeliveryOrders;
 
-    final fileName = fileType == 'invoice'
-        ? 'invoice_${orderNumber}_${dateStr}_$timeStr.pdf'
-        : 'delivery_${orderNumber}_${dateStr}_$timeStr.pdf';
+    String fileName;
+    if (fileType == 'invoice') {
+      fileName = 'invoice_${orderNumber}_${dateStr}_$timeStr.pdf';
+    } else if (fileType == 'delivery_order') {
+      fileName = 'delivery_${orderNumber}_${dateStr}_$timeStr.pdf';
+    } else if (fileType == 'signed_delivery_order') {
+      fileName = 'signed_delivery_${orderNumber}_${dateStr}_$timeStr.pdf';
+    } else {
+      fileName = 'unknown_${orderNumber}_${dateStr}_$timeStr.pdf';
+    }
 
     return '$basePath/$fileName';
   }
@@ -297,9 +309,13 @@ class FileService {
       }
 
       // Validate file type
-      if (!['invoice', 'delivery_order'].contains(fileType)) {
+      if (![
+        'invoice',
+        'delivery_order',
+        'signed_delivery_order',
+      ].contains(fileType)) {
         return FileUploadResult.error(
-          'Invalid file type. Must be "invoice" or "delivery_order"',
+          'Invalid file type. Must be "invoice", "delivery_order", or "signed_delivery_order"',
         );
       }
 

@@ -17,6 +17,8 @@ import 'invoice_screen.dart';
 import 'delivery_order_screen.dart';
 import 'inventory_management_screen.dart';
 import 'user_management_screen.dart';
+import 'demo_screen.dart';
+import 'demo_return_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -227,6 +229,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
 
                         // Core navigation buttons
                         _buildCoreNavigationSection(),
+                        const SizedBox(height: 24),
+
+                        // Demo section
+                        _buildDemoSection(),
                         const SizedBox(height: 24),
 
                         // Management section
@@ -755,6 +761,50 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                   context,
                   MaterialPageRoute(
                     builder: (context) => const DeliveryOrderScreen(),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDemoSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Demo Management',
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 12),
+        Column(
+          children: [
+            _buildNavigationListItem(
+              'Demo',
+              Icons.science,
+              Colors.amber,
+              'Record items for demonstration',
+              () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const DemoScreen()),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+            _buildNavigationListItem(
+              'Demo Return',
+              Icons.assignment_return,
+              Colors.green,
+              'Return demo items to active status',
+              () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const DemoReturnScreen(),
                   ),
                 );
               },

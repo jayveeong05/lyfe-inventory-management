@@ -135,6 +135,8 @@ class OrderService {
         'invoice_uploaded_at': null, // Timestamp when invoice was uploaded
         'delivery_uploaded_at':
             null, // Timestamp when delivery order was uploaded
+        'signed_delivery_uploaded_at':
+            null, // Timestamp when signed delivery order was uploaded
       };
 
       // Add order to batch
@@ -586,7 +588,8 @@ class OrderService {
   Future<Map<String, dynamic>> updateOrderWithFile({
     required String orderNumber,
     required String fileId,
-    required String fileType, // 'invoice' or 'delivery_order'
+    required String
+    fileType, // 'invoice', 'delivery_order', or 'signed_delivery_order'
   }) async {
     try {
       final currentUser = _authService.currentUser;
@@ -631,6 +634,7 @@ class OrderService {
           updateData['invoice_status'] = newInvoiceStatus;
         }
       } else if (fileType == 'delivery_order') {
+        // Handle normal delivery order
         updateData['delivery_file_id'] = fileId;
         updateData['delivery_uploaded_at'] = FieldValue.serverTimestamp();
 
@@ -641,6 +645,7 @@ class OrderService {
           updateData['delivery_status'] = newDeliveryStatus;
         }
       } else if (fileType == 'signed_delivery_order') {
+        // Handle signed delivery order
         updateData['signed_delivery_file_id'] = fileId;
         updateData['signed_delivery_uploaded_at'] =
             FieldValue.serverTimestamp();
@@ -650,8 +655,8 @@ class OrderService {
           newDeliveryStatus = 'Delivered';
           updateData['delivery_status'] = newDeliveryStatus;
 
-          // Also update related transactions to Delivered
-          await _updateTransactionStatusForOrder(orderNumber, 'Delivered');
+          // Create new 'Delivered' transaction instead of updating existing ones
+          await _createDeliveredTransaction(orderNumber);
         }
       }
 
@@ -895,6 +900,80 @@ class OrderService {
         'success': false,
         'error': 'Failed to get order file status: ${e.toString()}',
       };
+    }
+  }
+
+  /// Helper method to create new 'Delivered' transaction for signed delivery
+  Future<void> _createDeliveredTransaction(String orderNumber) async {
+    try {
+      // Get the order to find transaction IDs and details
+      final orderQuery = await _firestore
+          .collection('orders')
+          .where('order_number', isEqualTo: orderNumber)
+          .get();
+
+      if (orderQuery.docs.isEmpty) {
+        print(
+          'Order $orderNumber not found for delivered transaction creation',
+        );
+        return;
+      }
+
+      final orderData = orderQuery.docs.first.data();
+      final transactionIds = List<int>.from(orderData['transaction_ids'] ?? []);
+
+      if (transactionIds.isEmpty) {
+        print('No transaction IDs found for order $orderNumber');
+        return;
+      }
+
+      // Get the first transaction to copy details from
+      final firstTransactionQuery = await _firestore
+          .collection('transactions')
+          .where('transaction_id', isEqualTo: transactionIds.first)
+          .get();
+
+      if (firstTransactionQuery.docs.isEmpty) {
+        print('First transaction not found for order $orderNumber');
+        return;
+      }
+
+      final firstTransactionData = firstTransactionQuery.docs.first.data();
+      final currentUser = _authService.currentUser;
+
+      // Get next transaction ID
+      final nextTransactionId = await getNextTransactionId();
+
+      // Create new 'Delivered' transaction with same details but different status
+      final deliveredTransactionData = {
+        ...firstTransactionData,
+        'transaction_id': nextTransactionId,
+        'status': 'Delivered',
+        'transaction_type': 'Stock_Out',
+        'created_at': FieldValue.serverTimestamp(),
+        'updated_at': FieldValue.serverTimestamp(),
+        'created_by_uid':
+            currentUser?.uid ?? firstTransactionData['created_by_uid'],
+      };
+
+      // Create the new transaction document
+      final deliveredTransactionRef = _firestore
+          .collection('transactions')
+          .doc();
+
+      await deliveredTransactionRef.set(deliveredTransactionData);
+
+      // Add the new transaction ID to the order's transaction_ids array
+      await orderQuery.docs.first.reference.update({
+        'transaction_ids': FieldValue.arrayUnion([nextTransactionId]),
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      print(
+        'Created new Delivered transaction ${deliveredTransactionRef.id} for order $orderNumber',
+      );
+    } catch (e) {
+      print('Error creating delivered transaction for order $orderNumber: $e');
     }
   }
 
@@ -1187,10 +1266,17 @@ class OrderService {
   }
 
   /// Delete delivery data and revert delivery status to Pending
+  /// This method:
+  /// 1. Deletes delivery PDF files from Firebase Storage
+  /// 2. Deletes file records from 'files' collection
+  /// 3. Deletes delivery_orders document
+  /// 4. Reverts order delivery status to 'Pending' (or legacy status to 'Invoiced')
+  /// 5. Reverts transaction status back to 'Invoiced'
   Future<Map<String, dynamic>> deleteDeliveryData(String orderId) async {
     try {
       final batch = _firestore.batch();
       final deletedFiles = <String>[];
+      int filesCollectionDeleted = 0;
 
       // Get order document
       final orderDoc = await _firestore.collection('orders').doc(orderId).get();
@@ -1199,64 +1285,72 @@ class OrderService {
       }
 
       final orderData = orderDoc.data()!;
+      final orderNumber = orderData['order_number'] as String?;
 
-      // Get delivery order document if it exists
+      if (orderNumber == null) {
+        return {'success': false, 'error': 'Order number not found'};
+      }
+
+      // Step 1: Delete ALL delivery-related files from 'files' collection and Firebase Storage
+      final deliveryFiles = await _firestore
+          .collection('files')
+          .where('order_number', isEqualTo: orderNumber)
+          .where(
+            'file_type',
+            whereIn: ['delivery_order', 'signed_delivery_order'],
+          )
+          .get();
+
+      for (final fileDoc in deliveryFiles.docs) {
+        final fileData = fileDoc.data();
+        final filePath = fileData['file_path'] as String?;
+        final fileName = fileData['original_filename'] as String?;
+
+        // Delete file record from files collection
+        batch.delete(fileDoc.reference);
+        filesCollectionDeleted++;
+
+        // Delete file from Firebase Storage
+        if (filePath != null) {
+          try {
+            await FirebaseStorage.instance.ref().child(filePath).delete();
+            deletedFiles.add(fileName ?? filePath);
+            debugPrint('🗂️ Deleted delivery file from storage: $filePath');
+          } catch (e) {
+            debugPrint(
+              '⚠️ Warning: Could not delete file from storage $filePath: $e',
+            );
+          }
+        }
+      }
+
+      // Step 2: Delete delivery order document (legacy cleanup)
       final deliveryOrderQuery = await _firestore
           .collection('delivery_orders')
           .where('order_id', isEqualTo: orderId)
           .get();
 
       String? deliveryOrderId;
-      Map<String, dynamic>? deliveryOrderData;
-
       if (deliveryOrderQuery.docs.isNotEmpty) {
         deliveryOrderId = deliveryOrderQuery.docs.first.id;
-        deliveryOrderData = deliveryOrderQuery.docs.first.data();
-      }
-
-      // Delete delivery PDF files if they exist
-      if (deliveryOrderData != null) {
-        // Delete normal delivery PDF
-        if (deliveryOrderData['delivery_order'] != null) {
-          final deliveryFileName =
-              deliveryOrderData['delivery_order'] as String;
-          try {
-            await FirebaseStorage.instance
-                .ref()
-                .child('delivery_orders/$deliveryFileName')
-                .delete();
-            deletedFiles.add(deliveryFileName);
-          } catch (e) {
-            debugPrint(
-              'Warning: Could not delete delivery file $deliveryFileName: $e',
-            );
-          }
-        }
-
-        // Delete signed delivery PDF
-        if (deliveryOrderData['signed_delivery'] != null) {
-          final signedFileName = deliveryOrderData['signed_delivery'] as String;
-          try {
-            await FirebaseStorage.instance
-                .ref()
-                .child('delivery_orders/$signedFileName')
-                .delete();
-            deletedFiles.add(signedFileName);
-          } catch (e) {
-            debugPrint(
-              'Warning: Could not delete signed delivery file $signedFileName: $e',
-            );
-          }
-        }
-
-        // Delete delivery order document
         batch.delete(
-          _firestore.collection('delivery_orders').doc(deliveryOrderId!),
+          _firestore.collection('delivery_orders').doc(deliveryOrderId),
         );
       }
 
-      // Update order status - revert delivery_status to Pending
-      final orderUpdateData = <String, dynamic>{};
+      // Step 3: Update order status - revert delivery_status to Pending
+      final orderUpdateData = <String, dynamic>{
+        'updated_at': FieldValue.serverTimestamp(),
+        // Clear delivery file references
+        'delivery_file_id': null,
+        'delivery_uploaded_at': null,
+        'signed_delivery_file_id': null,
+        'signed_delivery_uploaded_at': null,
+        // Clear delivery information
+        'delivery_number': null,
+        'delivery_date': null,
+        'delivery_remarks': null,
+      };
 
       // For dual status system
       if (orderData.containsKey('delivery_status')) {
@@ -1269,27 +1363,32 @@ class OrderService {
         orderUpdateData['status'] = 'Invoiced';
       }
 
-      if (orderUpdateData.isNotEmpty) {
-        batch.update(
-          _firestore.collection('orders').doc(orderId),
-          orderUpdateData,
-        );
-      }
+      batch.update(
+        _firestore.collection('orders').doc(orderId),
+        orderUpdateData,
+      );
+
+      // Step 4: Revert transaction status back to 'Invoiced'
+      await _updateTransactionStatusForOrder(orderNumber, 'Invoiced');
 
       // Commit the batch
       await batch.commit();
 
+      debugPrint('✅ Delivery data deletion completed for order $orderNumber');
+
       return {
         'success': true,
         'deletion_summary': {
-          'files_deleted': deletedFiles.length,
+          'files_deleted_from_storage': deletedFiles.length,
+          'files_deleted_from_collection': filesCollectionDeleted,
           'deleted_files': deletedFiles,
           'delivery_order_removed': deliveryOrderId != null,
           'status_reverted': true,
+          'transactions_reverted': true,
         },
       };
     } catch (e) {
-      debugPrint('Error deleting delivery data: $e');
+      debugPrint('❌ Error deleting delivery data: $e');
       return {'success': false, 'error': 'Failed to delete delivery data: $e'};
     }
   }

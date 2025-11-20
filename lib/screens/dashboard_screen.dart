@@ -4,6 +4,8 @@ import '../providers/auth_provider.dart';
 import '../screens/login_screen.dart';
 import 'stock_in_screen.dart';
 import 'inventory_management_screen.dart';
+import 'demo_screen.dart';
+import 'demo_return_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
@@ -92,7 +94,7 @@ class DashboardScreen extends StatelessWidget {
                     crossAxisCount: 2,
                     crossAxisSpacing: 12,
                     mainAxisSpacing: 12,
-                    childAspectRatio: 1.2,
+                    childAspectRatio: 1.1,
                     children: [
                       _buildDashboardButton(
                         context,
@@ -117,6 +119,36 @@ class DashboardScreen extends StatelessWidget {
                         Colors.red,
                         () {
                           Navigator.pushNamed(context, '/stock_out');
+                        },
+                      ),
+                      _buildDashboardButton(
+                        context,
+                        'Demo',
+                        'Record demo items',
+                        Icons.science,
+                        Colors.amber,
+                        () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const DemoScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                      _buildDashboardButton(
+                        context,
+                        'Demo Return',
+                        'Return demo items',
+                        Icons.assignment_return,
+                        Colors.green,
+                        () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const DemoReturnScreen(),
+                            ),
+                          );
                         },
                       ),
                       _buildDashboardButton(
