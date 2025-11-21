@@ -343,6 +343,12 @@ class OrderService {
       final allOrders = await getAllOrders();
 
       final invoiceOrders = allOrders.where((order) {
+        // First check if order is cancelled - exclude cancelled orders
+        final orderStatus = order['order_status'] as String?;
+        if (orderStatus == 'Cancelled') {
+          return false;
+        }
+
         // Support both new dual status and legacy single status
         final invoiceStatus = order['invoice_status'] as String?;
         final legacyStatus = order['status'] as String?;
@@ -385,6 +391,12 @@ class OrderService {
       final allOrders = await getAllOrders();
 
       final deliveryOrders = allOrders.where((order) {
+        // First check if order is cancelled - exclude cancelled orders
+        final orderStatus = order['order_status'] as String?;
+        if (orderStatus == 'Cancelled') {
+          return false;
+        }
+
         // Support both new dual status and legacy single status
         final invoiceStatus = order['invoice_status'] as String?;
         final legacyStatus = order['status'] as String?;

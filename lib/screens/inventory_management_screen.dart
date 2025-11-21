@@ -39,7 +39,14 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
   List<String> _categories = [];
   List<String> _locations = [];
   List<String> _sizes = [];
-  final List<String> _statusOptions = ['Active', 'Reserved', 'Delivered'];
+  final List<String> _statusOptions = [
+    'Active',
+    'Reserved',
+    'Invoiced',
+    'Issued',
+    'Delivered',
+    'Demo',
+  ];
 
   @override
   void initState() {
@@ -644,8 +651,14 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
         return Icons.check_circle;
       case 'reserved':
         return Icons.pending;
+      case 'invoiced':
+        return Icons.receipt;
+      case 'issued':
+        return Icons.assignment_turned_in;
       case 'delivered':
         return Icons.local_shipping;
+      case 'demo':
+        return Icons.play_circle_outline;
       default:
         return Icons.help;
     }

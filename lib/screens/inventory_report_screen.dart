@@ -24,7 +24,14 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
 
   List<String> _categories = [];
   List<String> _locations = [];
-  final List<String> _statusOptions = ['Active', 'Reserved', 'Delivered'];
+  final List<String> _statusOptions = [
+    'Active',
+    'Reserved',
+    'Invoiced',
+    'Issued',
+    'Delivered',
+    'Demo',
+  ];
 
   @override
   void initState() {

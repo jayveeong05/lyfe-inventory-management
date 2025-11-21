@@ -978,661 +978,37 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Status Legend
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.orange.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: Colors.orange.withValues(alpha: 0.3),
-                        ),
-                      ),
-                      child: const Text(
-                        '🟢 Invoiced → Issue • 🔵 Issued → Deliver • 🟣 Delivered',
-                        style: TextStyle(fontSize: 11),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
+                    // Status Legend Card
+                    _buildStatusLegendCard(),
                     const SizedBox(height: 16),
 
-                    // Order Selection
-                    const Text(
-                      'Select Order',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<String>(
-                      initialValue: _selectedOrderId,
-                      decoration: const InputDecoration(
-                        labelText: 'Select Invoiced Order *',
-                        border: OutlineInputBorder(),
-                        hintText: 'Choose an order to deliver',
-                      ),
-                      isExpanded: true,
-                      menuMaxHeight: 300,
-                      items: _allOrders.isEmpty
-                          ? [
-                              const DropdownMenuItem<String>(
-                                value: null,
-                                child: Text(
-                                  'No orders available',
-                                  style: TextStyle(color: Colors.grey),
-                                ),
-                              ),
-                            ]
-                          : _allOrders.map((order) {
-                              final orderNumber =
-                                  order['order_number'] ?? 'Unknown';
-                              final dealer =
-                                  order['customer_dealer'] ?? 'Unknown';
-                              final client =
-                                  order['customer_client'] ?? 'Unknown';
-                              // Support both old single status and new dual status system
-                              final status =
-                                  order['status'] as String? ?? 'Unknown';
-                              final invoiceStatus =
-                                  order['invoice_status'] as String? ?? status;
-                              final deliveryStatus =
-                                  order['delivery_status'] as String? ??
-                                  'Pending';
-
-                              // Define status colors based on delivery status
-                              final isReserved = invoiceStatus == 'Reserved';
-                              final isInvoiced =
-                                  invoiceStatus == 'Invoiced' &&
-                                  deliveryStatus == 'Pending';
-                              final isIssued = deliveryStatus == 'Issued';
-                              final isDelivered = deliveryStatus == 'Delivered';
-
-                              return DropdownMenuItem<String>(
-                                value: order['id'],
-                                child: Row(
-                                  children: [
-                                    // Status color indicator
-                                    Container(
-                                      width: 8,
-                                      height: 8,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: isReserved
-                                            ? Colors.orange
-                                            : isInvoiced
-                                            ? Colors.green
-                                            : isIssued
-                                            ? Colors.blue
-                                            : isDelivered
-                                            ? Colors.purple
-                                            : Colors.grey,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    // Order details
-                                    Expanded(
-                                      child: Text(
-                                        '$orderNumber - $dealer → $client',
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                        overflow: TextOverflow.ellipsis,
-                                        maxLines: 1,
-                                      ),
-                                    ),
-                                    // Status label
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 6,
-                                        vertical: 2,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: isReserved
-                                            ? Colors.orange.shade100
-                                            : isInvoiced
-                                            ? Colors.green.shade100
-                                            : isIssued
-                                            ? Colors.blue.shade100
-                                            : isDelivered
-                                            ? Colors.purple.shade100
-                                            : Colors.grey.shade100,
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Text(
-                                        isInvoiced
-                                            ? 'Invoiced'
-                                            : deliveryStatus,
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w500,
-                                          color: isReserved
-                                              ? Colors.orange.shade800
-                                              : isInvoiced
-                                              ? Colors.green.shade800
-                                              : isIssued
-                                              ? Colors.blue.shade800
-                                              : isDelivered
-                                              ? Colors.purple.shade800
-                                              : Colors.grey.shade800,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }).toList(),
-                      onChanged: (String? newValue) {
-                        setState(() {
-                          _selectedOrderId = newValue;
-                          _currentDeliveryOrder = null;
-                          // Reset upload form states when order changes
-                          _showNormalUploadForm = false;
-                          _showSignedUploadForm = false;
-                          _isNormalReplaceMode = false;
-                          _isSignedReplaceMode = false;
-                          // Clear selected files
-                          _normalDeliveryFile = null;
-                          _normalDeliveryFileName = null;
-                          _signedDeliveryFile = null;
-                          _signedDeliveryFileName = null;
-                        });
-                        if (newValue != null) {
-                          _loadDeliveryOrderForOrder(newValue);
-                        }
-                      },
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Please select an order';
-                        }
-                        return null;
-                      },
-                    ),
-
+                    // Order Selection Card
+                    _buildOrderSelectionCard(),
                     const SizedBox(height: 16),
-
-                    // Selected Order Information Card
+                    // Order Details Card (only show when order is selected)
                     if (_selectedOrder != null) ...[
-                      // Basic Order Information
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.shade50,
-                          border: Border.all(color: Colors.orange.shade200),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.info_outline,
-                                  size: 20,
-                                  color: Colors.orange.shade600,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  'Selected Order Details',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.orange.shade800,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            _buildInfoRow(
-                              'Order Number',
-                              _selectedOrder!['order_number'],
-                            ),
-                            // Show separate status lines for dual status system
-                            ..._buildStatusRows(_selectedOrder!),
-                            _buildInfoRow(
-                              'Dealer',
-                              _selectedOrder!['customer_dealer'],
-                            ),
-                            _buildInfoRow(
-                              'Client',
-                              _selectedOrder!['customer_client'],
-                            ),
-                            _buildItemDetails(_selectedOrder!),
-                            if (_selectedOrder!['created_date'] != null)
-                              _buildInfoRow(
-                                'Created Date',
-                                _formatDate(_selectedOrder!['created_date']),
-                              ),
-                            if ((_selectedOrder!['delivery_status'] ??
-                                        _selectedOrder!['status']) ==
-                                    'Delivered' &&
-                                _selectedOrder!['delivery_number'] != null)
-                              _buildInfoRow(
-                                'Delivery Number',
-                                _selectedOrder!['delivery_number'],
-                              ),
-                          ],
-                        ),
-                      ),
-
-                      // Remove Delivery Data Button
-                      if (_selectedOrder != null &&
-                          (_currentDeliveryOrder != null)) ...[
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: _isUploading
-                                ? null
-                                : _deleteDeliveryData,
-                            icon: const Icon(
-                              Icons.remove_circle_outline,
-                              size: 18,
-                            ),
-                            label: const Text('Remove Delivery Data'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.red,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              textStyle: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-
-                      // PDF Management Cards
+                      _buildOrderDetailsCard(),
                       const SizedBox(height: 16),
+                    ],
 
-                      // Normal Delivery PDF Card
-                      _buildNormalDeliveryCard(),
-
+                    // Delivery Information Card (only show when delivery order exists)
+                    if (_currentDeliveryOrder != null) ...[
+                      _buildDeliveryInformationCard(),
                       const SizedBox(height: 16),
+                    ],
 
-                      // Signed Delivery PDF Card
-                      _buildSignedDeliveryCard(),
+                    // Normal Delivery Upload Card
+                    if (_selectedOrder != null &&
+                        _shouldShowNormalUpload()) ...[
+                      _buildNormalDeliveryUploadCard(),
+                      const SizedBox(height: 16),
+                    ],
 
-                      // Show upload forms when requested
-                      if (_showNormalUploadForm || _showSignedUploadForm) ...[
-                        const SizedBox(height: 16),
-                        if (_isLoadingDeliveryOrder)
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade50,
-                              border: Border.all(color: Colors.grey.shade300),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Row(
-                              children: [
-                                SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                ),
-                                SizedBox(width: 12),
-                                Text('Loading delivery order information...'),
-                              ],
-                            ),
-                          ),
-                      ],
-
-                      // Show upload form only when user clicks "Add PDF" or "Replace" buttons
-                      if (_showNormalUploadForm || _showSignedUploadForm) ...[
-                        const SizedBox(height: 24),
-
-                        // Delivery Number
-                        TextFormField(
-                          controller: _deliveryNumberController,
-                          decoration: InputDecoration(
-                            labelText:
-                                (_isNormalReplaceMode || _isSignedReplaceMode)
-                                ? 'Delivery Number (optional - leave empty to keep current)'
-                                : 'Delivery Number *',
-                            hintText:
-                                (_isNormalReplaceMode || _isSignedReplaceMode)
-                                ? 'Enter new delivery number or leave empty'
-                                : 'Enter delivery number',
-                            border: const OutlineInputBorder(),
-                          ),
-                          validator: (value) {
-                            if (!(_isNormalReplaceMode ||
-                                    _isSignedReplaceMode) &&
-                                (value == null || value.trim().isEmpty)) {
-                              return 'Please enter delivery number';
-                            }
-                            return null;
-                          },
-                        ),
-
-                        const SizedBox(height: 16),
-
-                        // Delivery Date
-                        InkWell(
-                          onTap: _selectDate,
-                          child: InputDecorator(
-                            decoration: const InputDecoration(
-                              labelText: 'Delivery Date *',
-                              border: OutlineInputBorder(),
-                              suffixIcon: Icon(Icons.calendar_today),
-                            ),
-                            child: Text(
-                              '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 16),
-
-                        // Show cancel button
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                _showNormalUploadForm
-                                    ? (_isNormalReplaceMode
-                                          ? 'Replace Normal Delivery PDF'
-                                          : 'Upload Normal Delivery PDF')
-                                    : 'Upload Signed Delivery PDF',
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            ElevatedButton.icon(
-                              onPressed: () {
-                                setState(() {
-                                  _showNormalUploadForm = false;
-                                  _showSignedUploadForm = false;
-                                  _isNormalReplaceMode = false;
-                                  _isSignedReplaceMode = false;
-                                  // Clear selected files
-                                  _normalDeliveryFile = null;
-                                  _normalDeliveryFileName = null;
-                                  _signedDeliveryFile = null;
-                                  _signedDeliveryFileName = null;
-                                });
-                              },
-                              icon: const Icon(Icons.close, size: 16),
-                              label: const Text('Cancel'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.grey,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 8,
-                                ),
-                                textStyle: const TextStyle(fontSize: 12),
-                              ),
-                            ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 16),
-
-                        // Normal Delivery Order PDF Section (only show when normal form is active)
-                        if (_showNormalUploadForm) ...[
-                          const Text(
-                            '1. Normal Delivery Order PDF (Status: Issued)',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              border: Border.all(
-                                color: _normalDeliveryFile != null
-                                    ? Colors.blue
-                                    : Colors.grey,
-                              ),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Column(
-                              children: [
-                                Icon(
-                                  _normalDeliveryFile != null
-                                      ? Icons.picture_as_pdf
-                                      : Icons.upload_file,
-                                  size: 48,
-                                  color: _normalDeliveryFile != null
-                                      ? Colors.blue
-                                      : Colors.grey,
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  _normalDeliveryFileName ??
-                                      'No normal delivery file selected',
-                                  style: TextStyle(
-                                    fontWeight: _normalDeliveryFile != null
-                                        ? FontWeight.bold
-                                        : FontWeight.normal,
-                                    color: _normalDeliveryFile != null
-                                        ? Colors.blue
-                                        : Colors.grey,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                ElevatedButton.icon(
-                                  onPressed: _selectNormalDeliveryFile,
-                                  icon: const Icon(Icons.folder_open),
-                                  label: Text(
-                                    _normalDeliveryFile != null
-                                        ? 'Change Normal Delivery File'
-                                        : 'Select Normal Delivery PDF',
-                                  ),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.blue,
-                                    foregroundColor: Colors.white,
-                                  ),
-                                ),
-
-                                // OCR Extraction Button (only show when normal file is selected)
-                                if (_normalDeliveryFile != null) ...[
-                                  const SizedBox(height: 8),
-                                  ElevatedButton.icon(
-                                    onPressed: _isExtractingOCR
-                                        ? null
-                                        : _extractDeliveryData,
-                                    icon: _isExtractingOCR
-                                        ? const SizedBox(
-                                            width: 16,
-                                            height: 16,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                              valueColor:
-                                                  AlwaysStoppedAnimation<Color>(
-                                                    Colors.white,
-                                                  ),
-                                            ),
-                                          )
-                                        : const Icon(Icons.text_fields),
-                                    label: Text(
-                                      _isExtractingOCR
-                                          ? 'Extracting...'
-                                          : 'Extract PDF Data',
-                                    ),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.blue,
-                                      foregroundColor: Colors.white,
-                                    ),
-                                  ),
-                                  // Platform capabilities info
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    PlatformFeatures.supportsPDFOCR
-                                        ? 'PDF text extraction supported'
-                                        : 'PDF text extraction not available on ${PlatformFeatures.platformName}',
-                                    style: Theme.of(context).textTheme.bodySmall
-                                        ?.copyWith(
-                                          color: Colors.grey[600],
-                                          fontStyle: FontStyle.italic,
-                                        ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        ],
-
-                        const SizedBox(height: 24),
-
-                        // Signed Delivery Order PDF Section (only show when signed form is active)
-                        if (_showSignedUploadForm) ...[
-                          const Text(
-                            '2. Signed Delivery Order PDF (Status: Delivered)',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.green,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              border: Border.all(
-                                color: _signedDeliveryFile != null
-                                    ? Colors.green
-                                    : Colors.grey,
-                              ),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Column(
-                              children: [
-                                Icon(
-                                  _signedDeliveryFile != null
-                                      ? Icons.picture_as_pdf
-                                      : Icons.upload_file,
-                                  size: 48,
-                                  color: _signedDeliveryFile != null
-                                      ? Colors.green
-                                      : Colors.grey,
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  _signedDeliveryFileName ??
-                                      'No signed delivery file selected',
-                                  style: TextStyle(
-                                    fontWeight: _signedDeliveryFile != null
-                                        ? FontWeight.bold
-                                        : FontWeight.normal,
-                                    color: _signedDeliveryFile != null
-                                        ? Colors.green
-                                        : Colors.grey,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                ElevatedButton.icon(
-                                  onPressed: _selectSignedDeliveryFile,
-                                  icon: const Icon(Icons.folder_open),
-                                  label: Text(
-                                    _signedDeliveryFile != null
-                                        ? 'Change Signed Delivery File'
-                                        : 'Select Signed Delivery PDF',
-                                  ),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.green,
-                                    foregroundColor: Colors.white,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-
-                        const SizedBox(height: 16),
-
-                        // Remarks (always show for both normal and signed forms)
-                        TextFormField(
-                          controller: _remarksController,
-                          decoration: const InputDecoration(
-                            labelText: 'Remarks (optional)',
-                            hintText: 'Enter any additional notes',
-                            border: OutlineInputBorder(),
-                          ),
-                          maxLines: 3,
-                        ),
-
-                        const SizedBox(height: 24),
-
-                        // Upload Button (always show for both normal and signed forms)
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: _showNormalUploadForm
-                                ? ((_isUploadingNormal ||
-                                          _normalDeliveryFile == null)
-                                      ? null
-                                      : _uploadNormalDeliveryOrder)
-                                : ((_isUploadingSigned ||
-                                          _signedDeliveryFile == null)
-                                      ? null
-                                      : _uploadSignedDeliveryOrder),
-                            icon:
-                                (_showNormalUploadForm
-                                    ? _isUploadingNormal
-                                    : _isUploadingSigned)
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(
-                                        Colors.white,
-                                      ),
-                                    ),
-                                  )
-                                : Icon(
-                                    _showNormalUploadForm
-                                        ? Icons.local_shipping
-                                        : Icons.verified,
-                                  ),
-                            label: Text(
-                              _showNormalUploadForm
-                                  ? (_isUploadingNormal
-                                        ? (_isNormalReplaceMode
-                                              ? 'Replacing Normal Delivery...'
-                                              : 'Uploading Normal Delivery...')
-                                        : (_isNormalReplaceMode
-                                              ? 'Replace Normal Delivery'
-                                              : 'Upload Normal Delivery (Status: Issued)'))
-                                  : (_isUploadingSigned
-                                        ? (_isSignedReplaceMode
-                                              ? 'Replacing Signed Delivery...'
-                                              : 'Uploading Signed Delivery...')
-                                        : (_isSignedReplaceMode
-                                              ? 'Replace Signed Delivery'
-                                              : 'Upload Signed Delivery (Status: Delivered)')),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _showNormalUploadForm
-                                  ? Colors.blue
-                                  : Colors.green,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              textStyle: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                    // Signed Delivery Upload Card
+                    if (_selectedOrder != null &&
+                        _shouldShowSignedUpload()) ...[
+                      _buildSignedDeliveryUploadCard(),
+                      const SizedBox(height: 16),
                     ],
                   ],
                 ),
@@ -1641,31 +1017,370 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
     );
   }
 
-  Widget _buildInfoRow(String label, String? value) {
+  // Status Legend Card
+  Widget _buildStatusLegendCard() {
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.only(bottom: 0),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.orange.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.info_outline, size: 16, color: Colors.orange.shade600),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                '🟢 Invoiced → Issue • 🔵 Issued → Deliver • 🟣 Delivered',
+                style: TextStyle(fontSize: 11),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Order Selection Card
+  Widget _buildOrderSelectionCard() {
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.only(bottom: 0),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.local_shipping,
+                  size: 20,
+                  color: Colors.orange.shade600,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Select Order for Delivery',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.orange.shade800,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              initialValue: _selectedOrderId,
+              decoration: const InputDecoration(
+                labelText: 'Select Invoiced Order *',
+                border: OutlineInputBorder(),
+                hintText: 'Choose an order to deliver',
+              ),
+              isExpanded: true,
+              menuMaxHeight: 300,
+              items: _allOrders.isEmpty
+                  ? [
+                      const DropdownMenuItem<String>(
+                        value: null,
+                        child: Text(
+                          'No orders available',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ),
+                    ]
+                  : _allOrders.map((order) {
+                      final orderNumber = order['order_number'] ?? 'Unknown';
+                      final dealer = order['customer_dealer'] ?? 'Unknown';
+                      final client = order['customer_client'] ?? 'Unknown';
+                      // Support both old single status and new dual status system
+                      final status = order['status'] as String? ?? 'Unknown';
+                      final invoiceStatus =
+                          order['invoice_status'] as String? ?? status;
+                      final deliveryStatus =
+                          order['delivery_status'] as String? ?? 'Pending';
+
+                      // Define status colors based on delivery status
+                      final isReserved = invoiceStatus == 'Reserved';
+                      final isInvoiced =
+                          invoiceStatus == 'Invoiced' &&
+                          deliveryStatus == 'Pending';
+                      final isIssued = deliveryStatus == 'Issued';
+                      final isDelivered = deliveryStatus == 'Delivered';
+
+                      return DropdownMenuItem<String>(
+                        value: order['id'],
+                        child: Row(
+                          children: [
+                            // Status color indicator
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: isReserved
+                                    ? Colors.orange
+                                    : isInvoiced
+                                    ? Colors.green
+                                    : isIssued
+                                    ? Colors.blue
+                                    : isDelivered
+                                    ? Colors.purple
+                                    : Colors.grey,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            // Order details
+                            Expanded(
+                              child: Text(
+                                '$orderNumber - $dealer → $client',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                              ),
+                            ),
+                            // Status label
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isReserved
+                                    ? Colors.orange.shade100
+                                    : isInvoiced
+                                    ? Colors.green.shade100
+                                    : isIssued
+                                    ? Colors.blue.shade100
+                                    : isDelivered
+                                    ? Colors.purple.shade100
+                                    : Colors.grey.shade100,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                isInvoiced ? 'Invoiced' : deliveryStatus,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w500,
+                                  color: isReserved
+                                      ? Colors.orange.shade800
+                                      : isInvoiced
+                                      ? Colors.green.shade800
+                                      : isIssued
+                                      ? Colors.blue.shade800
+                                      : isDelivered
+                                      ? Colors.purple.shade800
+                                      : Colors.grey.shade800,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+              onChanged: (String? newValue) {
+                setState(() {
+                  _selectedOrderId = newValue;
+                  _currentDeliveryOrder = null;
+                  // Reset upload form states when order changes
+                  _showNormalUploadForm = false;
+                  _showSignedUploadForm = false;
+                  _isNormalReplaceMode = false;
+                  _isSignedReplaceMode = false;
+                  // Clear selected files
+                  _normalDeliveryFile = null;
+                  _normalDeliveryFileName = null;
+                  _signedDeliveryFile = null;
+                  _signedDeliveryFileName = null;
+                });
+                if (newValue != null) {
+                  _loadDeliveryOrderForOrder(newValue);
+                }
+              },
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please select an order';
+                }
+                return null;
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Order Details Card
+  Widget _buildOrderDetailsCard() {
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.only(bottom: 0),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  size: 20,
+                  color: Colors.orange.shade600,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Selected Order Details',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.orange.shade800,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _buildDetailRow(
+              'Order Number',
+              _selectedOrder!['order_number'] ?? 'N/A',
+            ),
+            // Show separate status lines for dual status system
+            ..._buildStatusRows(_selectedOrder!),
+            _buildDetailRow(
+              'Dealer',
+              _selectedOrder!['customer_dealer'] ?? 'N/A',
+            ),
+            _buildDetailRow(
+              'Client',
+              _selectedOrder!['customer_client'] ?? 'N/A',
+            ),
+            _buildItemDetails(_selectedOrder!),
+            if (_selectedOrder!['created_date'] != null)
+              _buildDetailRow(
+                'Created Date',
+                _formatDate(_selectedOrder!['created_date']),
+              ),
+            if ((_selectedOrder!['delivery_status'] ??
+                        _selectedOrder!['status']) ==
+                    'Delivered' &&
+                _selectedOrder!['delivery_number'] != null)
+              _buildDetailRow(
+                'Delivery Number',
+                _selectedOrder!['delivery_number'],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Helper method to build detail rows (similar to demo screens)
+  Widget _buildDetailRow(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 100,
+            width: 120,
             child: Text(
               '$label:',
-              style: const TextStyle(
-                fontSize: 12,
+              style: TextStyle(
+                fontSize: 14,
                 fontWeight: FontWeight.w500,
-                color: Colors.grey,
+                color: Colors.grey[700],
               ),
             ),
           ),
           Expanded(
             child: Text(
-              value ?? 'N/A',
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              value,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Colors.black87,
+              ),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  // Helper method to build item details section
+  Widget _buildItemDetails(Map<String, dynamic> order) {
+    final items = order['items'] as List<dynamic>? ?? [];
+
+    if (items.isEmpty) {
+      return _buildDetailRow('Items', 'No items found');
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Text(
+            'Items (${items.length}):',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: Colors.grey[700],
+            ),
+          ),
+        ),
+        ...items.asMap().entries.map((entry) {
+          final index = entry.key;
+          final item = entry.value as Map<String, dynamic>;
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey[300]!),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Item ${index + 1}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.blue,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _buildDetailRow(
+                  'Serial Number',
+                  item['serial_number']?.toString() ?? 'N/A',
+                ),
+                _buildDetailRow(
+                  'Category',
+                  item['equipment_category']?.toString() ?? 'N/A',
+                ),
+                _buildDetailRow('Model', item['model']?.toString() ?? 'N/A'),
+                _buildDetailRow('Size', item['size']?.toString() ?? 'N/A'),
+                _buildDetailRow('Batch', item['batch']?.toString() ?? 'N/A'),
+                if (item['transaction_id'] != null)
+                  _buildDetailRow(
+                    'Transaction ID',
+                    item['transaction_id'].toString(),
+                  ),
+              ],
+            ),
+          );
+        }),
+      ],
     );
   }
 
@@ -1678,471 +1393,716 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
     // For dual status system, show separate lines
     if (invoiceStatus != null && deliveryStatus != null) {
       return [
-        _buildInfoRow('Invoice Status', invoiceStatus),
-        _buildInfoRow('Delivery Status', deliveryStatus),
+        _buildDetailRow('Invoice Status', invoiceStatus),
+        _buildDetailRow('Delivery Status', deliveryStatus),
       ];
     }
 
     // For legacy single status system, show single status
     if (legacyStatus != null) {
-      return [_buildInfoRow('Status', legacyStatus)];
+      return [_buildDetailRow('Status', legacyStatus)];
     }
 
     // Fallback
-    return [_buildInfoRow('Status', 'Unknown')];
+    return [_buildDetailRow('Status', 'Unknown')];
   }
 
+  // Helper method to format date
   String _formatDate(dynamic date) {
     if (date == null) return 'N/A';
 
-    DateTime dateTime;
-    if (date is Timestamp) {
-      dateTime = date.toDate();
-    } else if (date is DateTime) {
-      dateTime = date;
-    } else {
+    try {
+      DateTime dateTime;
+      if (date is Timestamp) {
+        dateTime = date.toDate();
+      } else if (date is DateTime) {
+        dateTime = date;
+      } else {
+        return date.toString();
+      }
+
+      return '${dateTime.day}/${dateTime.month}/${dateTime.year}';
+    } catch (e) {
       return 'Invalid Date';
     }
-
-    return '${dateTime.day}/${dateTime.month}/${dateTime.year}';
   }
 
-  String _formatFileSize(dynamic size) {
-    if (size == null) return 'N/A';
-
-    int bytes;
-    if (size is int) {
-      bytes = size;
-    } else if (size is String) {
-      bytes = int.tryParse(size) ?? 0;
-    } else {
-      return 'Unknown';
-    }
-
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-  }
-
-  Widget _buildItemDetails(Map<String, dynamic> order) {
-    final items = order['items'] as List<dynamic>? ?? [];
-
-    if (items.isEmpty) {
-      return const Text(
-        'No items found',
-        style: TextStyle(fontSize: 12, color: Colors.grey),
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 8),
-        Text(
-          'Items (${items.length}):',
-          style: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
-            color: Colors.grey,
-          ),
-        ),
-        const SizedBox(height: 4),
-        ...items.asMap().entries.map((entry) {
-          final index = entry.key;
-          final item = entry.value as Map<String, dynamic>;
-
-          return Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.grey[50],
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: Colors.grey[300]!),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Item ${index + 1}',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.blue,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                _buildItemRow(
-                  'Serial Number',
-                  item['serial_number']?.toString() ?? 'N/A',
-                ),
-                _buildItemRow(
-                  'Category',
-                  item['equipment_category']?.toString() ?? 'N/A',
-                ),
-                _buildItemRow('Model', item['model']?.toString() ?? 'N/A'),
-                _buildItemRow('Size', item['size']?.toString() ?? 'N/A'),
-                _buildItemRow('Batch', item['batch']?.toString() ?? 'N/A'),
-                if (item['transaction_id'] != null)
-                  _buildItemRow(
-                    'Transaction ID',
-                    item['transaction_id'].toString(),
-                  ),
-              ],
-            ),
-          );
-        }),
-      ],
-    );
-  }
-
-  // Helper method to build item property rows
-  Widget _buildItemRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 2),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 80,
-            child: Text(
-              '$label:',
-              style: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w500,
-                color: Colors.grey,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w500),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Helper method to check if order is issued or delivered (dual status system support)
-  bool _isOrderIssuedOrDelivered(Map<String, dynamic> order) {
-    final deliveryStatus = order['delivery_status'] as String?;
-    final legacyStatus = order['status'] as String?;
-
-    // For dual status system
-    if (deliveryStatus != null) {
-      return deliveryStatus == 'Issued' || deliveryStatus == 'Delivered';
-    }
-
-    // For legacy single status system
-    if (legacyStatus != null) {
-      return legacyStatus == 'Issued' || legacyStatus == 'Delivered';
-    }
-
-    return false;
-  }
-
-  // Build Normal Delivery PDF Card
-  Widget _buildNormalDeliveryCard() {
-    if (_selectedOrder == null) return const SizedBox.shrink();
-
-    final hasNormalDelivery = _currentDeliveryOrder?['normal_delivery'] != null;
-    final canUploadNormal =
-        (_selectedOrder!['invoice_status'] ?? _selectedOrder!['status']) ==
-        'Invoiced';
-
-    if (!hasNormalDelivery && !canUploadNormal) {
+  // Delivery Information Card
+  Widget _buildDeliveryInformationCard() {
+    if (_currentDeliveryOrder == null) {
       return const SizedBox.shrink();
     }
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: hasNormalDelivery ? Colors.blue.shade50 : Colors.grey.shade50,
-        border: Border.all(
-          color: hasNormalDelivery
-              ? Colors.blue.shade200
-              : Colors.grey.shade300,
-        ),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                hasNormalDelivery ? Icons.local_shipping : Icons.add_box,
-                size: 20,
-                color: hasNormalDelivery
-                    ? Colors.blue.shade600
-                    : Colors.grey.shade600,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Normal Delivery Order',
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.only(bottom: 0),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.local_shipping,
+                  size: 20,
+                  color: Colors.orange.shade600,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Current Delivery Information',
                   style: TextStyle(
-                    fontSize: 14,
+                    fontSize: 16,
                     fontWeight: FontWeight.bold,
-                    color: hasNormalDelivery
-                        ? Colors.blue.shade800
-                        : Colors.grey.shade800,
+                    color: Colors.orange.shade800,
                   ),
                 ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            if (_currentDeliveryOrder!['delivery_number'] != null)
+              _buildDetailRow(
+                'Delivery Number',
+                _currentDeliveryOrder!['delivery_number'],
               ),
-            ],
-          ),
-          const SizedBox(height: 12),
-
-          if (hasNormalDelivery) ...[
-            // Show PDF details
-            _buildInfoRow(
-              'Delivery Number',
-              _currentDeliveryOrder!['delivery_number'],
-            ),
-            _buildInfoRow(
-              'Delivery Date',
-              _formatDate(_currentDeliveryOrder!['delivery_date']),
-            ),
-            _buildInfoRow(
-              'File Name',
-              _currentDeliveryOrder!['normal_delivery']['file_name'],
-            ),
-            _buildInfoRow(
-              'File Size',
-              _formatFileSize(
-                _currentDeliveryOrder!['normal_delivery']['file_size'],
+            if (_currentDeliveryOrder!['delivery_date'] != null)
+              _buildDetailRow(
+                'Delivery Date',
+                _formatDate(_currentDeliveryOrder!['delivery_date']),
               ),
-            ),
-            _buildInfoRow(
-              'Upload Date',
-              _formatDate(
-                _currentDeliveryOrder!['normal_delivery']['upload_date'],
-              ),
-            ),
             if (_currentDeliveryOrder!['delivery_remarks'] != null &&
                 _currentDeliveryOrder!['delivery_remarks']
                     .toString()
                     .isNotEmpty)
-              _buildInfoRow(
+              _buildDetailRow(
                 'Remarks',
                 _currentDeliveryOrder!['delivery_remarks'],
               ),
-
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                ElevatedButton.icon(
-                  onPressed: () => _viewPDF(
-                    _currentDeliveryOrder!['normal_delivery']['download_url'],
-                  ),
-                  icon: const Icon(Icons.visibility, size: 16),
-                  label: const Text('View PDF'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    textStyle: const TextStyle(fontSize: 12),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                ElevatedButton.icon(
-                  onPressed: () {
-                    setState(() {
-                      _isNormalReplaceMode = true;
-                      _showNormalUploadForm = true;
-                    });
-                  },
-                  icon: const Icon(Icons.edit, size: 16),
-                  label: const Text('Replace'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    textStyle: const TextStyle(fontSize: 12),
-                  ),
-                ),
-              ],
+            // Show PDF status
+            _buildDetailRow(
+              'Normal Delivery PDF',
+              _currentDeliveryOrder!['normal_delivery_file_name'] != null
+                  ? 'Uploaded'
+                  : 'Not uploaded',
             ),
-          ] else ...[
-            // Show add PDF message and button
-            Text(
-              'No normal delivery PDF uploaded yet.',
-              style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
-            ),
-            const SizedBox(height: 12),
-            ElevatedButton.icon(
-              onPressed: () {
-                setState(() {
-                  _showNormalUploadForm = true;
-                });
-              },
-              icon: const Icon(Icons.add, size: 16),
-              label: const Text('Add Normal Delivery PDF'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                textStyle: const TextStyle(fontSize: 12),
-              ),
+            _buildDetailRow(
+              'Signed Delivery PDF',
+              _currentDeliveryOrder!['signed_delivery_file_name'] != null
+                  ? 'Uploaded'
+                  : 'Not uploaded',
             ),
           ],
-        ],
+        ),
       ),
     );
   }
 
-  // Build Signed Delivery PDF Card
-  Widget _buildSignedDeliveryCard() {
-    if (_selectedOrder == null) return const SizedBox.shrink();
-
-    final hasSignedDelivery = _currentDeliveryOrder?['signed_delivery'] != null;
-    final canUploadSigned = _isOrderIssuedOrDelivered(_selectedOrder!);
-
-    if (!hasSignedDelivery && !canUploadSigned) {
+  // Normal Delivery Upload Card
+  Widget _buildNormalDeliveryUploadCard() {
+    if (!_shouldShowNormalUpload()) {
       return const SizedBox.shrink();
     }
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: hasSignedDelivery ? Colors.green.shade50 : Colors.grey.shade50,
-        border: Border.all(
-          color: hasSignedDelivery
-              ? Colors.green.shade200
-              : Colors.grey.shade300,
-        ),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                hasSignedDelivery ? Icons.verified : Icons.add_box,
-                size: 20,
-                color: hasSignedDelivery
-                    ? Colors.green.shade600
-                    : Colors.grey.shade600,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Signed Delivery Order',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: hasSignedDelivery
-                        ? Colors.green.shade800
-                        : Colors.grey.shade800,
+    final hasNormalDelivery =
+        _currentDeliveryOrder != null &&
+        _currentDeliveryOrder!['normal_delivery_file_name'] != null;
+
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.only(bottom: 0),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  hasNormalDelivery ? Icons.check_circle : Icons.upload_file,
+                  size: 20,
+                  color: hasNormalDelivery ? Colors.blue : Colors.grey,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Normal Delivery PDF',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: hasNormalDelivery ? Colors.blue : Colors.grey,
+                    ),
                   ),
+                ),
+                if (hasNormalDelivery) ...[
+                  ElevatedButton.icon(
+                    onPressed: () => _viewPDF(
+                      _currentDeliveryOrder!['normal_delivery_file_url'],
+                    ),
+                    icon: const Icon(Icons.visibility, size: 16),
+                    label: const Text('View'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _isNormalReplaceMode = true;
+                        _showNormalUploadForm = true;
+                        _showSignedUploadForm = false;
+                      });
+                    },
+                    icon: const Icon(Icons.edit, size: 16),
+                    label: const Text('Replace'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ] else ...[
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _isNormalReplaceMode = false;
+                        _showNormalUploadForm = true;
+                        _showSignedUploadForm = false;
+                      });
+                    },
+                    icon: const Icon(Icons.add, size: 16),
+                    label: const Text('Add PDF'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            if (hasNormalDelivery) ...[
+              const SizedBox(height: 12),
+              _buildDetailRow(
+                'File Name',
+                _currentDeliveryOrder!['normal_delivery_file_name'],
+              ),
+              _buildDetailRow(
+                'Delivery Number',
+                _currentDeliveryOrder!['delivery_number'],
+              ),
+              _buildDetailRow(
+                'Delivery Date',
+                _formatDate(_currentDeliveryOrder!['delivery_date']),
+              ),
+              _buildDetailRow(
+                'Uploaded At',
+                _formatDate(
+                  _currentDeliveryOrder!['normal_delivery_uploaded_at'],
+                ),
+              ),
+              if (_currentDeliveryOrder!['delivery_remarks'] != null &&
+                  _currentDeliveryOrder!['delivery_remarks']
+                      .toString()
+                      .isNotEmpty)
+                _buildDetailRow(
+                  'Remarks',
+                  _currentDeliveryOrder!['delivery_remarks'],
+                ),
+            ] else ...[
+              const SizedBox(height: 8),
+              Text(
+                'Upload normal delivery PDF to update order status to "Issued"',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade600,
+                  fontStyle: FontStyle.italic,
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 12),
 
-          if (hasSignedDelivery) ...[
-            // Show PDF details
-            _buildInfoRow(
-              'File Name',
-              _currentDeliveryOrder!['signed_delivery']['file_name'],
-            ),
-            _buildInfoRow(
-              'File Size',
-              _formatFileSize(
-                _currentDeliveryOrder!['signed_delivery']['file_size'],
-              ),
-            ),
-            _buildInfoRow(
-              'Upload Date',
-              _formatDate(
-                _currentDeliveryOrder!['signed_delivery']['upload_date'],
-              ),
-            ),
+            // Upload Form (when _showNormalUploadForm is true)
+            if (_showNormalUploadForm) ...[
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 16),
 
-            const SizedBox(height: 12),
+              // Delivery Number Field
+              TextFormField(
+                controller: _deliveryNumberController,
+                decoration: const InputDecoration(
+                  labelText: 'Delivery Number *',
+                  border: OutlineInputBorder(),
+                  hintText: 'Enter delivery number',
+                ),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please enter delivery number';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+
+              // Delivery Date Field
+              InkWell(
+                onTap: _selectDate,
+                child: InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: 'Delivery Date *',
+                    border: OutlineInputBorder(),
+                    suffixIcon: Icon(Icons.calendar_today),
+                  ),
+                  child: Text(
+                    '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // File Selection
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(8),
+                  color: Colors.grey.shade50,
+                ),
+                child: Column(
+                  children: [
+                    Icon(
+                      _normalDeliveryFile != null
+                          ? Icons.picture_as_pdf
+                          : Icons.upload_file,
+                      size: 48,
+                      color: _normalDeliveryFile != null
+                          ? Colors.red
+                          : Colors.grey.shade400,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _normalDeliveryFile != null
+                          ? _normalDeliveryFileName ?? 'Selected file'
+                          : 'No file selected',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: _normalDeliveryFile != null
+                            ? Colors.black87
+                            : Colors.grey.shade600,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    ElevatedButton.icon(
+                      onPressed: _selectNormalDeliveryFile,
+                      icon: const Icon(Icons.folder_open),
+                      label: Text(
+                        _normalDeliveryFile != null
+                            ? 'Change File'
+                            : 'Select PDF',
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Remarks Field
+              TextFormField(
+                controller: _remarksController,
+                decoration: const InputDecoration(
+                  labelText: 'Remarks (Optional)',
+                  border: OutlineInputBorder(),
+                  hintText: 'Enter any remarks',
+                ),
+                maxLines: 3,
+              ),
+              const SizedBox(height: 16),
+
+              // Upload Button
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _normalDeliveryFile != null && !_isUploading
+                      ? _uploadNormalDeliveryOrder
+                      : null,
+                  icon: _isUploading
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
+                          ),
+                        )
+                      : const Icon(Icons.upload),
+                  label: Text(
+                    _isUploading ? 'Uploading...' : 'Upload Normal Delivery',
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              // Cancel Button
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _showNormalUploadForm = false;
+                      _normalDeliveryFile = null;
+                      _normalDeliveryFileName = null;
+                    });
+                    _deliveryNumberController.clear();
+                    _remarksController.clear();
+                  },
+                  child: const Text('Cancel'),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Signed Delivery Upload Card
+  Widget _buildSignedDeliveryUploadCard() {
+    if (!_shouldShowSignedUpload()) {
+      return const SizedBox.shrink();
+    }
+
+    final hasSignedDelivery =
+        _currentDeliveryOrder != null &&
+        _currentDeliveryOrder!['signed_delivery_file_name'] != null;
+
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.only(bottom: 0),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             Row(
               children: [
-                ElevatedButton.icon(
-                  onPressed: () => _viewPDF(
-                    _currentDeliveryOrder!['signed_delivery']['download_url'],
+                Icon(
+                  hasSignedDelivery ? Icons.check_circle : Icons.upload_file,
+                  size: 20,
+                  color: hasSignedDelivery ? Colors.green : Colors.grey,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Signed Delivery PDF',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: hasSignedDelivery ? Colors.green : Colors.grey,
+                    ),
                   ),
-                  icon: const Icon(Icons.visibility, size: 16),
-                  label: const Text('View PDF'),
+                ),
+                if (hasSignedDelivery) ...[
+                  ElevatedButton.icon(
+                    onPressed: () => _viewPDF(
+                      _currentDeliveryOrder!['signed_delivery_file_url'],
+                    ),
+                    icon: const Icon(Icons.visibility, size: 16),
+                    label: const Text('View'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _isSignedReplaceMode = true;
+                        _showSignedUploadForm = true;
+                        _showNormalUploadForm = false;
+                      });
+                    },
+                    icon: const Icon(Icons.edit, size: 16),
+                    label: const Text('Replace'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ] else ...[
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _isSignedReplaceMode = false;
+                        _showSignedUploadForm = true;
+                        _showNormalUploadForm = false;
+                      });
+                    },
+                    icon: const Icon(Icons.add, size: 16),
+                    label: const Text('Add PDF'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            if (hasSignedDelivery) ...[
+              const SizedBox(height: 12),
+              _buildDetailRow(
+                'File Name',
+                _currentDeliveryOrder!['signed_delivery_file_name'],
+              ),
+              _buildDetailRow(
+                'Delivery Number',
+                _currentDeliveryOrder!['delivery_number'],
+              ),
+              _buildDetailRow(
+                'Delivery Date',
+                _formatDate(_currentDeliveryOrder!['delivery_date']),
+              ),
+              _buildDetailRow(
+                'Uploaded At',
+                _formatDate(
+                  _currentDeliveryOrder!['signed_delivery_uploaded_at'],
+                ),
+              ),
+              if (_currentDeliveryOrder!['delivery_remarks'] != null &&
+                  _currentDeliveryOrder!['delivery_remarks']
+                      .toString()
+                      .isNotEmpty)
+                _buildDetailRow(
+                  'Remarks',
+                  _currentDeliveryOrder!['delivery_remarks'],
+                ),
+            ] else ...[
+              const SizedBox(height: 8),
+              Text(
+                'Upload signed delivery PDF to update order status to "Delivered"',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade600,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+
+            // Upload Form (when _showSignedUploadForm is true)
+            if (_showSignedUploadForm) ...[
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 16),
+
+              // Delivery Number Field
+              TextFormField(
+                controller: _deliveryNumberController,
+                decoration: const InputDecoration(
+                  labelText: 'Delivery Number *',
+                  border: OutlineInputBorder(),
+                  hintText: 'Enter delivery number',
+                ),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please enter delivery number';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+
+              // Delivery Date Field
+              InkWell(
+                onTap: _selectDate,
+                child: InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: 'Delivery Date *',
+                    border: OutlineInputBorder(),
+                    suffixIcon: Icon(Icons.calendar_today),
+                  ),
+                  child: Text(
+                    '${_selectedDate.day}/${_selectedDate.month}/${_selectedDate.year}',
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // File Selection
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(8),
+                  color: Colors.grey.shade50,
+                ),
+                child: Column(
+                  children: [
+                    Icon(
+                      _signedDeliveryFile != null
+                          ? Icons.picture_as_pdf
+                          : Icons.upload_file,
+                      size: 48,
+                      color: _signedDeliveryFile != null
+                          ? Colors.red
+                          : Colors.grey.shade400,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _signedDeliveryFile != null
+                          ? _signedDeliveryFileName ?? 'Selected file'
+                          : 'No file selected',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: _signedDeliveryFile != null
+                            ? Colors.black87
+                            : Colors.grey.shade600,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    ElevatedButton.icon(
+                      onPressed: _selectSignedDeliveryFile,
+                      icon: const Icon(Icons.folder_open),
+                      label: Text(
+                        _signedDeliveryFile != null
+                            ? 'Change File'
+                            : 'Select PDF',
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Remarks Field
+              TextFormField(
+                controller: _remarksController,
+                decoration: const InputDecoration(
+                  labelText: 'Remarks (Optional)',
+                  border: OutlineInputBorder(),
+                  hintText: 'Enter any remarks',
+                ),
+                maxLines: 3,
+              ),
+              const SizedBox(height: 16),
+
+              // Upload Button
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _signedDeliveryFile != null && !_isUploading
+                      ? _uploadSignedDeliveryOrder
+                      : null,
+                  icon: _isUploading
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
+                          ),
+                        )
+                      : const Icon(Icons.upload),
+                  label: Text(
+                    _isUploading ? 'Uploading...' : 'Upload Signed Delivery',
+                  ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    textStyle: const TextStyle(fontSize: 12),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
                 ),
-                const SizedBox(width: 8),
-                ElevatedButton.icon(
+              ),
+              const SizedBox(height: 8),
+
+              // Cancel Button
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
                   onPressed: () {
                     setState(() {
-                      _isSignedReplaceMode = true;
-                      _showSignedUploadForm = true;
+                      _showSignedUploadForm = false;
+                      _signedDeliveryFile = null;
+                      _signedDeliveryFileName = null;
                     });
+                    _deliveryNumberController.clear();
+                    _remarksController.clear();
                   },
-                  icon: const Icon(Icons.edit, size: 16),
-                  label: const Text('Replace'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    textStyle: const TextStyle(fontSize: 12),
-                  ),
+                  child: const Text('Cancel'),
                 ),
-              ],
-            ),
-          ] else ...[
-            // Show add PDF message and button
-            Text(
-              'No signed delivery PDF uploaded yet.',
-              style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
-            ),
-            const SizedBox(height: 12),
-            ElevatedButton.icon(
-              onPressed: () {
-                setState(() {
-                  _showSignedUploadForm = true;
-                });
-              },
-              icon: const Icon(Icons.add, size: 16),
-              label: const Text('Add Signed Delivery PDF'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                textStyle: const TextStyle(fontSize: 12),
               ),
-            ),
+            ],
           ],
-        ],
+        ),
       ),
     );
+  }
+
+  // Helper methods for upload logic
+  bool _shouldShowNormalUpload() {
+    if (_selectedOrder == null) return false;
+
+    // Show if order is invoiced (can upload normal delivery)
+    final invoiceStatus =
+        _selectedOrder!['invoice_status'] ?? _selectedOrder!['status'];
+    return invoiceStatus == 'Invoiced';
+  }
+
+  bool _shouldShowSignedUpload() {
+    if (_selectedOrder == null) return false;
+
+    // Show if order is issued or delivered (can upload signed delivery)
+    final deliveryStatus =
+        _selectedOrder!['delivery_status'] ?? _selectedOrder!['status'];
+    return deliveryStatus == 'Issued' || deliveryStatus == 'Delivered';
   }
 }

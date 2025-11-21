@@ -15,6 +15,8 @@ import 'screens/delivery_order_screen.dart';
 import 'screens/inventory_management_screen.dart';
 import 'screens/demo_screen.dart';
 import 'screens/demo_return_screen.dart';
+import 'screens/demo_detail_screen.dart';
+import 'screens/cancel_order_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

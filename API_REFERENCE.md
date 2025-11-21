@@ -4,7 +4,7 @@
 
 This document provides comprehensive API reference for all services in the Inventory Management System. Each service handles specific business logic and Firebase operations.
 
-**Status: Production Ready ✅** - All APIs documented below are fully implemented, tested, and production-ready as of Version 2.0.22.
+**Status: Production Ready ✅** - All APIs documented below are fully implemented, tested, and production-ready as of Version 2.1.0 (November 2025).
 
 ## Authentication Service
 
@@ -70,10 +70,33 @@ This document provides comprehensive API reference for all services in the Inven
   - `userUid`: User ID performing the operation
 - **Returns**: `Future<Map<String, dynamic>>` with success/error status
 - **Operations**:
-  - Creates purchase order document
+  - Creates order document with dual status fields (invoice_status: 'Reserved', delivery_status: 'Pending')
   - Updates item status to "Reserved"
   - Creates transaction records
   - Uses atomic transactions
+
+##### `updateOrderWithFile(String orderNumber, String fileId, String fileType)`
+- **Purpose**: Update order with uploaded file information
+- **Parameters**:
+  - `orderNumber`: Order number to update
+  - `fileId`: File ID from files collection
+  - `fileType`: Type of file ('invoice', 'delivery_order', 'signed_delivery_order')
+- **Returns**: `Future<Map<String, dynamic>>` with success/error status
+- **Operations**:
+  - Updates order status based on file type
+  - Creates new transactions for signed delivery orders
+  - Maintains audit trail of status changes
+
+##### `getAllOrders({String? status, String? invoiceStatus, String? deliveryStatus})`
+- **Purpose**: Retrieve orders with filtering options
+- **Parameters**:
+  - `status`: Legacy status filter (for backward compatibility)
+  - `invoiceStatus`: Filter by invoice_status ('Reserved', 'Invoiced')
+  - `deliveryStatus`: Filter by delivery_status ('Pending', 'Issued', 'Delivered')
+- **Returns**: `Future<List<Map<String, dynamic>>>`
+- **Features**:
+  - Supports both legacy single status and new dual status systems
+  - In-memory filtering for backward compatibility
 
 ##### `searchAvailableItems(String query)`
 - **Purpose**: Search for available inventory items
@@ -85,16 +108,16 @@ This document provides comprehensive API reference for all services in the Inven
   - Filters by "Active" status
   - Real-time search capabilities
 
-## Purchase Order Service
+## Order Service (Enhanced)
 
-### PurchaseOrderService (`lib/services/purchase_order_service.dart`)
+### OrderService (`lib/services/order_service.dart`)
 
 #### Methods
 
-##### `createMultiItemStockOutOrder({required String poNumber, required String dealerName, required String clientName, required String location, required List<Map<String, dynamic>> selectedItems})`
-- **Purpose**: Create purchase order and reserve multiple items with individual warranty types
+##### `createMultiItemStockOutOrder({required String orderNumber, required String dealerName, required String clientName, required String location, required List<Map<String, dynamic>> selectedItems})`
+- **Purpose**: Create order and reserve multiple items with dual status system
 - **Parameters**:
-  - `poNumber`: Purchase order number
+  - `orderNumber`: Order number
   - `dealerName`: Dealer information
   - `clientName`: Client information
   - `location`: Location abbreviation (e.g., "SGR")
@@ -126,35 +149,146 @@ This document provides comprehensive API reference for all services in the Inven
   - `additionalData`: Additional fields to update
 - **Returns**: `Future<void>`
 
-## Invoice Service
+## File Service (New)
 
-### InvoiceService (`lib/services/invoice_service.dart`)
-
-**Architecture Change**: Invoice data is now stored directly in the purchase_orders collection instead of a separate invoices collection. This simplifies the data model and reduces complexity.
+### FileService (`lib/services/file_service.dart`)
 
 #### Methods
 
-##### `uploadInvoice({required String poId, required String invoiceNumber, required File pdfFile, required DateTime invoiceDate, String? remarks})`
-- **Purpose**: Upload new PDF invoice for purchase order
+##### `uploadFile({required File file, required String orderNumber, required String fileType, required String userUid})`
+- **Purpose**: Upload PDF files to Firebase Storage with metadata tracking
 - **Parameters**:
-  - `poId`: Purchase order ID
-  - `invoiceNumber`: Invoice number
-  - `pdfFile`: PDF file to upload
-  - `invoiceDate`: Invoice date
-  - `remarks`: Optional remarks
+  - `file`: File object to upload
+  - `orderNumber`: Associated order number
+  - `fileType`: Type of file ('invoice', 'delivery_order', 'signed_delivery_order')
+  - `userUid`: User ID performing the upload
+- **Returns**: `Future<Map<String, dynamic>>` with file ID and metadata
+- **Operations**:
+  - Validates file type and size
+  - Uploads to Firebase Storage with organized path structure
+  - Creates file document in Firestore with metadata
+  - Generates unique file names with timestamps
+
+##### `replaceFile({required File newFile, required String existingFileId, required String orderNumber, required String fileType, required String userUid})`
+- **Purpose**: Replace existing file while maintaining proper references
+- **Parameters**:
+  - `newFile`: New file to upload
+  - `existingFileId`: ID of file to replace
+  - `orderNumber`: Associated order number
+  - `fileType`: Type of file
+  - `userUid`: User ID performing the replacement
+- **Returns**: `Future<Map<String, dynamic>>` with new file information
+- **Operations**:
+  - Uploads new file to Firebase Storage
+  - Creates new file document with updated metadata
+  - Deletes old file from storage and Firestore
+  - Maintains file version history
+
+##### `deleteFile(String fileId)`
+- **Purpose**: Delete file from both Storage and Firestore
+- **Parameters**:
+  - `fileId`: ID of file to delete
 - **Returns**: `Future<Map<String, dynamic>>` with success/error status
 - **Operations**:
-  - Validates PDF file (format, size)
-  - Uploads to Firebase Storage
-  - Updates purchase order with invoice data
-  - Changes PO status to 'Invoiced'
-  - Updates related transactions
+  - Removes file from Firebase Storage
+  - Deletes file document from Firestore
+  - Handles cleanup of orphaned references
 
-##### `getInvoiceByPoId(String poId)`
-- **Purpose**: Get invoice data from purchase order
+## Invoice Service (Enhanced)
+
+### InvoiceService (`lib/services/invoice_service.dart`)
+
+**Architecture Change**: Invoice management now uses the dual status system with separate files collection for better organization and OCR text extraction capabilities.
+
+#### Methods
+
+##### `uploadInvoice({required File invoiceFile, required String orderNumber, required String invoiceNumber, required String invoiceDate, required String userUid})`
+- **Purpose**: Upload invoice PDF with OCR text extraction and update order status
 - **Parameters**:
-  - `poId`: Purchase order ID
-- **Returns**: `Future<Map<String, dynamic>?>` - PO with invoice data or null
+  - `invoiceFile`: PDF file to upload
+  - `orderNumber`: Order number
+  - `invoiceNumber`: Invoice number (can be extracted via OCR)
+  - `invoiceDate`: Invoice date (can be extracted via OCR)
+  - `userUid`: User ID performing upload
+- **Returns**: `Future<Map<String, dynamic>>` with success/error status
+- **Operations**:
+  - Uses FileService to upload PDF to Firebase Storage
+  - Updates order invoice_status to "Invoiced"
+  - Creates file metadata record with proper file type
+  - Maintains transaction audit trail
+
+##### `extractPdfData(File pdfFile)`
+- **Purpose**: Extract invoice number and date from PDF using OCR
+- **Parameters**:
+  - `pdfFile`: PDF file to process
+- **Returns**: `Future<Map<String, dynamic>>` with extracted data and confidence scores
+- **Operations**:
+  - Uses Syncfusion Flutter PDF library for text extraction
+  - Applies multiple regex patterns for data parsing
+  - Returns confidence scores for validation
+  - Supports cross-platform PDF processing
+
+##### `getAvailableOrders()`
+- **Purpose**: Get orders available for invoice upload (Reserved status)
+- **Returns**: `Future<List<Map<String, dynamic>>>` - List of orders with Reserved invoice_status
+- **Operations**:
+  - Filters orders by invoice_status = 'Reserved'
+  - Supports backward compatibility with legacy status field
+
+## Delivery Service (New)
+
+### DeliveryService (`lib/services/delivery_service.dart`)
+
+#### Methods
+
+##### `uploadDeliveryOrder({required File deliveryFile, required String orderNumber, required String deliveryNumber, required String deliveryDate, String? deliveryRemarks, required String userUid})`
+- **Purpose**: Upload normal delivery order PDF and update order status to "Issued"
+- **Parameters**:
+  - `deliveryFile`: PDF file to upload
+  - `orderNumber`: Order number
+  - `deliveryNumber`: Delivery order number
+  - `deliveryDate`: Delivery date
+  - `deliveryRemarks`: Optional delivery remarks
+  - `userUid`: User ID performing upload
+- **Returns**: `Future<Map<String, dynamic>>` with success/error status
+- **Operations**:
+  - Uses FileService with file_type 'delivery_order'
+  - Updates order delivery_status to "Issued"
+  - Stores delivery information in order document
+  - Maintains existing transaction records
+
+##### `uploadSignedDeliveryOrder({required File signedDeliveryFile, required String orderNumber, required String userUid})`
+- **Purpose**: Upload signed delivery order PDF and create new "Delivered" transaction
+- **Parameters**:
+  - `signedDeliveryFile`: Signed PDF file to upload
+  - `orderNumber`: Order number
+  - `userUid`: User ID performing upload
+- **Returns**: `Future<Map<String, dynamic>>` with success/error status
+- **Operations**:
+  - Uses FileService with file_type 'signed_delivery_order'
+  - Updates order delivery_status to "Delivered"
+  - Creates NEW transaction record with status "Delivered"
+  - Preserves original "Reserved" transaction for audit trail
+  - Uses shared delivery information from normal delivery upload
+
+##### `getOrdersForDelivery()`
+- **Purpose**: Get orders available for delivery operations (Invoiced status)
+- **Returns**: `Future<List<Map<String, dynamic>>>` - List of orders with Invoiced invoice_status
+- **Operations**:
+  - Filters orders by invoice_status = 'Invoiced'
+  - Supports all delivery_status values (Pending, Issued, Delivered)
+  - Backward compatibility with legacy status field
+
+##### `deleteDeliveryData(String orderNumber)`
+- **Purpose**: Remove delivery PDFs and revert delivery status
+- **Parameters**:
+  - `orderNumber`: Order number to clean up
+- **Returns**: `Future<Map<String, dynamic>>` with success/error status
+- **Operations**:
+  - Deletes both normal and signed delivery PDFs from storage
+  - Removes delivery file references from order
+  - Reverts delivery_status to "Pending"
+  - Preserves invoice data and transaction records
 
 ##### `replaceInvoice({required String poId, required File newPdfFile, String? newInvoiceNumber, DateTime? newInvoiceDate, String? remarks})`
 - **Purpose**: Replace existing invoice with new PDF
@@ -172,14 +306,14 @@ This document provides comprehensive API reference for all services in the Inven
   - Updates related transactions
   - Deletes old PDF file
 
-##### `deleteInvoice(String poId)`
-- **Purpose**: Remove invoice data from purchase order
+##### `deleteInvoice(String orderId)`
+- **Purpose**: Remove invoice data from order
 - **Parameters**:
-  - `poId`: Purchase order ID (changed from invoiceId)
+  - `orderId`: Order ID (changed from invoiceId)
 - **Returns**: `Future<Map<String, dynamic>>` with success/error status
 - **Operations**:
-  - Removes all invoice fields from PO
-  - Reverts PO status to 'Pending'
+  - Removes all invoice fields from order
+  - Reverts order status to 'Pending'
   - Deletes PDF file from storage
 
 ##### `_validatePdfFile(File file)`
@@ -418,12 +552,12 @@ try {
 - **Backward Compatibility**: System supports both new format (`transaction_ids`) and legacy format (`items` array)
 
 **UI Improvements**:
-- **Multi-Item Purchase Orders**: Stock-out feature now supports adding multiple items to a single purchase order with enhanced UI
+- **Multi-Item Orders**: Stock-out feature now supports adding multiple items to a single order with enhanced UI
 - **Manual Model Input**: Stock-in feature now includes manual model input field for better accuracy and flexibility
 - **Entry Number Display**: Stock-out feature now shows the next entry number that will be assigned to the transaction
 - **Warranty Management**: Stock-out feature now includes warranty type selection with automatic period calculation
 - **Location Selection**: Stock-out feature now includes Malaysian states dropdown with proper abbreviations
-- **Enhanced PO Details Display**: Invoice screen now shows detailed item information instead of generic "Total Items" count
+- **Enhanced Order Details Display**: Invoice screen now shows detailed item information instead of generic "Total Items" count
 - **Comprehensive Item Cards**: Each item displays serial number, category, model, size, batch, and transaction ID
 - **Accurate Batch Information**: Batch data is fetched from inventory table ensuring correct and up-to-date information
 - **Improved User Experience**: Users can see complete item details when selecting purchase orders for invoicing
@@ -464,10 +598,10 @@ The system supports predefined warranty types with automatic period calculation:
 | 1+3 year | 1+3 Year | 4 | Extended warranty: 1 year standard + 3 years extended |
 
 **Implementation Details**:
-- **Individual Item Warranty**: Each item in a multi-item purchase order can have its own warranty type and period
+- **Individual Item Warranty**: Each item in a multi-item order can have its own warranty type and period
 - **Automatic Calculation**: Warranty period is automatically calculated based on selected type for each item
 - **Database Storage**: Both `warranty_type` (string) and `warranty_period` (integer) are stored per transaction record
-- **UI Integration**: Warranty dropdown is displayed for each selected item in the purchase order
+- **UI Integration**: Warranty dropdown is displayed for each selected item in the order
 - **Extensible**: Additional warranty types can be easily added to the system
 
 ## Entry Number Management
@@ -481,7 +615,7 @@ The system automatically manages entry numbers for all transactions:
 - **Database Query**: `SELECT MAX(entry_no) FROM transactions` equivalent logic used
 
 **Implementation Details**:
-- **Service Method**: `PurchaseOrderService.getNextEntryNumber()` provides the next available entry number
+- **Service Method**: `OrderService.getNextEntryNumber()` provides the next available entry number
 - **UI Display**: Entry number shown in a highlighted blue container in the selected item information
 - **Auto-refresh**: Entry number automatically refreshes after successful transaction creation
 - **Error Handling**: Defaults to entry number 1 if database query fails
@@ -508,9 +642,9 @@ The stock-in feature has been enhanced to use manual model input instead of auto
 - **Database Storage**: Model stored in both inventory and transaction records, size stored as empty string if not provided
 - **Service Update**: `StockService.stockInItem()` now accepts manual model parameter and optional size parameter
 
-## Multi-Item Purchase Order Enhancement
+## Multi-Item Order Enhancement
 
-The stock-out feature has been enhanced to support multiple items per purchase order instead of the previous single-item limitation:
+The stock-out feature has been enhanced to support multiple items per order instead of the previous single-item limitation:
 
 **Previous Behavior**:
 - One purchase order could only contain one item
@@ -557,9 +691,9 @@ The stock-out feature has been enhanced to support multiple items per purchase o
 - **users**: User profiles and authentication data
 - **inventory**: Current inventory items with status
 - **transactions**: Complete transaction history
-- **purchase_orders**: Purchase order documents with integrated invoice data
+- **orders**: Order documents with integrated invoice data
 
-**Note**: The separate `invoices` collection has been removed. Invoice data is now stored directly in the `purchase_orders` collection, reducing complexity and improving data consistency.
+**Note**: The separate `invoices` collection has been removed. Invoice data is now stored directly in the `orders` collection, reducing complexity and improving data consistency.
 
 ### Security Rules
 All collections implement role-based security rules:

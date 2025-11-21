@@ -1,29 +1,32 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
-import '../services/order_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 import '../providers/auth_provider.dart';
+import '../services/demo_service.dart';
 import '../utils/platform_features.dart';
 import 'qr_scanner_screen.dart';
 
-class StockOutScreen extends StatefulWidget {
-  const StockOutScreen({super.key});
+class DemoScreen extends StatefulWidget {
+  const DemoScreen({super.key});
 
   @override
-  State<StockOutScreen> createState() => _StockOutScreenState();
+  State<DemoScreen> createState() => _DemoScreenState();
 }
 
-class _StockOutScreenState extends State<StockOutScreen> {
+class _DemoScreenState extends State<DemoScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _poNumberController = TextEditingController();
+  final _demoNumberController = TextEditingController();
+  final _demoPurposeController = TextEditingController();
   final _dealerNameController = TextEditingController();
   final _clientNameController = TextEditingController();
   final _serialNumberController = TextEditingController();
+  final _remarksController = TextEditingController();
 
   String? _selectedLocation;
-  final List<Map<String, dynamic>> _selectedItems =
-      []; // Changed to list for multiple items
+  DateTime? _expectedReturnDate;
+  final List<Map<String, dynamic>> _selectedItems = [];
   List<Map<String, dynamic>> _activeItems = [];
   List<Map<String, dynamic>> _filteredItems = [];
   bool _isLoading = false;
@@ -51,13 +54,6 @@ class _StockOutScreenState extends State<StockOutScreen> {
     {'name': 'Wilayah Persekutuan Putra Jaya', 'abbreviation': 'PJY'},
   ];
 
-  // Warranty type options with their periods
-  final List<Map<String, dynamic>> _warrantyTypes = [
-    {'display': '1 Year', 'value': '1 year', 'period': 1},
-    {'display': '1+2 Year', 'value': '1+2 year', 'period': 3},
-    {'display': '1+3 Year', 'value': '1+3 year', 'period': 4},
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -67,10 +63,12 @@ class _StockOutScreenState extends State<StockOutScreen> {
 
   @override
   void dispose() {
-    _poNumberController.dispose();
+    _demoNumberController.dispose();
+    _demoPurposeController.dispose();
     _dealerNameController.dispose();
     _clientNameController.dispose();
     _serialNumberController.dispose();
+    _remarksController.dispose();
     super.dispose();
   }
 
@@ -97,19 +95,11 @@ class _StockOutScreenState extends State<StockOutScreen> {
         });
       }
 
-      // Step 1: Get transactions with limit to avoid performance issues
-      // Use a reasonable limit that covers most recent transactions
-      // NOTE: This approach has limitations - if you have more than 1000 transactions,
-      // some older items might not appear in the search results.
-      // For production, consider implementing a more efficient approach using
-      // a separate 'available_items' collection or status indexing.
+      // Get transactions with limit to avoid performance issues
       final allTransactionsQuery = await FirebaseFirestore.instance
           .collection('transactions')
-          .orderBy(
-            'transaction_id',
-            descending: true,
-          ) // Get latest transactions first
-          .limit(1000) // Add limit to prevent performance issues
+          .orderBy('transaction_id', descending: true)
+          .limit(1000)
           .get()
           .timeout(
             const Duration(seconds: 10),
@@ -129,7 +119,7 @@ class _StockOutScreenState extends State<StockOutScreen> {
         return;
       }
 
-      // Step 2: Find the latest transaction for each serial number
+      // Find the latest transaction for each serial number
       final Map<String, Map<String, dynamic>> latestTransactionBySerial = {};
 
       for (final doc in allTransactionsQuery.docs) {
@@ -138,12 +128,11 @@ class _StockOutScreenState extends State<StockOutScreen> {
 
         if (serialNumber != null &&
             !latestTransactionBySerial.containsKey(serialNumber)) {
-          // This is the latest transaction for this serial number
           latestTransactionBySerial[serialNumber] = data;
         }
       }
 
-      // Step 3: Filter to only include items that are truly available (latest status is Active from Stock_In)
+      // Filter to only include items that are available (latest status is Active from Stock_In)
       final availableSerialNumbers = <String>[];
       final availableTransactions = <Map<String, dynamic>>[];
 
@@ -151,16 +140,9 @@ class _StockOutScreenState extends State<StockOutScreen> {
         final serialNumber = entry.key;
         final transaction = entry.value;
 
-        // Item is available if:
-        // 1. Latest transaction type is Stock_In AND status is Active
-        // 2. Latest transaction type is Cancellation AND status is Active (cancelled order items)
-        // 3. Latest transaction type is Demo AND status is Active (returned demo items)
-        if (transaction['status'] == 'Active' &&
-            [
-              'Stock_In',
-              'Cancellation',
-              'Demo',
-            ].contains(transaction['type'])) {
+        // Item is available if latest transaction type is Stock_In AND status is Active
+        if (transaction['type'] == 'Stock_In' &&
+            transaction['status'] == 'Active') {
           availableSerialNumbers.add(serialNumber);
           availableTransactions.add(transaction);
         }
@@ -174,10 +156,10 @@ class _StockOutScreenState extends State<StockOutScreen> {
         return;
       }
 
-      // Step 3: Get all inventory items in batches (Firestore 'in' query limit is 10)
-      List<Map<String, dynamic>> allInventoryItems = [];
+      // Get inventory details for available items (batch process to handle Firestore whereIn limit)
+      final List<Map<String, dynamic>> activeItems = [];
 
-      // Process in batches of 10 (Firestore 'in' query limitation)
+      // Process in batches of 10 (Firestore whereIn limit)
       for (int i = 0; i < availableSerialNumbers.length; i += 10) {
         final batch = availableSerialNumbers.skip(i).take(10).toList();
 
@@ -186,63 +168,29 @@ class _StockOutScreenState extends State<StockOutScreen> {
             .where('serial_number', whereIn: batch)
             .get();
 
-        allInventoryItems.addAll(
-          inventoryQuery.docs.map((doc) => doc.data()).toList(),
-        );
-      }
-
-      // Step 4: Create a map for quick inventory lookup
-      final inventoryMap = <String, Map<String, dynamic>>{};
-      for (final item in allInventoryItems) {
-        final serialNumber = item['serial_number'] as String?;
-        if (serialNumber != null) {
-          inventoryMap[serialNumber] = item;
-        }
-      }
-
-      // Step 5: Combine transaction and inventory data efficiently
-      List<Map<String, dynamic>> activeItems = [];
-
-      for (final transactionData in availableTransactions) {
-        final serialNumber = transactionData['serial_number'] as String?;
-
-        if (serialNumber != null && inventoryMap.containsKey(serialNumber)) {
-          final inventoryData = inventoryMap[serialNumber]!;
-
-          activeItems.add({
-            'serial_number': serialNumber,
-            'equipment_category':
-                inventoryData['equipment_category'] ??
-                transactionData['equipment_category'],
-            'model': transactionData['model'],
-            'size': inventoryData['size'],
-            'batch': inventoryData['batch'],
-            'date': inventoryData['date'],
-            'remark': inventoryData['remark'],
-            'transaction_id': transactionData['transaction_id'],
-            'location': transactionData['location'],
-          });
+        for (final doc in inventoryQuery.docs) {
+          final inventoryData = doc.data();
+          activeItems.add(inventoryData);
         }
       }
 
       if (mounted) {
         setState(() {
           _activeItems = activeItems;
-          _filteredItems = activeItems; // Initialize filtered items
+          _filteredItems = activeItems;
           _isLoadingItems = false;
         });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
+          _activeItems = [];
+          _filteredItems = [];
           _isLoadingItems = false;
         });
-      }
-
-      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error loading active items: $e'),
+            content: Text('Error loading items: ${e.toString()}'),
             backgroundColor: Colors.red,
           ),
         );
@@ -252,21 +200,30 @@ class _StockOutScreenState extends State<StockOutScreen> {
 
   Future<void> _loadNextEntryNumber() async {
     try {
-      // Get the AuthService from the provider
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final orderService = OrderService(authService: authProvider.authService);
-
-      final nextEntryNumber = await orderService.getNextEntryNumber();
+      // Get the count of all transactions + 1
+      final querySnapshot = await FirebaseFirestore.instance
+          .collection('transactions')
+          .get()
+          .timeout(
+            const Duration(seconds: 10),
+            onTimeout: () {
+              throw TimeoutException(
+                'Query timeout',
+                const Duration(seconds: 10),
+              );
+            },
+          );
 
       if (mounted) {
         setState(() {
-          _nextEntryNumber = nextEntryNumber;
+          _nextEntryNumber = querySnapshot.docs.length + 1;
         });
       }
     } catch (e) {
+      // Silently handle error and use default value
       if (mounted) {
         setState(() {
-          _nextEntryNumber = 1; // Default to 1 if error
+          _nextEntryNumber = 1;
         });
       }
     }
@@ -312,12 +269,7 @@ class _StockOutScreenState extends State<StockOutScreen> {
       );
 
       if (!isAlreadySelected) {
-        // Add warranty information to the item
-        final itemWithWarranty = Map<String, dynamic>.from(item);
-        itemWithWarranty['warranty_type'] = '1 year'; // Default warranty type
-        itemWithWarranty['warranty_period'] = 1; // Default warranty period
-
-        _selectedItems.add(itemWithWarranty);
+        _selectedItems.add(Map<String, dynamic>.from(item));
         _serialNumberController.clear();
         _showSuggestions = false;
 
@@ -330,7 +282,7 @@ class _StockOutScreenState extends State<StockOutScreen> {
           ),
         );
       } else {
-        // Show warning if already selected
+        // Show already selected message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Item $serialNumber is already selected'),
@@ -345,12 +297,9 @@ class _StockOutScreenState extends State<StockOutScreen> {
   void _removeItemFromSelection(int index) {
     setState(() {
       final removedItem = _selectedItems.removeAt(index);
-      final serialNumber = removedItem['serial_number'] ?? '';
-
-      // Show removal message
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Removed: $serialNumber'),
+          content: Text('Removed: ${removedItem['serial_number']}'),
           backgroundColor: Colors.red,
           duration: const Duration(seconds: 2),
         ),
@@ -358,20 +307,23 @@ class _StockOutScreenState extends State<StockOutScreen> {
     });
   }
 
-  /// Update warranty type for a specific item
-  void _updateItemWarranty(int index, String warrantyType) {
-    setState(() {
-      final warranty = _warrantyTypes.firstWhere(
-        (w) => w['value'] == warrantyType,
-        orElse: () => {'value': '1 year', 'period': 1}, // Default
-      );
-
-      _selectedItems[index]['warranty_type'] = warrantyType;
-      _selectedItems[index]['warranty_period'] = warranty['period'];
-    });
+  Future<void> _selectReturnDate() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate:
+          _expectedReturnDate ?? DateTime.now().add(const Duration(days: 7)),
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      helpText: 'Select Expected Return Date',
+    );
+    if (picked != null && picked != _expectedReturnDate) {
+      setState(() {
+        _expectedReturnDate = picked;
+      });
+    }
   }
 
-  Future<void> _saveOrder() async {
+  Future<void> _saveDemo() async {
     if (!_formKey.currentState!.validate() ||
         _selectedItems.isEmpty ||
         _selectedLocation == null) {
@@ -391,26 +343,37 @@ class _StockOutScreenState extends State<StockOutScreen> {
     });
 
     try {
-      // Get the AuthService from the provider
+      // Get auth provider for service
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final orderService = OrderService(authService: authProvider.authService);
+      final demoService = DemoService(authService: authProvider.authService);
 
-      // Create the multi-item order
-      final result = await orderService.createMultiItemStockOutOrder(
-        orderNumber: _poNumberController.text.trim(),
+      // Create the demo
+      final result = await demoService.createDemo(
+        demoNumber: _demoNumberController.text.trim(),
+        demoPurpose: _demoPurposeController.text.trim(),
         dealerName: _dealerNameController.text.trim(),
         clientName: _clientNameController.text.trim(),
         location: _selectedLocation!,
         selectedItems: _selectedItems,
+        expectedReturnDate: _expectedReturnDate,
+        remarks: _remarksController.text.trim().isEmpty
+            ? null
+            : _remarksController.text.trim(),
       );
 
       if (mounted) {
-        if (result['success'] == true) {
+        setState(() {
+          _isLoading = false;
+        });
+
+        if (result['success']) {
           // Show success message
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                'Success! ${result['message']}\nTransaction IDs: ${result['transaction_ids']?.join(', ') ?? 'N/A'}',
+                'Demo "${result['demo_number']}" created successfully!\n'
+                'Items: ${result['transaction_ids'].length}\n'
+                'Demo ID: ${result['demo_id']}',
               ),
               backgroundColor: Colors.green,
               duration: const Duration(seconds: 4),
@@ -418,17 +381,20 @@ class _StockOutScreenState extends State<StockOutScreen> {
           );
 
           // Clear the form
-          _poNumberController.clear();
+          _demoNumberController.clear();
+          _demoPurposeController.clear();
           _dealerNameController.clear();
           _clientNameController.clear();
           _serialNumberController.clear();
+          _remarksController.clear();
           setState(() {
             _selectedItems.clear();
             _selectedLocation = null;
+            _expectedReturnDate = null;
             _showSuggestions = false;
           });
 
-          // Reload active items and next entry number to reflect the change
+          // Reload active items and next entry number
           _loadActiveItems();
           _loadNextEntryNumber();
         } else {
@@ -444,8 +410,15 @@ class _StockOutScreenState extends State<StockOutScreen> {
       }
     } catch (e) {
       if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Error creating demo: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
         );
       }
     } finally {
@@ -455,12 +428,212 @@ class _StockOutScreenState extends State<StockOutScreen> {
     }
   }
 
+  Future<void> _showDeleteDemoDialog() async {
+    try {
+      // Get auth provider for service
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final demoService = DemoService(authService: authProvider.authService);
+
+      // Get recent demos
+      final recentDemos = await demoService.getRecentDemosForDeletion(
+        limit: 10,
+      );
+
+      if (!mounted) return;
+
+      if (recentDemos.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No demo records found to delete.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      // Show dialog with list of recent demos
+      showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.warning, color: Colors.red[700]),
+                const SizedBox(width: 8),
+                const Text('Delete Demo Records'),
+              ],
+            ),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'WARNING: This will permanently delete demo records and restore items to active status.',
+                    style: TextStyle(
+                      color: Colors.red[700],
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('Select a demo to delete:'),
+                  const SizedBox(height: 8),
+                  Container(
+                    height: 200,
+                    child: ListView.builder(
+                      itemCount: recentDemos.length,
+                      itemBuilder: (context, index) {
+                        final demo = recentDemos[index];
+                        final demoNumber = demo['demo_number'] ?? 'Unknown';
+                        final demoPurpose =
+                            demo['demo_purpose'] ?? 'No purpose';
+                        final status = demo['status'] ?? 'Unknown';
+                        final itemCount = demo['total_items'] ?? 0;
+
+                        return Card(
+                          child: ListTile(
+                            title: Text(demoNumber),
+                            subtitle: Text(
+                              '$demoPurpose\nStatus: $status | Items: $itemCount',
+                            ),
+                            trailing: ElevatedButton(
+                              onPressed: () {
+                                Navigator.of(context).pop();
+                                _confirmDeleteDemo(demo['id'], demoNumber);
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.red,
+                                foregroundColor: Colors.white,
+                              ),
+                              child: const Text('Delete'),
+                            ),
+                            isThreeLine: true,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+            ],
+          );
+        },
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading demos: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _confirmDeleteDemo(String demoId, String demoNumber) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Confirm Deletion'),
+          content: Text(
+            'Are you sure you want to delete demo "$demoNumber"?\n\n'
+            'This action cannot be undone. All associated items will be restored to active status.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true) {
+      await _deleteDemo(demoId, demoNumber);
+    }
+  }
+
+  Future<void> _deleteDemo(String demoId, String demoNumber) async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // Get auth provider for service
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final demoService = DemoService(authService: authProvider.authService);
+
+      // Delete the demo
+      final result = await demoService.deleteDemo(
+        demoId: demoId,
+        demoNumber: demoNumber,
+      );
+
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+
+        if (result['success']) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result['message']),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+
+          // Reload active items to reflect the restored items
+          _loadActiveItems();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error: ${result['error']}'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error deleting demo: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Order'),
-        backgroundColor: Colors.blue,
+        title: const Text('Demo'),
+        backgroundColor: Colors.amber,
         foregroundColor: Colors.white,
       ),
       body: _isLoadingItems
@@ -472,17 +645,35 @@ class _StockOutScreenState extends State<StockOutScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Order Number Input
+                    // Demo Number Input
                     TextFormField(
-                      controller: _poNumberController,
+                      controller: _demoNumberController,
                       decoration: const InputDecoration(
-                        labelText: 'Order Number *',
-                        hintText: 'Enter order number',
+                        labelText: 'Demo Number *',
+                        hintText: 'Enter demo reference number',
                         border: OutlineInputBorder(),
                       ),
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
-                          return 'Order Number is required';
+                          return 'Demo Number is required';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Demo Purpose Input
+                    TextFormField(
+                      controller: _demoPurposeController,
+                      decoration: const InputDecoration(
+                        labelText: 'Demo Purpose *',
+                        hintText:
+                            'e.g., Client presentation, trade show, training',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return 'Demo Purpose is required';
                         }
                         return null;
                       },
@@ -514,7 +705,7 @@ class _StockOutScreenState extends State<StockOutScreen> {
                         hintText: 'Enter client name (optional)',
                         border: OutlineInputBorder(),
                       ),
-                      // Removed validator to make field optional
+                      // No validator - field is optional
                     ),
                     const SizedBox(height: 16),
 
@@ -522,8 +713,8 @@ class _StockOutScreenState extends State<StockOutScreen> {
                     DropdownButtonFormField<String>(
                       initialValue: _selectedLocation,
                       decoration: const InputDecoration(
-                        labelText: 'Location *',
-                        hintText: 'Select state location',
+                        labelText: 'Demo Location *',
+                        hintText: 'Select demo location',
                         border: OutlineInputBorder(),
                       ),
                       items: _malaysianStates.map((state) {
@@ -542,10 +733,36 @@ class _StockOutScreenState extends State<StockOutScreen> {
                       },
                       validator: (value) {
                         if (value == null || value.isEmpty) {
-                          return 'Location is required';
+                          return 'Demo Location is required';
                         }
                         return null;
                       },
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Expected Return Date
+                    InkWell(
+                      onTap: _selectReturnDate,
+                      child: InputDecorator(
+                        decoration: const InputDecoration(
+                          labelText: 'Expected Return Date (Optional)',
+                          hintText: 'Tap to select return date',
+                          border: OutlineInputBorder(),
+                          suffixIcon: Icon(Icons.calendar_today),
+                        ),
+                        child: Text(
+                          _expectedReturnDate != null
+                              ? DateFormat(
+                                  'dd/MM/yyyy',
+                                ).format(_expectedReturnDate!)
+                              : 'No date selected',
+                          style: TextStyle(
+                            color: _expectedReturnDate != null
+                                ? Colors.black87
+                                : Colors.grey[600],
+                          ),
+                        ),
+                      ),
                     ),
                     const SizedBox(height: 16),
 
@@ -578,7 +795,6 @@ class _StockOutScreenState extends State<StockOutScreen> {
                                 onChanged: _onSearchChanged,
                                 validator: (value) {
                                   // No validation needed for search field
-                                  // Validation is done on selected items list
                                   return null;
                                 },
                               ),
@@ -664,17 +880,17 @@ class _StockOutScreenState extends State<StockOutScreen> {
                               Row(
                                 children: [
                                   Icon(
-                                    Icons.inventory_2,
-                                    color: Colors.blue[700],
+                                    Icons.science,
+                                    color: Colors.amber[700],
                                     size: 24,
                                   ),
                                   const SizedBox(width: 8),
                                   Text(
-                                    'Selected Items (${_selectedItems.length})',
+                                    'Selected Items for Demo (${_selectedItems.length})',
                                     style: TextStyle(
                                       fontSize: 18,
                                       fontWeight: FontWeight.bold,
-                                      color: Colors.blue[700],
+                                      color: Colors.amber[700],
                                     ),
                                   ),
                                 ],
@@ -686,17 +902,17 @@ class _StockOutScreenState extends State<StockOutScreen> {
                                   padding: const EdgeInsets.all(8),
                                   margin: const EdgeInsets.only(bottom: 12),
                                   decoration: BoxDecoration(
-                                    color: Colors.blue[50],
+                                    color: Colors.amber[50],
                                     borderRadius: BorderRadius.circular(6),
                                     border: Border.all(
-                                      color: Colors.blue[200]!,
+                                      color: Colors.amber[200]!,
                                     ),
                                   ),
                                   child: Row(
                                     children: [
                                       Icon(
                                         Icons.confirmation_number,
-                                        color: Colors.blue[700],
+                                        color: Colors.amber[700],
                                         size: 20,
                                       ),
                                       const SizedBox(width: 8),
@@ -704,7 +920,7 @@ class _StockOutScreenState extends State<StockOutScreen> {
                                         'Entry Number: $_nextEntryNumber',
                                         style: TextStyle(
                                           fontWeight: FontWeight.w600,
-                                          color: Colors.blue[700],
+                                          color: Colors.amber[700],
                                           fontSize: 14,
                                         ),
                                       ),
@@ -739,11 +955,12 @@ class _StockOutScreenState extends State<StockOutScreen> {
                                           children: [
                                             CircleAvatar(
                                               radius: 16,
-                                              backgroundColor: Colors.blue[100],
+                                              backgroundColor:
+                                                  Colors.amber[100],
                                               child: Text(
                                                 '${index + 1}',
                                                 style: TextStyle(
-                                                  color: Colors.blue[700],
+                                                  color: Colors.amber[700],
                                                   fontWeight: FontWeight.bold,
                                                   fontSize: 12,
                                                 ),
@@ -796,93 +1013,10 @@ class _StockOutScreenState extends State<StockOutScreen> {
                                             fontSize: 11,
                                           ),
                                         ),
-                                        const SizedBox(height: 12),
-                                        // Warranty dropdown
-                                        Row(
-                                          children: [
-                                            Icon(
-                                              Icons.security,
-                                              size: 16,
-                                              color: Colors.green[700],
-                                            ),
-                                            const SizedBox(width: 8),
-                                            const Text(
-                                              'Warranty:',
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.w500,
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Expanded(
-                                              child: DropdownButtonFormField<String>(
-                                                initialValue:
-                                                    item['warranty_type'] ??
-                                                    '1 year',
-                                                decoration:
-                                                    const InputDecoration(
-                                                      border:
-                                                          OutlineInputBorder(),
-                                                      contentPadding:
-                                                          EdgeInsets.symmetric(
-                                                            horizontal: 8,
-                                                            vertical: 4,
-                                                          ),
-                                                      isDense: true,
-                                                    ),
-                                                items: _warrantyTypes.map((
-                                                  warranty,
-                                                ) {
-                                                  return DropdownMenuItem<
-                                                    String
-                                                  >(
-                                                    value: warranty['value'],
-                                                    child: Text(
-                                                      warranty['display'],
-                                                      style: const TextStyle(
-                                                        fontSize: 12,
-                                                      ),
-                                                    ),
-                                                  );
-                                                }).toList(),
-                                                onChanged: (String? newValue) {
-                                                  if (newValue != null) {
-                                                    _updateItemWarranty(
-                                                      index,
-                                                      newValue,
-                                                    );
-                                                  }
-                                                },
-                                              ),
-                                            ),
-                                          ],
-                                        ),
                                       ],
                                     ),
                                   );
                                 },
-                              ),
-                              const SizedBox(height: 12),
-                              // Summary Information
-                              Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Colors.grey[50],
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.grey[300]!),
-                                ),
-                                child: Column(
-                                  children: [
-                                    _buildInfoRow(
-                                      'Total Items',
-                                      '${_selectedItems.length}',
-                                    ),
-                                    _buildInfoRow(
-                                      'Location',
-                                      _selectedLocation ?? 'Not selected',
-                                    ),
-                                  ],
-                                ),
                               ),
                             ],
                           ),
@@ -904,7 +1038,7 @@ class _StockOutScreenState extends State<StockOutScreen> {
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                'No items selected. Search and tap on items to add them to the order.',
+                                'No items selected. Search and tap on items to add them to the demo.',
                                 style: TextStyle(
                                   color: Colors.orange[700],
                                   fontSize: 14,
@@ -917,14 +1051,83 @@ class _StockOutScreenState extends State<StockOutScreen> {
                       const SizedBox(height: 24),
                     ],
 
+                    // Remarks Input (Optional)
+                    TextFormField(
+                      controller: _remarksController,
+                      decoration: const InputDecoration(
+                        labelText: 'Remarks (Optional)',
+                        hintText: 'Enter any additional notes or remarks',
+                        border: OutlineInputBorder(),
+                      ),
+                      maxLines: 3,
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Development Section - Delete Recent Demos
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.red[50],
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.red[200]!),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.warning,
+                                color: Colors.red[700],
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Development Tools',
+                                style: TextStyle(
+                                  color: Colors.red[700],
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Delete recent demo records for testing purposes',
+                            style: TextStyle(
+                              color: Colors.red[600],
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: _isLoading
+                                  ? null
+                                  : _showDeleteDemoDialog,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.red[600],
+                                foregroundColor: Colors.white,
+                              ),
+                              icon: const Icon(Icons.delete_forever, size: 18),
+                              label: const Text('Delete Recent Demos'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
                     // Save Button
                     SizedBox(
                       width: double.infinity,
                       height: 50,
                       child: ElevatedButton(
-                        onPressed: _isLoading ? null : _saveOrder,
+                        onPressed: _isLoading ? null : _saveDemo,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.green,
+                          backgroundColor: Colors.amber,
                           foregroundColor: Colors.white,
                         ),
                         child: _isLoading
@@ -932,7 +1135,7 @@ class _StockOutScreenState extends State<StockOutScreen> {
                                 color: Colors.white,
                               )
                             : const Text(
-                                'Save Order',
+                                'Create Demo',
                                 style: TextStyle(fontSize: 16),
                               ),
                       ),
@@ -941,30 +1144,6 @@ class _StockOutScreenState extends State<StockOutScreen> {
                 ),
               ),
             ),
-    );
-  }
-
-  Widget _buildInfoRow(String label, dynamic value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(
-              '$label:',
-              style: const TextStyle(fontWeight: FontWeight.w500),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value?.toString() ?? 'N/A',
-              style: const TextStyle(color: Colors.black87),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

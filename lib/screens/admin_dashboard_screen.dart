@@ -18,6 +18,7 @@ import 'delivery_order_screen.dart';
 import 'inventory_management_screen.dart';
 import 'user_management_screen.dart';
 import 'demo_screen.dart';
+import 'cancel_order_screen.dart';
 import 'demo_return_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
@@ -851,6 +852,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                   context,
                   MaterialPageRoute(
                     builder: (context) => const UserManagementScreen(),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+            _buildNavigationListItem(
+              'Cancel Order',
+              Icons.cancel_outlined,
+              Colors.red,
+              'Cancel orders and restore inventory (Admin only)',
+              () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const CancelOrderScreen(),
                   ),
                 );
               },

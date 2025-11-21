@@ -6,20 +6,21 @@ A comprehensive Flutter-based inventory management application with Firebase bac
 
 **✅ PRODUCTION READY** - All core features implemented and tested
 
-### Version 2.0.22 - Latest Updates
+### Version 2.1.0 - Latest Updates (November 2025)
 - ✅ **Authentication System**: Login, registration, role-based access control
 - ✅ **Stock-In Operations**: Add inventory with QR scanning and batch processing
 - ✅ **Stock-Out Operations**: Reserve items for purchase orders with smart search
-- ✅ **Purchase Order Management**: Create, track, and manage PO lifecycle
-- ✅ **Invoice Management**: Upload, view, replace PDF invoices with integrated storage
+- ✅ **Order Management**: Dual status system (invoice_status + delivery_status) for better workflow separation
+- ✅ **Invoice Management**: Upload, view, replace PDF invoices with OCR text extraction
+- ✅ **Delivery Order Management**: Dual PDF workflow (normal + signed delivery) with separate transaction creation
 - ✅ **Monthly Inventory Activity**: Comprehensive monthly reporting with size and category breakdowns
 - ✅ **Data Import**: Excel file processing for inventory and transaction data
 - ✅ **User Management**: Admin controls for user roles and permissions
 - ✅ **Performance Optimization**: Efficient queries and batch operations with caching
 - ✅ **Error Handling**: Comprehensive error handling and user feedback
-- ✅ **Architecture Improvements**: Simplified data model with integrated invoice storage
-- ✅ **UI/UX Fixes**: Resolved Flutter rendering issues and complete size breakdown display
-- ✅ **Monthly Reports Enhancement**: Fixed missing panel sizes and border rendering conflicts
+- ✅ **Architecture Improvements**: Dual status system, separate transaction audit trails, file type differentiation
+- ✅ **UI/UX Fixes**: Color-coded status indicators, responsive dialogs, file name display accuracy
+- ✅ **File Management**: Advanced file replacement, proper metadata tracking, Firebase Storage integration
 
 ### Code Quality
 - **83% improvement** in code quality (29 → 5 minor issues)
@@ -50,19 +51,30 @@ A comprehensive Flutter-based inventory management application with Firebase bac
 - **Serial Number Management**: Track individual items by unique serial numbers
 - **Inventory Status Tracking**: Real-time status updates (Active, Reserved, Sold)
 
-### Purchase Order Management
-- **PO Creation**: Create purchase orders with dealer and client information
-- **Status Tracking**: Track PO status (Pending, Invoiced)
-- **Item Reservation**: Reserve specific serial numbers for purchase orders
-- **Comprehensive PO Details**: Store dealer, client, and item information
+### Order Management (Enhanced)
+- **Order Creation**: Create orders with dealer and client information
+- **Dual Status System**: Separate invoice_status (Reserved/Invoiced) and delivery_status (Pending/Issued/Delivered)
+- **Status Workflow**: Reserved → Invoiced → Issued → Delivered with proper separation
+- **Item Reservation**: Reserve specific serial numbers for orders
+- **Comprehensive Order Details**: Store dealer, client, and item information with enhanced metadata
 
-### Invoice Management
-- **PDF Invoice Upload**: Upload and manage PDF invoices for purchase orders
+### Invoice Management (Enhanced)
+- **PDF Invoice Upload**: Upload and manage PDF invoices for orders with OCR text extraction
+- **OCR Text Extraction**: Automatic extraction of invoice numbers and dates from PDF files
 - **Invoice Viewing**: View PDF invoices in external applications
-- **Invoice Replacement**: Replace existing invoices with new PDF files
-- **Firebase Storage Integration**: Secure cloud storage for PDF files
+- **Invoice Replacement**: Replace existing invoices with new PDF files and proper metadata updates
+- **Firebase Storage Integration**: Secure cloud storage for PDF files with file type differentiation
 - **Invoice Information Display**: Comprehensive invoice details and metadata
 - **Multi-platform PDF Support**: Robust PDF viewing with fallback options
+
+### Delivery Order Management (New)
+- **Dual PDF Workflow**: Support for normal delivery order PDF and signed delivery order PDF
+- **Status Progression**: Normal PDF → "Issued" status, Signed PDF → "Delivered" status
+- **Separate Transaction Creation**: Creates new "Delivered" transactions while preserving "Reserved" audit trail
+- **File Type Differentiation**: Distinct file types ('delivery_order' vs 'signed_delivery_order') for proper organization
+- **Shared Delivery Information**: Common delivery details (number, date, remarks) shared between both PDF types
+- **Advanced File Management**: Replace functionality for both normal and signed delivery PDFs
+- **Color-coded Status Indicators**: Visual status differentiation (orange/green/blue/purple) across all screens
 
 ### Monthly Inventory Activity
 - **Monthly Reporting**: Comprehensive monthly inventory activity reports with date range selection
@@ -97,17 +109,20 @@ lib/
 │   ├── auth_service.dart       # Firebase Auth operations
 │   ├── data_upload_service.dart # Excel import and data processing
 │   ├── stock_service.dart      # Stock management operations
-│   ├── purchase_order_service.dart # Purchase order operations
-│   ├── invoice_service.dart    # Invoice management with PDF support
+│   ├── order_service.dart      # Order management with dual status system
+│   ├── file_service.dart       # File upload/management with Firebase Storage
+│   ├── invoice_service.dart    # Invoice management with OCR support
+│   ├── delivery_service.dart   # Delivery order management
 │   └── monthly_inventory_service.dart # Monthly inventory activity reporting
 └── screens/
     ├── login_screen.dart       # User authentication
     ├── register_screen.dart    # User registration
-    ├── dashboard_screen.dart   # Main dashboard
+    ├── dashboard_screen.dart   # Main dashboard with auto-refresh
     ├── data_upload_screen.dart # Excel file upload
     ├── stock_in_screen.dart    # Add new inventory items
-    ├── stock_out_screen.dart   # Reserve items for purchase orders
-    ├── invoice_screen.dart     # Invoice upload and management
+    ├── stock_out_screen.dart   # Reserve items for orders
+    ├── invoice_screen.dart     # Invoice upload with OCR extraction
+    ├── delivery_order_screen.dart # Dual PDF delivery management
     └── monthly_inventory_activity_screen.dart # Monthly inventory reporting
 ```
 
@@ -288,10 +303,10 @@ flutter build ios --release
 - User attribution and timestamps
 - Audit trail for all changes
 - Stock-In and Stock-Out operations
-- Purchase order references
+- Order references
 
-### Purchase Order Schema
-- PO number and status tracking
+### Order Schema
+- Order number and status tracking
 - Dealer and client information
 - Item reservations with serial numbers
 - Creation and update timestamps
@@ -326,7 +341,22 @@ For support and questions:
 
 ## 🔄 Version History
 
-### v2.0.22 (Current)
+### v2.1.0 (Current - November 2025)
+- ✅ **Dual Status System Architecture**: Implemented separate invoice_status and delivery_status fields for better workflow separation
+- ✅ **Delivery Order Management**: Complete dual PDF workflow supporting normal delivery order and signed delivery order uploads
+- ✅ **Enhanced Transaction System**: Creates separate "Delivered" transactions while preserving "Reserved" audit trail
+- ✅ **Advanced File Management**: New FileService with proper file type differentiation ('invoice', 'delivery_order', 'signed_delivery_order')
+- ✅ **OCR Text Extraction**: Automatic extraction of invoice numbers and dates from PDF files using Syncfusion Flutter PDF
+- ✅ **Color-coded Status Indicators**: Visual status differentiation with orange/green/blue/purple across all screens
+- ✅ **Auto-refresh Dashboard**: Smart background data checking with efficient UI updates every 10 seconds
+- ✅ **Cross-screen Data Synchronization**: Proper data refresh when navigating between screens
+- ✅ **File Name Display Accuracy**: Real-time file information updates after file replacements
+- ✅ **Responsive Dialog Design**: Improved UI layouts with proper overflow handling using Flexible widgets
+- ✅ **Database Migration System**: Seamless migration from single status to dual status system
+- ✅ **Development Tools**: Enhanced delete functionality for delivery data testing and development
+- ✅ **Architectural Improvements**: Separate file references with shared delivery information for optimal data organization
+
+### v2.0.22
 - ✅ **Monthly Inventory Activity Critical Fixes**: Resolved Flutter rendering errors that prevented complete size breakdown display
 - ✅ **Border Rendering Conflict Resolution**: Fixed hairline border + borderRadius conflict causing rendering exceptions
 - ✅ **Complete Panel Size Display**: All panel sizes (65", 75", 86", 98") now display correctly in size breakdown table
@@ -389,8 +419,8 @@ For support and questions:
 - ✅ **Location Selection Enhancement**: Added Malaysian states dropdown to stock-out feature with proper state abbreviations (e.g., Selangor → SGR)
 - ✅ **Enhanced PO Details Display**: Replaced generic "Total Items" field with detailed item information showing serial numbers, categories, models, sizes, batches, and transaction IDs
 - ✅ **Batch Information Integration**: Fixed batch data fetching by retrieving accurate batch information from inventory table instead of transaction records
-- ✅ **Purchase Order Simplification**: Refactored PO storage to use transaction ID references instead of duplicating item details, reducing data redundancy
-- ✅ **Invoice Storage Refactoring**: Eliminated separate invoice collection, integrated all invoice data directly into purchase orders for simplified architecture
+- ✅ **Order Simplification**: Refactored order storage to use transaction ID references instead of duplicating item details, reducing data redundancy
+- ✅ **Invoice Storage Refactoring**: Eliminated separate invoice collection, integrated all invoice data directly into orders for simplified architecture
 - ✅ **Dropdown Bug Fix**: Fixed critical assertion error in invoice replacement feature by ensuring proper object reference equality
 
 ### v2.0.0

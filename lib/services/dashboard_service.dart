@@ -117,13 +117,20 @@ class DashboardService {
       int stockOutTransactions = 0;
 
       for (final doc in transactionsSnapshot.docs) {
-        final data = doc.data();
-        final type = data['type'] as String?;
+        try {
+          final data = doc.data();
+          if (data == null) continue;
 
-        if (type == 'Stock_In') {
-          stockInTransactions++;
-        } else if (type == 'Stock_Out') {
-          stockOutTransactions++;
+          final type = data['type'] as String?;
+
+          if (type == 'Stock_In') {
+            stockInTransactions++;
+          } else if (type == 'Stock_Out') {
+            stockOutTransactions++;
+          }
+        } catch (e) {
+          print('Error processing transaction doc ${doc.id}: $e');
+          continue;
         }
       }
 
@@ -182,35 +189,47 @@ class DashboardService {
       final snapshot = await _firestore.collection('transactions').get();
 
       // Convert all transactions and normalize timestamps
-      final allTransactions = snapshot.docs.map((doc) {
-        final data = {'id': doc.id, ...doc.data()};
+      final allTransactions = <Map<String, dynamic>>[];
 
-        // Normalize uploaded_at to DateTime for consistent sorting
-        DateTime? uploadedAt;
-        final uploadedAtField = data['uploaded_at'];
+      for (final doc in snapshot.docs) {
+        try {
+          final docData = doc.data();
+          if (docData == null) continue;
 
-        if (uploadedAtField is Timestamp) {
-          uploadedAt = uploadedAtField.toDate();
-        } else if (uploadedAtField is String) {
-          try {
-            uploadedAt = DateTime.parse(uploadedAtField);
-          } catch (e) {
-            // If parsing fails, use a very old date so it appears last
+          final data = {'id': doc.id, ...docData};
+
+          // Normalize uploaded_at to DateTime for consistent sorting
+          DateTime? uploadedAt;
+          final uploadedAtField = data['uploaded_at'];
+
+          if (uploadedAtField is Timestamp) {
+            uploadedAt = uploadedAtField.toDate();
+          } else if (uploadedAtField is String) {
+            try {
+              uploadedAt = DateTime.parse(uploadedAtField);
+            } catch (e) {
+              // If parsing fails, use a very old date so it appears last
+              uploadedAt = DateTime(2000);
+            }
+          } else {
+            // If no valid timestamp, use a very old date
             uploadedAt = DateTime(2000);
           }
-        } else {
-          // If no valid timestamp, use a very old date
-          uploadedAt = DateTime(2000);
-        }
 
-        data['_normalized_uploaded_at'] = uploadedAt;
-        return data;
-      }).toList();
+          data['_normalized_uploaded_at'] = uploadedAt;
+          allTransactions.add(data);
+        } catch (e) {
+          print('Error processing transaction doc ${doc.id}: $e');
+          continue;
+        }
+      }
 
       // Sort by normalized timestamp (most recent first), then by transaction_id (highest first)
       allTransactions.sort((a, b) {
-        final aTime = a['_normalized_uploaded_at'] as DateTime;
-        final bTime = b['_normalized_uploaded_at'] as DateTime;
+        final aTime =
+            a['_normalized_uploaded_at'] as DateTime? ?? DateTime(2000);
+        final bTime =
+            b['_normalized_uploaded_at'] as DateTime? ?? DateTime(2000);
 
         // Primary sort: by timestamp (most recent first)
         final timeComparison = bTime.compareTo(aTime);
@@ -376,8 +395,10 @@ class DashboardService {
 
       // Sort and get the most recent
       allTransactions.sort((a, b) {
-        final aTime = a['_normalized_uploaded_at'] as DateTime;
-        final bTime = b['_normalized_uploaded_at'] as DateTime;
+        final aTime =
+            a['_normalized_uploaded_at'] as DateTime? ?? DateTime(2000);
+        final bTime =
+            b['_normalized_uploaded_at'] as DateTime? ?? DateTime(2000);
         final timeComparison = bTime.compareTo(aTime);
         if (timeComparison != 0) return timeComparison;
 
@@ -457,13 +478,13 @@ class DashboardService {
 
         // Count based on combined status logic
         if (invoiceStatus == 'Reserved') {
-          counts['reserved'] = counts['reserved']! + 1;
+          counts['reserved'] = (counts['reserved'] ?? 0) + 1;
         } else if (invoiceStatus == 'Invoiced' && deliveryStatus == 'Pending') {
-          counts['invoiced'] = counts['invoiced']! + 1;
+          counts['invoiced'] = (counts['invoiced'] ?? 0) + 1;
         } else if (deliveryStatus == 'Issued') {
-          counts['issued'] = counts['issued']! + 1;
+          counts['issued'] = (counts['issued'] ?? 0) + 1;
         } else if (deliveryStatus == 'Delivered') {
-          counts['delivered'] = counts['delivered']! + 1;
+          counts['delivered'] = (counts['delivered'] ?? 0) + 1;
         }
       }
 
