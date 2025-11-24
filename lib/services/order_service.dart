@@ -59,6 +59,9 @@ class OrderService {
         selectedItems.length,
       );
 
+      // Get the next available entry numbers for all Stock_Out items
+      final nextEntryNumbers = await _getNextEntryNumbers(selectedItems.length);
+
       // Prepare batch operations
       final batch = _firestore.batch();
       final transactionIds = <int>[];
@@ -70,6 +73,7 @@ class OrderService {
         final warrantyType = item['warranty_type'] as String? ?? 'No Warranty';
         final warrantyPeriod = item['warranty_period'] as int? ?? 0;
         final transactionId = nextTransactionIds[i];
+        final entryNo = nextEntryNumbers[i];
 
         transactionIds.add(transactionId);
 
@@ -92,6 +96,7 @@ class OrderService {
         // Create Stock_Out transaction record
         final transactionData = {
           'transaction_id': transactionId,
+          'entry_no': entryNo,
           'serial_number': serialNumber,
           'type': 'Stock_Out',
           'status': 'Reserved', // Initial status is Reserved
@@ -217,12 +222,21 @@ class OrderService {
     return List.generate(count, (index) => startId + index);
   }
 
-  /// Get next entry number for display purposes
+  /// Get multiple sequential entry numbers for Stock_Out transactions
+  Future<List<int>> _getNextEntryNumbers(int count) async {
+    final startEntryNo = await getNextEntryNumber();
+    return List.generate(count, (index) => startEntryNo + index);
+  }
+
+  /// Get next entry number for Stock_Out transactions only
   Future<int> getNextEntryNumber() async {
     try {
-      // Get the count of all transactions + 1 with timeout
+      // Get the highest entry_no from Stock_Out transactions only
       final querySnapshot = await _firestore
           .collection('transactions')
+          .where('type', isEqualTo: 'Stock_Out')
+          .orderBy('entry_no', descending: true)
+          .limit(1)
           .get()
           .timeout(
             const Duration(seconds: 10),
@@ -234,7 +248,13 @@ class OrderService {
             },
           );
 
-      return querySnapshot.docs.length + 1;
+      if (querySnapshot.docs.isNotEmpty) {
+        final highestEntryNo =
+            querySnapshot.docs.first.data()['entry_no'] as int?;
+        return (highestEntryNo ?? 0) + 1;
+      } else {
+        return 1; // First Stock_Out entry
+      }
     } catch (e) {
       // Log error silently and return default value
       return 1; // Default to 1 if there's an error

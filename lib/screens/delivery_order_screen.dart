@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
@@ -1267,6 +1268,45 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
                 'Created Date',
                 _formatDate(_selectedOrder!['created_date']),
               ),
+            // Invoice Information Section
+            if (_isOrderInvoiced(_selectedOrder!)) ...[
+              const SizedBox(height: 8),
+              const Divider(),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(Icons.receipt, size: 16, color: Colors.blue.shade600),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Invoice Information',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.blue.shade800,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (_selectedOrder!['invoice_number'] != null)
+                _buildDetailRow(
+                  'Invoice Number',
+                  _selectedOrder!['invoice_number'],
+                ),
+              if (_selectedOrder!['invoice_date'] != null)
+                _buildDetailRow(
+                  'Invoice Date',
+                  _formatDate(_selectedOrder!['invoice_date']),
+                ),
+              if (_selectedOrder!['invoice_remarks'] != null &&
+                  _selectedOrder!['invoice_remarks'].toString().isNotEmpty)
+                _buildDetailRow(
+                  'Invoice Remarks',
+                  _selectedOrder!['invoice_remarks'],
+                ),
+              if (_selectedOrder!['file_name'] != null)
+                _buildDetailRow('Invoice File', _selectedOrder!['file_name']),
+            ],
             if ((_selectedOrder!['delivery_status'] ??
                         _selectedOrder!['status']) ==
                     'Delivered' &&
@@ -1427,6 +1467,13 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
     }
   }
 
+  // Helper method to check if order is invoiced
+  bool _isOrderInvoiced(Map<String, dynamic> order) {
+    final invoiceStatus = order['invoice_status'] as String?;
+    final legacyStatus = order['status'] as String?;
+    return (invoiceStatus == 'Invoiced') || (legacyStatus == 'Invoiced');
+  }
+
   // Delivery Information Card
   Widget _buildDeliveryInformationCard() {
     if (_currentDeliveryOrder == null) {
@@ -1441,6 +1488,7 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Title Row
             Row(
               children: [
                 Icon(
@@ -1457,6 +1505,29 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
                     color: Colors.orange.shade800,
                   ),
                 ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            // Action Buttons Row - Only general actions
+            Row(
+              mainAxisAlignment: MainAxisAlignment.start,
+              children: [
+                // Debug Delete Button
+                if (kDebugMode)
+                  ElevatedButton.icon(
+                    onPressed: _isUploading ? null : _deleteDeliveryData,
+                    icon: const Icon(Icons.delete, size: 16),
+                    label: const Text('Delete'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                  ),
               ],
             ),
             const SizedBox(height: 16),
@@ -1481,13 +1552,13 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
             // Show PDF status
             _buildDetailRow(
               'Normal Delivery PDF',
-              _currentDeliveryOrder!['normal_delivery_file_name'] != null
+              _currentDeliveryOrder!['normal_delivery'] != null
                   ? 'Uploaded'
                   : 'Not uploaded',
             ),
             _buildDetailRow(
               'Signed Delivery PDF',
-              _currentDeliveryOrder!['signed_delivery_file_name'] != null
+              _currentDeliveryOrder!['signed_delivery'] != null
                   ? 'Uploaded'
                   : 'Not uploaded',
             ),
@@ -1505,7 +1576,7 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
 
     final hasNormalDelivery =
         _currentDeliveryOrder != null &&
-        _currentDeliveryOrder!['normal_delivery_file_name'] != null;
+        _currentDeliveryOrder!['normal_delivery'] != null;
 
     return Card(
       elevation: 2,
@@ -1536,7 +1607,7 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
                 if (hasNormalDelivery) ...[
                   ElevatedButton.icon(
                     onPressed: () => _viewPDF(
-                      _currentDeliveryOrder!['normal_delivery_file_url'],
+                      _currentDeliveryOrder!['normal_delivery']['download_url'],
                     ),
                     icon: const Icon(Icons.visibility, size: 16),
                     label: const Text('View'),
@@ -1553,6 +1624,18 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
                   const SizedBox(width: 8),
                   ElevatedButton.icon(
                     onPressed: () {
+                      // Pre-populate form with existing delivery data
+                      _deliveryNumberController.text =
+                          _currentDeliveryOrder!['delivery_number'] ?? '';
+                      if (_currentDeliveryOrder!['delivery_date'] != null) {
+                        _selectedDate =
+                            (_currentDeliveryOrder!['delivery_date']
+                                    as Timestamp)
+                                .toDate();
+                      }
+                      _remarksController.text =
+                          _currentDeliveryOrder!['delivery_remarks'] ?? '';
+
                       setState(() {
                         _isNormalReplaceMode = true;
                         _showNormalUploadForm = true;
@@ -1599,7 +1682,7 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
               const SizedBox(height: 12),
               _buildDetailRow(
                 'File Name',
-                _currentDeliveryOrder!['normal_delivery_file_name'],
+                _currentDeliveryOrder!['normal_delivery']['file_name'],
               ),
               _buildDetailRow(
                 'Delivery Number',
@@ -1612,7 +1695,7 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
               _buildDetailRow(
                 'Uploaded At',
                 _formatDate(
-                  _currentDeliveryOrder!['normal_delivery_uploaded_at'],
+                  _currentDeliveryOrder!['normal_delivery']['upload_date'],
                 ),
               ),
               if (_currentDeliveryOrder!['delivery_remarks'] != null &&
@@ -1641,13 +1724,18 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
               const Divider(),
               const SizedBox(height: 16),
 
-              // Delivery Number Field
+              // Delivery Number Field (Editable for Normal Delivery)
               TextFormField(
                 controller: _deliveryNumberController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Delivery Number *',
-                  border: OutlineInputBorder(),
-                  hintText: 'Enter delivery number',
+                  border: const OutlineInputBorder(),
+                  hintText: _isNormalReplaceMode
+                      ? 'Modify delivery number or keep current'
+                      : 'Enter delivery number',
+                  helperText: _isNormalReplaceMode
+                      ? 'Pre-filled with original delivery number'
+                      : null,
                 ),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
@@ -1742,10 +1830,10 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  onPressed: _normalDeliveryFile != null && !_isUploading
+                  onPressed: _normalDeliveryFile != null && !_isUploadingNormal
                       ? _uploadNormalDeliveryOrder
                       : null,
-                  icon: _isUploading
+                  icon: _isUploadingNormal
                       ? const SizedBox(
                           width: 16,
                           height: 16,
@@ -1758,7 +1846,9 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
                         )
                       : const Icon(Icons.upload),
                   label: Text(
-                    _isUploading ? 'Uploading...' : 'Upload Normal Delivery',
+                    _isUploadingNormal
+                        ? 'Uploading...'
+                        : 'Upload Normal Delivery',
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue,
@@ -1800,7 +1890,7 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
 
     final hasSignedDelivery =
         _currentDeliveryOrder != null &&
-        _currentDeliveryOrder!['signed_delivery_file_name'] != null;
+        _currentDeliveryOrder!['signed_delivery'] != null;
 
     return Card(
       elevation: 2,
@@ -1831,7 +1921,7 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
                 if (hasSignedDelivery) ...[
                   ElevatedButton.icon(
                     onPressed: () => _viewPDF(
-                      _currentDeliveryOrder!['signed_delivery_file_url'],
+                      _currentDeliveryOrder!['signed_delivery']['download_url'],
                     ),
                     icon: const Icon(Icons.visibility, size: 16),
                     label: const Text('View'),
@@ -1848,6 +1938,16 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
                   const SizedBox(width: 8),
                   ElevatedButton.icon(
                     onPressed: () {
+                      // Pre-populate form with existing delivery data (except delivery number - now read-only)
+                      if (_currentDeliveryOrder!['delivery_date'] != null) {
+                        _selectedDate =
+                            (_currentDeliveryOrder!['delivery_date']
+                                    as Timestamp)
+                                .toDate();
+                      }
+                      _remarksController.text =
+                          _currentDeliveryOrder!['delivery_remarks'] ?? '';
+
                       setState(() {
                         _isSignedReplaceMode = true;
                         _showSignedUploadForm = true;
@@ -1894,7 +1994,7 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
               const SizedBox(height: 12),
               _buildDetailRow(
                 'File Name',
-                _currentDeliveryOrder!['signed_delivery_file_name'],
+                _currentDeliveryOrder!['signed_delivery']['file_name'],
               ),
               _buildDetailRow(
                 'Delivery Number',
@@ -1907,7 +2007,7 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
               _buildDetailRow(
                 'Uploaded At',
                 _formatDate(
-                  _currentDeliveryOrder!['signed_delivery_uploaded_at'],
+                  _currentDeliveryOrder!['signed_delivery']['upload_date'],
                 ),
               ),
               if (_currentDeliveryOrder!['delivery_remarks'] != null &&
@@ -1936,20 +2036,36 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
               const Divider(),
               const SizedBox(height: 16),
 
-              // Delivery Number Field
-              TextFormField(
-                controller: _deliveryNumberController,
-                decoration: const InputDecoration(
-                  labelText: 'Delivery Number *',
-                  border: OutlineInputBorder(),
-                  hintText: 'Enter delivery number',
+              // Delivery Number Display (Read-only)
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(4),
+                  color: Colors.grey.shade50,
                 ),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Please enter delivery number';
-                  }
-                  return null;
-                },
+                width: double.infinity,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Delivery Number',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _currentDeliveryOrder!['delivery_number'] ?? 'Not set',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: 16),
 
@@ -2037,10 +2153,10 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  onPressed: _signedDeliveryFile != null && !_isUploading
+                  onPressed: _signedDeliveryFile != null && !_isUploadingSigned
                       ? _uploadSignedDeliveryOrder
                       : null,
-                  icon: _isUploading
+                  icon: _isUploadingSigned
                       ? const SizedBox(
                           width: 16,
                           height: 16,
@@ -2053,7 +2169,9 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
                         )
                       : const Icon(Icons.upload),
                   label: Text(
-                    _isUploading ? 'Uploading...' : 'Upload Signed Delivery',
+                    _isUploadingSigned
+                        ? 'Uploading...'
+                        : 'Upload Signed Delivery',
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
@@ -2074,7 +2192,6 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
                       _signedDeliveryFile = null;
                       _signedDeliveryFileName = null;
                     });
-                    _deliveryNumberController.clear();
                     _remarksController.clear();
                   },
                   child: const Text('Cancel'),

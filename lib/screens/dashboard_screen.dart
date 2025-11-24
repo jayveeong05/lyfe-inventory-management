@@ -3,9 +3,13 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../screens/login_screen.dart';
 import 'stock_in_screen.dart';
+import 'stock_out_screen.dart';
+import 'invoice_screen.dart';
+import 'delivery_order_screen.dart';
 import 'inventory_management_screen.dart';
 import 'demo_screen.dart';
 import 'demo_return_screen.dart';
+import 'profile_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
@@ -118,7 +122,12 @@ class DashboardScreen extends StatelessWidget {
                         Icons.remove_circle_outline,
                         Colors.red,
                         () {
-                          Navigator.pushNamed(context, '/stock_out');
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const StockOutScreen(),
+                            ),
+                          );
                         },
                       ),
                       _buildDashboardButton(
@@ -158,7 +167,12 @@ class DashboardScreen extends StatelessWidget {
                         Icons.receipt_long,
                         Colors.blue,
                         () {
-                          Navigator.pushNamed(context, '/invoice');
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const InvoiceScreen(),
+                            ),
+                          );
                         },
                       ),
                       _buildDashboardButton(
@@ -168,7 +182,12 @@ class DashboardScreen extends StatelessWidget {
                         Icons.local_shipping,
                         Colors.orange,
                         () {
-                          Navigator.pushNamed(context, '/delivery_order');
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const DeliveryOrderScreen(),
+                            ),
+                          );
                         },
                       ),
                       _buildDashboardButton(
@@ -183,6 +202,21 @@ class DashboardScreen extends StatelessWidget {
                             MaterialPageRoute(
                               builder: (context) =>
                                   const InventoryManagementScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                      _buildDashboardButton(
+                        context,
+                        'Profile',
+                        'View profile and settings',
+                        Icons.person,
+                        Colors.teal,
+                        () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const ProfileScreen(),
                             ),
                           );
                         },

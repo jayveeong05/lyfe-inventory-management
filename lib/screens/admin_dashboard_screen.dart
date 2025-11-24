@@ -17,6 +17,7 @@ import 'invoice_screen.dart';
 import 'delivery_order_screen.dart';
 import 'inventory_management_screen.dart';
 import 'user_management_screen.dart';
+import 'file_history_screen.dart';
 import 'demo_screen.dart';
 import 'cancel_order_screen.dart';
 import 'demo_return_screen.dart';
@@ -852,6 +853,21 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                   context,
                   MaterialPageRoute(
                     builder: (context) => const UserManagementScreen(),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+            _buildNavigationListItem(
+              'File History',
+              Icons.history,
+              Colors.deepPurple,
+              'View all uploaded files and version history',
+              () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const FileHistoryScreen(),
                   ),
                 );
               },

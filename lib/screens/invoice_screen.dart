@@ -1479,6 +1479,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Title Row
             Row(
               children: [
                 Icon(
@@ -1487,16 +1488,21 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                   color: Colors.green.shade600,
                 ),
                 const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Current Invoice Information',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.green.shade800,
-                    ),
+                Text(
+                  'Current Invoice Information',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.green.shade800,
                   ),
                 ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            // Action Buttons Row
+            Row(
+              mainAxisAlignment: MainAxisAlignment.start,
+              children: [
                 ElevatedButton.icon(
                   onPressed: () => _viewPDF(_currentInvoice!['pdf_url']),
                   icon: const Icon(Icons.visibility, size: 16),
@@ -1530,6 +1536,22 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                     textStyle: const TextStyle(fontSize: 12),
                   ),
                 ),
+                const SizedBox(width: 8),
+                if (kDebugMode)
+                  ElevatedButton.icon(
+                    onPressed: _isUploading ? null : _deleteInvoice,
+                    icon: const Icon(Icons.delete, size: 16),
+                    label: const Text('Delete'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                  ),
               ],
             ),
             const SizedBox(height: 16),
@@ -1864,6 +1886,33 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                       foregroundColor: Colors.white,
                     ),
                   ),
+
+                  // OCR Extraction Button (only show when file is selected)
+                  if (_selectedFile != null) ...[
+                    const SizedBox(height: 8),
+                    ElevatedButton.icon(
+                      onPressed: _isExtractingOCR ? null : _extractInvoiceData,
+                      icon: _isExtractingOCR
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.white,
+                                ),
+                              ),
+                            )
+                          : const Icon(Icons.text_fields),
+                      label: Text(
+                        _isExtractingOCR ? 'Extracting...' : 'Extract PDF Data',
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
