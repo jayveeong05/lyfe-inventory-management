@@ -21,6 +21,7 @@ import 'file_history_screen.dart';
 import 'demo_screen.dart';
 import 'cancel_order_screen.dart';
 import 'demo_return_screen.dart';
+import 'key_metrics_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -36,6 +37,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
   bool _isLoading = true;
   Timer? _refreshTimer;
   Map<String, dynamic>? _lastKnownActivity;
+  int _selectedNavIndex = 0;
 
   @override
   void initState() {
@@ -217,70 +219,760 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
               ? const Center(child: CircularProgressIndicator())
               : _analytics == null
               ? const Center(child: Text('Failed to load analytics'))
-              : RefreshIndicator(
-                  onRefresh: _loadAnalytics,
-                  child: SingleChildScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Welcome section
-                        _buildWelcomeSection(authProvider),
-                        const SizedBox(height: 24),
-
-                        // Core navigation buttons
-                        _buildCoreNavigationSection(),
-                        const SizedBox(height: 24),
-
-                        // Demo section
-                        _buildDemoSection(),
-                        const SizedBox(height: 24),
-
-                        // Management section
-                        _buildManagementSection(),
-                        const SizedBox(height: 24),
-
-                        // Report buttons
-                        _buildReportButtons(),
-                        const SizedBox(height: 24),
-
-                        // Data fix utilities
-                        // _buildDataFixSection(),
-                        // const SizedBox(height: 24),
-
-                        // Debug section for inventory consistency
-                        // _buildDebugSection(),
-                        // const SizedBox(height: 24),
-
-                        // Key metrics cards
-                        _buildKeyMetricsSection(),
-                        const SizedBox(height: 24),
-
-                        // Inventory overview
-                        _buildInventoryOverview(),
-                        const SizedBox(height: 24),
-
-                        // Sales & Orders
-                        _buildSalesOverview(),
-                        const SizedBox(height: 24),
-
-                        // Monthly statistics
-                        _buildMonthlyStats(),
-                        const SizedBox(height: 24),
-
-                        // Recent activity
-                        _buildRecentActivity(),
-                        const SizedBox(height: 24),
-
-                        // Top categories
-                        _buildTopCategories(),
-                      ],
-                    ),
-                  ),
-                ),
+              : _buildMainContent(authProvider),
+          bottomNavigationBar: MediaQuery.of(context).size.width <= 768
+              ? _buildBottomNavigation()
+              : null,
         );
       },
+    );
+  }
+
+  Widget _buildMainContent(AuthProvider authProvider) {
+    final isDesktop = MediaQuery.of(context).size.width > 768;
+
+    if (isDesktop) {
+      return Row(
+        children: [
+          _buildSideNavigation(),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: _loadAnalytics,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildWelcomeSection(authProvider),
+                    const SizedBox(height: 24),
+                    _buildQuickActionsBar(),
+                    const SizedBox(height: 24),
+                    _buildQuickMetricsOverview(),
+                    const SizedBox(height: 24),
+                    _buildRecentActivity(),
+                    const SizedBox(height: 24),
+                    _buildTopCategories(),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    } else {
+      return RefreshIndicator(
+        onRefresh: _loadAnalytics,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildWelcomeSection(authProvider),
+              const SizedBox(height: 24),
+              _buildQuickActionsBar(),
+              const SizedBox(height: 24),
+              _buildQuickMetricsOverview(),
+              const SizedBox(height: 24),
+              _buildRecentActivity(),
+              const SizedBox(height: 24),
+              _buildTopCategories(),
+            ],
+          ),
+        ),
+      );
+    }
+  }
+
+  Widget _buildSideNavigation() {
+    return Container(
+      width: 200,
+      decoration: BoxDecoration(
+        color: Colors.grey[100],
+        border: Border(right: BorderSide(color: Colors.grey[300]!)),
+      ),
+      child: Column(
+        children: [
+          const SizedBox(height: 20),
+          _buildNavItem(Icons.flash_on, 'Actions', 0, _showActionsMenu),
+          _buildNavItem(Icons.settings, 'Manage', 1, _showManageMenu),
+          _buildNavItem(Icons.bar_chart, 'Reports', 2, _showReportsMenu),
+          _buildNavItem(Icons.analytics, 'Analytics', 3, _showAnalyticsMenu),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNavItem(
+    IconData icon,
+    String label,
+    int index,
+    VoidCallback onTap,
+  ) {
+    final isSelected = _selectedNavIndex == index;
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: ListTile(
+        leading: Icon(icon, color: isSelected ? Colors.teal : Colors.grey[600]),
+        title: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? Colors.teal : Colors.grey[800],
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+        selected: isSelected,
+        selectedTileColor: Colors.teal.withValues(alpha: 0.1),
+        onTap: () {
+          setState(() => _selectedNavIndex = index);
+          onTap();
+        },
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    );
+  }
+
+  Widget _buildBottomNavigation() {
+    return BottomNavigationBar(
+      type: BottomNavigationBarType.fixed,
+      currentIndex: _selectedNavIndex,
+      onTap: (index) {
+        setState(() => _selectedNavIndex = index);
+        switch (index) {
+          case 0:
+            _showActionsMenu();
+            break;
+          case 1:
+            _showManageMenu();
+            break;
+          case 2:
+            _showReportsMenu();
+            break;
+          case 3:
+            _showAnalyticsMenu();
+            break;
+        }
+      },
+      items: const [
+        BottomNavigationBarItem(icon: Icon(Icons.flash_on), label: 'Actions'),
+        BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Manage'),
+        BottomNavigationBarItem(icon: Icon(Icons.bar_chart), label: 'Reports'),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.analytics),
+          label: 'Analytics',
+        ),
+      ],
+    );
+  }
+
+  void _showActionsMenu() {
+    final isDesktop = MediaQuery.of(context).size.width > 768;
+
+    if (isDesktop) {
+      _showDesktopMenu(
+        title: 'Core Operations',
+        buttonIndex: 0, // Actions button is first (index 0)
+        menuItems: [
+          _buildMenuOption(
+            'Stock In',
+            Icons.add_box,
+            Colors.green,
+            'Add new inventory items',
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const StockInScreen()),
+            ),
+          ),
+          _buildMenuOption(
+            'Order',
+            Icons.remove_circle_outline,
+            Colors.red,
+            'Create orders',
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const StockOutScreen()),
+            ),
+          ),
+          _buildMenuOption(
+            'Invoice',
+            Icons.receipt,
+            Colors.blue,
+            'Upload PDF invoices',
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const InvoiceScreen()),
+            ),
+          ),
+          _buildMenuOption(
+            'Delivery Order',
+            Icons.local_shipping,
+            Colors.orange,
+            'Upload delivery documents',
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const DeliveryOrderScreen(),
+              ),
+            ),
+          ),
+          _buildMenuOption(
+            'Demo',
+            Icons.play_circle_outline,
+            Colors.purple,
+            'Record demo transactions',
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const DemoScreen()),
+            ),
+          ),
+          _buildMenuOption(
+            'Demo Return',
+            Icons.keyboard_return,
+            Colors.indigo,
+            'Process demo returns',
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const DemoReturnScreen()),
+            ),
+          ),
+        ],
+      );
+    } else {
+      showModalBottomSheet(
+        context: context,
+        builder: (context) => Container(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Core Operations',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              _buildMenuOption(
+                'Stock In',
+                Icons.add_box,
+                Colors.green,
+                'Add new inventory items',
+                () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const StockInScreen(),
+                  ),
+                ),
+              ),
+              _buildMenuOption(
+                'Order',
+                Icons.remove_circle_outline,
+                Colors.red,
+                'Create orders',
+                () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const StockOutScreen(),
+                  ),
+                ),
+              ),
+              _buildMenuOption(
+                'Invoice',
+                Icons.receipt,
+                Colors.blue,
+                'Upload PDF invoices',
+                () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const InvoiceScreen(),
+                  ),
+                ),
+              ),
+              _buildMenuOption(
+                'Delivery Order',
+                Icons.local_shipping,
+                Colors.orange,
+                'Upload delivery documents',
+                () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const DeliveryOrderScreen(),
+                  ),
+                ),
+              ),
+              _buildMenuOption(
+                'Demo',
+                Icons.play_circle_outline,
+                Colors.purple,
+                'Record demo transactions',
+                () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const DemoScreen()),
+                ),
+              ),
+              _buildMenuOption(
+                'Demo Return',
+                Icons.undo,
+                Colors.indigo,
+                'Process demo returns',
+                () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const DemoReturnScreen(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+  }
+
+  void _showDesktopMenu({
+    required String title,
+    required List<Widget> menuItems,
+    required int buttonIndex,
+  }) {
+    // Calculate position based on button index
+    final double buttonHeight = 60.0; // Height of each nav button
+    final double startY = 100.0; // Starting Y position of first button
+    final double buttonY = startY + (buttonIndex * buttonHeight);
+
+    showMenu(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        200, // Right edge of sidebar
+        buttonY, // Align with the clicked button
+        MediaQuery.of(context).size.width - 400,
+        buttonY + 300, // Menu height
+      ),
+      items: [
+        PopupMenuItem(
+          enabled: false,
+          child: Container(
+            width: 300,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ...menuItems,
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showManageMenu() {
+    final isDesktop = MediaQuery.of(context).size.width > 768;
+
+    if (isDesktop) {
+      _showDesktopMenu(
+        title: 'System Management',
+        buttonIndex: 1, // Manage button is second (index 1)
+        menuItems: [
+          _buildMenuOption(
+            'Inventory Management',
+            Icons.inventory,
+            Colors.teal,
+            'Manage inventory items',
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const InventoryManagementScreen(),
+              ),
+            ),
+          ),
+          _buildMenuOption(
+            'User Management',
+            Icons.people,
+            Colors.blue,
+            'Manage user accounts',
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const UserManagementScreen(),
+              ),
+            ),
+          ),
+          _buildMenuOption(
+            'File History',
+            Icons.history,
+            Colors.grey,
+            'View uploaded files',
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const FileHistoryScreen(),
+              ),
+            ),
+          ),
+          _buildMenuOption(
+            'Cancel Order',
+            Icons.cancel,
+            Colors.red,
+            'Cancel existing orders',
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const CancelOrderScreen(),
+              ),
+            ),
+          ),
+        ],
+      );
+    } else {
+      showModalBottomSheet(
+        context: context,
+        builder: (context) => Container(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'System Management',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              _buildMenuOption(
+                'Inventory Management',
+                Icons.inventory,
+                Colors.teal,
+                'Manage inventory items',
+                () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const InventoryManagementScreen(),
+                  ),
+                ),
+              ),
+              _buildMenuOption(
+                'User Management',
+                Icons.people,
+                Colors.blue,
+                'Manage user accounts',
+                () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const UserManagementScreen(),
+                  ),
+                ),
+              ),
+              _buildMenuOption(
+                'File History',
+                Icons.folder,
+                Colors.orange,
+                'View uploaded files',
+                () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const FileHistoryScreen(),
+                  ),
+                ),
+              ),
+              _buildMenuOption(
+                'Cancel Order',
+                Icons.cancel,
+                Colors.red,
+                'Cancel existing orders',
+                () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const CancelOrderScreen(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+  }
+
+  void _showReportsMenu() {
+    final isDesktop = MediaQuery.of(context).size.width > 768;
+
+    if (isDesktop) {
+      _showDesktopMenu(
+        title: 'Reports',
+        buttonIndex: 2, // Reports button is third (index 2)
+        menuItems: [
+          _buildMenuOption(
+            'Sales Report',
+            Icons.trending_up,
+            Colors.green,
+            'View sales analytics',
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const SalesReportScreen(),
+              ),
+            ),
+          ),
+          _buildMenuOption(
+            'Inventory Report',
+            Icons.inventory_2,
+            Colors.blue,
+            'View inventory analytics',
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const InventoryReportScreen(),
+              ),
+            ),
+          ),
+          _buildMenuOption(
+            'Monthly Activity',
+            Icons.calendar_month,
+            Colors.orange,
+            'View monthly activity report',
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const MonthlyInventoryActivityScreen(),
+              ),
+            ),
+          ),
+        ],
+      );
+    } else {
+      showModalBottomSheet(
+        context: context,
+        builder: (context) => Container(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Reports',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              _buildMenuOption(
+                'Sales Report',
+                Icons.trending_up,
+                Colors.green,
+                'View sales analytics',
+                () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const SalesReportScreen(),
+                  ),
+                ),
+              ),
+              _buildMenuOption(
+                'Inventory Report',
+                Icons.assessment,
+                Colors.blue,
+                'View inventory status',
+                () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const InventoryReportScreen(),
+                  ),
+                ),
+              ),
+              _buildMenuOption(
+                'Monthly Activity',
+                Icons.calendar_month,
+                Colors.purple,
+                'View monthly statistics',
+                () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        const MonthlyInventoryActivityScreen(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+  }
+
+  void _showAnalyticsMenu() {
+    final isDesktop = MediaQuery.of(context).size.width > 768;
+
+    if (isDesktop) {
+      _showDesktopMenu(
+        title: 'Analytics',
+        buttonIndex: 3, // Analytics button is fourth (index 3)
+        menuItems: [
+          _buildMenuOption(
+            'Key Metrics',
+            Icons.dashboard,
+            Colors.teal,
+            'View detailed analytics',
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const KeyMetricsScreen()),
+            ),
+          ),
+        ],
+      );
+    } else {
+      showModalBottomSheet(
+        context: context,
+        builder: (context) => Container(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Analytics',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              _buildMenuOption(
+                'Key Metrics',
+                Icons.dashboard,
+                Colors.teal,
+                'View detailed analytics',
+                () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const KeyMetricsScreen(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+  }
+
+  Widget _buildMenuOption(
+    String title,
+    IconData icon,
+    Color color,
+    String subtitle,
+    VoidCallback onTap,
+  ) {
+    return ListTile(
+      leading: CircleAvatar(
+        backgroundColor: color.withValues(alpha: 0.1),
+        child: Icon(icon, color: color),
+      ),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w500)),
+      subtitle: Text(subtitle, style: TextStyle(color: Colors.grey[600])),
+      onTap: () {
+        Navigator.pop(context);
+        onTap();
+      },
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+    );
+  }
+
+  Widget _buildQuickActionsBar() {
+    return Card(
+      elevation: 2,
+      color: Colors.grey.shade100,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            _buildQuickActionButton(
+              'Stock In',
+              Icons.add_box,
+              Colors.green,
+              () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const StockInScreen()),
+              ),
+            ),
+            _buildQuickActionButton(
+              'Order',
+              Icons.remove_circle_outline,
+              Colors.red,
+              () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const StockOutScreen()),
+              ),
+            ),
+            _buildQuickActionButton(
+              'Invoice',
+              Icons.receipt,
+              Colors.blue,
+              () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const InvoiceScreen()),
+              ),
+            ),
+            _buildQuickActionButton(
+              'Delivery',
+              Icons.local_shipping,
+              Colors.orange,
+              () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const DeliveryOrderScreen(),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickActionButton(
+    String title,
+    IconData icon,
+    Color color,
+    VoidCallback onTap,
+  ) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: color, size: 24),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.grey[700],
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -926,365 +1618,103 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     );
   }
 
-  Widget _buildKeyMetricsSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Key Metrics',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: _buildMetricCard(
-                'Total Items',
-                _analytics!['totalInventoryItems'].toString(),
-                Icons.inventory,
-                Colors.blue,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildMetricCard(
-                'Active Stock',
-                _analytics!['activeStock'].toString(),
-                Icons.check_circle,
-                Colors.green,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: _buildMetricCard(
-                'Total Orders',
-                _analytics!['totalOrders'].toString(),
-                Icons.receipt_long,
-                Colors.orange,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildMetricCard(
-                'Transactions',
-                _analytics!['totalTransactions'].toString(),
-                Icons.swap_horiz,
-                Colors.purple,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildMetricCard(
-    String title,
-    String value,
-    IconData icon,
-    Color color,
-  ) {
-    return Card(
-      elevation: 2,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          color: color.withValues(alpha: 0.1),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, size: 32, color: color),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              title,
-              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInventoryOverview() {
-    final activeStock = _analytics!['activeStock'] as int;
-    final stockedOut = _analytics!['stockedOutItems'] as int;
-    final total = activeStock + stockedOut;
-
+  Widget _buildQuickMetricsOverview() {
     return Card(
       elevation: 4,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Inventory Overview',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    children: [
-                      Container(
-                        height: 100,
-                        width: 100,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.green.withValues(alpha: 0.2),
-                        ),
-                        child: Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                total > 0
-                                    ? '${((activeStock / total) * 100).toInt()}%'
-                                    : '0%',
-                                style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.green,
-                                ),
-                              ),
-                              const Text(
-                                'Active',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.green,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text('$activeStock items'),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: Column(
-                    children: [
-                      Container(
-                        height: 100,
-                        width: 100,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.red.withValues(alpha: 0.2),
-                        ),
-                        child: Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                total > 0
-                                    ? '${((stockedOut / total) * 100).toInt()}%'
-                                    : '0%',
-                                style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.red,
-                                ),
-                              ),
-                              const Text(
-                                'Stocked Out',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.red,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text('$stockedOut items'),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSalesOverview() {
-    final totalOrders = _analytics!['totalOrders'] as int;
-    final invoicedOrders = _analytics!['invoicedOrders'] as int;
-    final pendingOrders = _analytics!['pendingOrders'] as int;
-
-    return Card(
-      elevation: 4,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Orders & Sales',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildStatusIndicator(
-                  'Invoiced',
-                  invoicedOrders.toString(),
-                  Colors.green,
-                  Icons.check_circle,
-                ),
-                _buildStatusIndicator(
-                  'Pending',
-                  pendingOrders.toString(),
-                  Colors.orange,
-                  Icons.pending,
-                ),
-                _buildStatusIndicator(
-                  'Total Orders',
-                  totalOrders.toString(),
-                  Colors.blue,
-                  Icons.receipt_long,
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatusIndicator(
-    String label,
-    String value,
-    Color color,
-    IconData icon,
-  ) {
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(12),
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const KeyMetricsScreen()),
+          );
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: color.withValues(alpha: 0.2),
+            borderRadius: BorderRadius.circular(12),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.teal.withValues(alpha: 0.8),
+                Colors.teal.withValues(alpha: 0.6),
+              ],
+            ),
           ),
-          child: Icon(icon, color: color, size: 24),
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Key Metrics Overview',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const Icon(Icons.analytics, color: Colors.white, size: 28),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildQuickMetricItem(
+                      'Total Items',
+                      _analytics!['totalInventoryItems'].toString(),
+                      Icons.inventory,
+                    ),
+                  ),
+                  Expanded(
+                    child: _buildQuickMetricItem(
+                      'Active Stock',
+                      _analytics!['activeStock'].toString(),
+                      Icons.check_circle,
+                    ),
+                  ),
+                  Expanded(
+                    child: _buildQuickMetricItem(
+                      'Transactions',
+                      _analytics!['totalTransactions'].toString(),
+                      Icons.swap_horiz,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Tap to view detailed analytics →',
+                style: TextStyle(color: Colors.white70, fontSize: 14),
+              ),
+            ],
+          ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildQuickMetricItem(String title, String value, IconData icon) {
+    return Column(
+      children: [
+        Icon(icon, color: Colors.white, size: 24),
         const SizedBox(height: 8),
         Text(
           value,
-          style: TextStyle(
+          style: const TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.bold,
-            color: color,
+            color: Colors.white,
           ),
         ),
-        Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+        Text(
+          title,
+          style: const TextStyle(fontSize: 12, color: Colors.white70),
+          textAlign: TextAlign.center,
+        ),
       ],
-    );
-  }
-
-  Widget _buildMonthlyStats() {
-    final monthlyStats = _analytics!['monthlyStats'] as Map<String, dynamic>;
-    final monthlyStockIn = monthlyStats['monthlyStockIn'] as int;
-    final monthlyStockOut = monthlyStats['monthlyStockOut'] as int;
-    final monthlyTotal = monthlyStats['monthlyTotal'] as int;
-
-    return Card(
-      elevation: 4,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'This Month (${DateFormat('MMMM y').format(DateTime.now())})',
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildMonthlyStatCard(
-                    'Stock In',
-                    monthlyStockIn.toString(),
-                    Icons.add_box,
-                    Colors.green,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildMonthlyStatCard(
-                    'Stock Out',
-                    monthlyStockOut.toString(),
-                    Icons.remove_circle_outline,
-                    Colors.red,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildMonthlyStatCard(
-                    'Total',
-                    monthlyTotal.toString(),
-                    Icons.swap_horiz,
-                    Colors.blue,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMonthlyStatCard(
-    String title,
-    String value,
-    IconData icon,
-    Color color,
-  ) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
-        color: color.withValues(alpha: 0.1),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, color: color, size: 24),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
-          Text(title, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-        ],
-      ),
     );
   }
 
@@ -1294,6 +1724,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
 
     return Card(
       elevation: 4,
+      color: Colors.blueGrey.shade50,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(

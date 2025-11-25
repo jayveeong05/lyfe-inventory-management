@@ -53,19 +53,14 @@ class DashboardService {
   // Get inventory statistics
   Future<Map<String, dynamic>> _getInventoryStats() async {
     try {
-      // Get all inventory items (use current date as cutoff for consistency)
-      final now = DateTime.now();
-      final inventorySnapshot = await _firestore
-          .collection('inventory')
-          .where('date', isLessThanOrEqualTo: Timestamp.fromDate(now))
-          .get();
+      // Get all inventory items (no date filter - count ALL inventory records)
+      final inventorySnapshot = await _firestore.collection('inventory').get();
       final totalInventoryItems = inventorySnapshot.docs.length;
 
       // Get all stock out transactions to determine which items are no longer available
       final stockOutSnapshot = await _firestore
           .collection('transactions')
           .where('type', isEqualTo: 'Stock_Out')
-          .where('date', isLessThanOrEqualTo: Timestamp.fromDate(now))
           .get();
 
       // Get stocked out serial numbers (excluding 'Active' status)
@@ -157,17 +152,25 @@ class DashboardService {
 
       int invoicedOrders = 0;
       int pendingOrders = 0;
+      int issuedOrders = 0;
 
       for (final doc in orderSnapshot.docs) {
         final data = doc.data();
         // Support both old single status and new dual status system
         final status = data['status'] as String?;
         final invoiceStatus = data['invoice_status'] as String? ?? status;
+        final deliveryStatus = data['delivery_status'] as String? ?? 'Pending';
 
-        if (invoiceStatus == 'Invoiced') {
-          invoicedOrders++;
-        } else {
+        // Count based on combined status logic
+        if (invoiceStatus == 'Reserved') {
           pendingOrders++;
+        } else if (invoiceStatus == 'Invoiced' && deliveryStatus == 'Pending') {
+          invoicedOrders++;
+        } else if (deliveryStatus == 'Issued') {
+          issuedOrders++;
+        } else if (deliveryStatus == 'Delivered') {
+          // Count delivered orders as issued for display purposes
+          issuedOrders++;
         }
       }
 
@@ -175,10 +178,16 @@ class DashboardService {
         'totalOrders': totalOrders,
         'invoicedOrders': invoicedOrders,
         'pendingOrders': pendingOrders,
+        'issuedOrders': issuedOrders,
       };
     } catch (e) {
       print('Error fetching order stats: $e');
-      return {'totalOrders': 0, 'invoicedOrders': 0, 'pendingOrders': 0};
+      return {
+        'totalOrders': 0,
+        'invoicedOrders': 0,
+        'pendingOrders': 0,
+        'issuedOrders': 0,
+      };
     }
   }
 

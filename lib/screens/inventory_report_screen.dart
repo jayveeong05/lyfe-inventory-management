@@ -33,6 +33,12 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
     'Demo',
   ];
 
+  // Pagination variables
+  int _currentPage = 0;
+  int _itemsPerPage = 20;
+  List<dynamic> _allInventoryItems = [];
+  List<dynamic> _currentPageItems = [];
+
   @override
   void initState() {
     super.initState();
@@ -70,10 +76,112 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
       _isLoading = false;
       if (result['success'] == true) {
         _reportData = result['data'];
+        // Initialize pagination
+        _allInventoryItems =
+            _reportData!['inventory_items'] as List<dynamic>? ?? [];
+        _currentPage = 0;
+        _updateCurrentPageItems();
       } else {
         _error = result['error'];
       }
     });
+  }
+
+  void _updateCurrentPageItems() {
+    final startIndex = _currentPage * _itemsPerPage;
+    final endIndex = (startIndex + _itemsPerPage).clamp(
+      0,
+      _allInventoryItems.length,
+    );
+    _currentPageItems = _allInventoryItems.sublist(startIndex, endIndex);
+  }
+
+  void _goToNextPage() {
+    if ((_currentPage + 1) * _itemsPerPage < _allInventoryItems.length) {
+      setState(() {
+        _currentPage++;
+        _updateCurrentPageItems();
+      });
+    }
+  }
+
+  void _goToPreviousPage() {
+    if (_currentPage > 0) {
+      setState(() {
+        _currentPage--;
+        _updateCurrentPageItems();
+      });
+    }
+  }
+
+  int get _totalPages => (_allInventoryItems.length / _itemsPerPage).ceil();
+
+  void _showPageInput() {
+    final TextEditingController pageController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Go to Page'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Enter page number (1 - $_totalPages):'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: pageController,
+              keyboardType: TextInputType.number,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: 'Page Number',
+                hintText: 'Enter page number',
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.numbers),
+                suffixText: '/ $_totalPages',
+              ),
+              onSubmitted: (value) {
+                _goToPage(value);
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              _goToPage(pageController.text);
+              Navigator.of(context).pop();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green.shade600,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Go'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _goToPage(String pageText) {
+    final pageNumber = int.tryParse(pageText);
+    if (pageNumber != null && pageNumber >= 1 && pageNumber <= _totalPages) {
+      setState(() {
+        _currentPage = pageNumber - 1; // Convert to 0-based index
+        _updateCurrentPageItems();
+      });
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Please enter a valid page number (1 - $_totalPages)'),
+          backgroundColor: Colors.red.shade600,
+        ),
+      );
+    }
   }
 
   Future<void> _exportReport() async {
@@ -669,8 +777,24 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
   }
 
   Widget _buildInventoryItems() {
-    final inventoryItems =
-        _reportData!['inventory_items'] as List<dynamic>? ?? [];
+    if (_allInventoryItems.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Inventory Items',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+          const Card(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('No inventory items found'),
+            ),
+          ),
+        ],
+      );
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -683,7 +807,7 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             Text(
-              '${inventoryItems.length} items',
+              'Showing ${_currentPage * _itemsPerPage + 1}-${(_currentPage * _itemsPerPage + _currentPageItems.length)} of ${_allInventoryItems.length} items',
               style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
             ),
           ],
@@ -691,179 +815,227 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
         const SizedBox(height: 12),
         Card(
           child: Column(
-            children: inventoryItems.isEmpty
-                ? [
-                    const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Text('No inventory items found'),
+            children: _currentPageItems.map((item) {
+              final serialNumber =
+                  item['serial_number'] as String? ?? 'Unknown';
+              final category =
+                  item['equipment_category'] as String? ?? 'Unknown';
+              final model = item['model'] as String? ?? 'Unknown';
+              final currentStatus =
+                  item['current_status'] as String? ?? 'Unknown';
+              final currentLocation =
+                  item['current_location'] as String? ?? 'Unknown';
+              final lastActivity = item['last_activity'] as DateTime?;
+
+              MaterialColor statusColor;
+              IconData statusIcon;
+
+              switch (currentStatus) {
+                case 'Active':
+                  statusColor = Colors.green;
+                  statusIcon = Icons.check_circle;
+                  break;
+                case 'Reserved':
+                  statusColor = Colors.orange;
+                  statusIcon = Icons.pending;
+                  break;
+                case 'Delivered':
+                  statusColor = Colors.purple;
+                  statusIcon = Icons.local_shipping;
+                  break;
+                default:
+                  statusColor = Colors.grey;
+                  statusIcon = Icons.help;
+              }
+
+              return ExpansionTile(
+                leading: CircleAvatar(
+                  backgroundColor: statusColor.shade100,
+                  child: Icon(statusIcon, color: statusColor.shade600),
+                ),
+                title: Text(
+                  serialNumber,
+                  style: const TextStyle(fontWeight: FontWeight.w500),
+                ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('$category • $model'),
+                    Text(
+                      'Status: $currentStatus • Location: $currentLocation',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
                     ),
-                  ]
-                : inventoryItems.take(20).map((item) {
-                    final serialNumber =
-                        item['serial_number'] as String? ?? 'Unknown';
-                    final category =
-                        item['equipment_category'] as String? ?? 'Unknown';
-                    final model = item['model'] as String? ?? 'Unknown';
-                    final currentStatus =
-                        item['current_status'] as String? ?? 'Unknown';
-                    final currentLocation =
-                        item['current_location'] as String? ?? 'Unknown';
-                    final lastActivity = item['last_activity'] as DateTime?;
-
-                    MaterialColor statusColor;
-                    IconData statusIcon;
-
-                    switch (currentStatus) {
-                      case 'Active':
-                        statusColor = Colors.green;
-                        statusIcon = Icons.check_circle;
-                        break;
-                      case 'Reserved':
-                        statusColor = Colors.orange;
-                        statusIcon = Icons.pending;
-                        break;
-                      case 'Delivered':
-                        statusColor = Colors.purple;
-                        statusIcon = Icons.local_shipping;
-                        break;
-                      default:
-                        statusColor = Colors.grey;
-                        statusIcon = Icons.help;
-                    }
-
-                    return ExpansionTile(
-                      leading: CircleAvatar(
-                        backgroundColor: statusColor.shade100,
-                        child: Icon(statusIcon, color: statusColor.shade600),
-                      ),
-                      title: Text(
-                        serialNumber,
-                        style: const TextStyle(fontWeight: FontWeight.w500),
-                      ),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('$category • $model'),
+                  ],
+                ),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (lastActivity != null)
                           Text(
-                            'Status: $currentStatus • Location: $currentLocation',
+                            'Last Activity: ${DateFormat('MMM dd, yyyy HH:mm').format(lastActivity)}',
                             style: TextStyle(
                               fontSize: 12,
                               color: Colors.grey.shade600,
                             ),
                           ),
-                        ],
-                      ),
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (lastActivity != null)
-                                Text(
-                                  'Last Activity: ${DateFormat('MMM dd, yyyy HH:mm').format(lastActivity)}',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey.shade600,
-                                  ),
-                                ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Transaction History:',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w500,
-                                  color: Colors.grey.shade800,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              ...((item['transaction_history']
-                                          as List<dynamic>?) ??
-                                      [])
-                                  .take(3)
-                                  .map((transaction) {
-                                    final type =
-                                        transaction['type'] as String? ??
-                                        'Unknown';
-                                    final status =
-                                        transaction['status'] as String? ??
-                                        'Unknown';
-
-                                    // Handle uploaded_at which could be Timestamp or String
-                                    DateTime? uploadedAtDate;
-                                    final uploadedAtValue =
-                                        transaction['uploaded_at'];
-                                    if (uploadedAtValue != null) {
-                                      if (uploadedAtValue is Timestamp) {
-                                        uploadedAtDate = uploadedAtValue
-                                            .toDate();
-                                      } else if (uploadedAtValue is String) {
-                                        try {
-                                          uploadedAtDate = DateTime.parse(
-                                            uploadedAtValue,
-                                          );
-                                        } catch (e) {
-                                          // Ignore parse errors
-                                        }
-                                      }
-                                    }
-
-                                    return Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 2,
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          Icon(
-                                            type == 'Stock_In'
-                                                ? Icons.add
-                                                : Icons.remove,
-                                            size: 16,
-                                            color: type == 'Stock_In'
-                                                ? Colors.green
-                                                : Colors.red,
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Expanded(
-                                            child: Text(
-                                              '$type - $status',
-                                              style: const TextStyle(
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                          ),
-                                          if (uploadedAtDate != null)
-                                            Text(
-                                              DateFormat(
-                                                'MMM dd',
-                                              ).format(uploadedAtDate),
-                                              style: TextStyle(
-                                                fontSize: 10,
-                                                color: Colors.grey.shade600,
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                    );
-                                  }),
-                            ],
+                        const SizedBox(height: 8),
+                        Text(
+                          'Transaction History:',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w500,
+                            color: Colors.grey.shade800,
                           ),
                         ),
+                        const SizedBox(height: 4),
+                        ...((item['transaction_history'] as List<dynamic>?) ??
+                                [])
+                            .take(3)
+                            .map((transaction) {
+                              final type =
+                                  transaction['type'] as String? ?? 'Unknown';
+                              final status =
+                                  transaction['status'] as String? ?? 'Unknown';
+
+                              // Handle uploaded_at which could be Timestamp or String
+                              DateTime? uploadedAtDate;
+                              final uploadedAtValue =
+                                  transaction['uploaded_at'];
+                              if (uploadedAtValue != null) {
+                                if (uploadedAtValue is Timestamp) {
+                                  uploadedAtDate = uploadedAtValue.toDate();
+                                } else if (uploadedAtValue is String) {
+                                  try {
+                                    uploadedAtDate = DateTime.parse(
+                                      uploadedAtValue,
+                                    );
+                                  } catch (e) {
+                                    // Ignore parse errors
+                                  }
+                                }
+                              }
+
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 2,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      type == 'Stock_In'
+                                          ? Icons.add
+                                          : Icons.remove,
+                                      size: 16,
+                                      color: type == 'Stock_In'
+                                          ? Colors.green
+                                          : Colors.red,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        '$type - $status',
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                    ),
+                                    if (uploadedAtDate != null)
+                                      Text(
+                                        DateFormat(
+                                          'MMM dd',
+                                        ).format(uploadedAtDate),
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              );
+                            }),
                       ],
-                    );
-                  }).toList(),
+                    ),
+                  ),
+                ],
+              );
+            }).toList(),
           ),
         ),
-        if (inventoryItems.length > 20)
-          Padding(
+        // Pagination Controls
+        if (_totalPages > 1)
+          Container(
             padding: const EdgeInsets.all(16),
-            child: Center(
-              child: Text(
-                'Showing first 20 of ${inventoryItems.length} items',
-                style: TextStyle(
-                  color: Colors.grey.shade600,
-                  fontStyle: FontStyle.italic,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                // Previous Button
+                ElevatedButton.icon(
+                  onPressed: _currentPage > 0 ? _goToPreviousPage : null,
+                  icon: const Icon(Icons.chevron_left),
+                  label: const Text('Previous'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green.shade600,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: Colors.grey.shade300,
+                    disabledForegroundColor: Colors.grey.shade600,
+                  ),
                 ),
-              ),
+
+                // Page Info (Clickable)
+                InkWell(
+                  onTap: _showPageInput,
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.green.shade200),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '${_currentPage + 1} / $_totalPages',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: Colors.green.shade700,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.edit,
+                          color: Colors.green.shade700,
+                          size: 16,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // Next Button
+                ElevatedButton.icon(
+                  onPressed:
+                      (_currentPage + 1) * _itemsPerPage <
+                          _allInventoryItems.length
+                      ? _goToNextPage
+                      : null,
+                  icon: const Icon(Icons.chevron_right),
+                  label: const Text('Next'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green.shade600,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: Colors.grey.shade300,
+                    disabledForegroundColor: Colors.grey.shade600,
+                  ),
+                ),
+              ],
             ),
           ),
       ],
