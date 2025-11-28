@@ -126,32 +126,44 @@ class StockService {
     }
   }
 
-  /// Check if an item exists in inventory by serial number
+  /// Check if an item exists in inventory by serial number (case-insensitive)
   Future<bool> itemExistsInInventory(String serialNumber) async {
     try {
-      final querySnapshot = await _firestore
-          .collection('inventory')
-          .where('serial_number', isEqualTo: serialNumber)
-          .get();
+      // Get all inventory items and check case-insensitively
+      final querySnapshot = await _firestore.collection('inventory').get();
 
-      return querySnapshot.docs.isNotEmpty;
+      final normalizedSerial = serialNumber.toLowerCase();
+
+      for (final doc in querySnapshot.docs) {
+        final data = doc.data();
+        final docSerial = data['serial_number'] as String?;
+        if (docSerial != null && docSerial.toLowerCase() == normalizedSerial) {
+          return true;
+        }
+      }
+
+      return false;
     } catch (e) {
       return false;
     }
   }
 
-  /// Get inventory item by serial number
+  /// Get inventory item by serial number (case-insensitive)
   Future<Map<String, dynamic>?> getInventoryItem(String serialNumber) async {
     try {
-      final querySnapshot = await _firestore
-          .collection('inventory')
-          .where('serial_number', isEqualTo: serialNumber)
-          .get();
+      // Get all inventory items and check case-insensitively
+      final querySnapshot = await _firestore.collection('inventory').get();
 
-      if (querySnapshot.docs.isNotEmpty) {
-        final doc = querySnapshot.docs.first;
-        return {'id': doc.id, ...doc.data()};
+      final normalizedSerial = serialNumber.toLowerCase();
+
+      for (final doc in querySnapshot.docs) {
+        final data = doc.data();
+        final docSerial = data['serial_number'] as String?;
+        if (docSerial != null && docSerial.toLowerCase() == normalizedSerial) {
+          return {'id': doc.id, ...data};
+        }
       }
+
       return null;
     } catch (e) {
       return null;

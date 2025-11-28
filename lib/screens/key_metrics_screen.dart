@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../services/dashboard_service.dart';
+import 'transaction_discrepancy_screen.dart';
 
 class KeyMetricsScreen extends StatefulWidget {
   const KeyMetricsScreen({super.key});
@@ -90,6 +91,10 @@ class _KeyMetricsScreenState extends State<KeyMetricsScreen> {
 
                     // Monthly statistics
                     _buildMonthlyStats(),
+                    const SizedBox(height: 24),
+
+                    // Data Integrity section
+                    _buildDataIntegritySection(),
                   ],
                 ),
               ),
@@ -470,6 +475,558 @@ class _KeyMetricsScreenState extends State<KeyMetricsScreen> {
           ),
           Text(title, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
         ],
+      ),
+    );
+  }
+
+  Widget _buildDataIntegritySection() {
+    final dataIntegrity = _analytics!['dataIntegrity'] as Map<String, dynamic>;
+    final totalIssues = dataIntegrity['totalIssues'] as int;
+    final lastChecked = dataIntegrity['lastChecked'] as DateTime;
+    final summary = dataIntegrity['summary'] as Map<String, dynamic>;
+
+    return Card(
+      elevation: 4,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  totalIssues > 0 ? Icons.warning : Icons.check_circle,
+                  color: totalIssues > 0 ? Colors.orange : Colors.green,
+                  size: 24,
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  'Data Integrity Report',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                Text(
+                  'Last checked: ${_formatTimeAgo(lastChecked)}',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // Summary status
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: totalIssues > 0
+                    ? Colors.orange.withValues(alpha: 0.1)
+                    : Colors.green.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: totalIssues > 0
+                      ? Colors.orange.withValues(alpha: 0.3)
+                      : Colors.green.withValues(alpha: 0.3),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    totalIssues > 0 ? Icons.error_outline : Icons.check,
+                    color: totalIssues > 0 ? Colors.orange : Colors.green,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    totalIssues > 0
+                        ? '$totalIssues data integrity issues found'
+                        : 'All data integrity checks passed',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w500,
+                      color: totalIssues > 0
+                          ? Colors.orange.shade700
+                          : Colors.green.shade700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            if (totalIssues > 0) ...[
+              const SizedBox(height: 16),
+              _buildIntegrityDetails(dataIntegrity),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIntegrityDetails(Map<String, dynamic> dataIntegrity) {
+    final orphanedStockOuts =
+        dataIntegrity['orphanedStockOuts'] as List<dynamic>;
+    final missingStockIns = dataIntegrity['missingStockIns'] as List<dynamic>;
+    final deliveredAnalysis =
+        dataIntegrity['deliveredAnalysis'] as Map<String, dynamic>;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Issue Breakdown:',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 12),
+
+        // Issue cards
+        Row(
+          children: [
+            Expanded(
+              child: _buildIssueCard(
+                'Orphaned Stock-Outs',
+                'Stock-Out transactions without inventory records',
+                orphanedStockOuts.length,
+                Icons.warning,
+                Colors.red,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildIssueCard(
+                'Missing Stock-Ins',
+                'Inventory items without Stock-In transactions',
+                missingStockIns.length,
+                Icons.info,
+                Colors.orange,
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 12),
+
+        // Delivered Analysis Section
+        if (deliveredAnalysis['totalDeliveredTransactions'] > 0) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.analytics, color: Colors.blue, size: 20),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Delivered Transaction Analysis',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Firebase Query: ${deliveredAnalysis['totalDeliveredTransactions']} delivered transactions',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                Text(
+                  'Inventory Management: ${deliveredAnalysis['deliveredInInventory']} delivered items',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                Text(
+                  'Discrepancy: ${deliveredAnalysis['totalDeliveredTransactions'] - deliveredAnalysis['deliveredInInventory']} transactions',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.red.shade700,
+                  ),
+                ),
+                if (deliveredAnalysis['multipleDeliveredCount'] > 0)
+                  Text(
+                    'Multiple deliveries: ${deliveredAnalysis['multipleDeliveredCount']} duplicate transactions',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                if ((deliveredAnalysis['orphanedDeliveredTransactions'] as List)
+                    .isNotEmpty)
+                  Text(
+                    'Orphaned deliveries: ${(deliveredAnalysis['orphanedDeliveredTransactions'] as List).length} transactions without inventory',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+              ],
+            ),
+          ),
+        ],
+
+        const SizedBox(height: 16),
+
+        // Action buttons
+        Row(
+          children: [
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: () => _showDetailedReport(dataIntegrity),
+                icon: const Icon(Icons.visibility),
+                label: const Text('View Details'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) =>
+                          const TransactionDiscrepancyScreen(),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.search),
+                label: const Text('Find 24'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: () => _exportIntegrityReport(dataIntegrity),
+                icon: const Icon(Icons.download),
+                label: const Text('Export'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildIssueCard(
+    String title,
+    String description,
+    int count,
+    IconData icon,
+    Color color,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: color, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                count.toString(),
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            title,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            description,
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatTimeAgo(DateTime dateTime) {
+    final now = DateTime.now();
+    final difference = now.difference(dateTime);
+
+    if (difference.inMinutes < 1) {
+      return 'just now';
+    } else if (difference.inMinutes < 60) {
+      return '${difference.inMinutes} min ago';
+    } else if (difference.inHours < 24) {
+      return '${difference.inHours} hr ago';
+    } else {
+      return '${difference.inDays} days ago';
+    }
+  }
+
+  void _showDetailedReport(Map<String, dynamic> dataIntegrity) {
+    final orphanedStockOuts =
+        dataIntegrity['orphanedStockOuts'] as List<dynamic>;
+    final missingStockIns = dataIntegrity['missingStockIns'] as List<dynamic>;
+    final deliveredAnalysis =
+        dataIntegrity['deliveredAnalysis'] as Map<String, dynamic>;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Data Integrity Details'),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 400,
+          child: DefaultTabController(
+            length: 3,
+            child: Column(
+              children: [
+                const TabBar(
+                  tabs: [
+                    Tab(text: 'Orphaned Stock-Outs'),
+                    Tab(text: 'Missing Stock-Ins'),
+                    Tab(text: 'Delivered Analysis'),
+                  ],
+                ),
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      _buildSerialList(
+                        orphanedStockOuts,
+                        'No orphaned stock-out transactions found.',
+                      ),
+                      _buildSerialList(
+                        missingStockIns,
+                        'No missing stock-in transactions found.',
+                      ),
+                      _buildDeliveredAnalysisTab(deliveredAnalysis),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDeliveredAnalysisTab(Map<String, dynamic> deliveredAnalysis) {
+    final totalDeliveredTransactions =
+        deliveredAnalysis['totalDeliveredTransactions'] as int;
+    final uniqueDeliveredSerials =
+        deliveredAnalysis['uniqueDeliveredSerials'] as int;
+    final deliveredInInventory =
+        deliveredAnalysis['deliveredInInventory'] as int;
+    final orphanedDeliveredTransactions =
+        deliveredAnalysis['orphanedDeliveredTransactions'] as List<dynamic>;
+    final multipleDeliveredCount =
+        deliveredAnalysis['multipleDeliveredCount'] as int;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Summary Statistics
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Delivered Transaction Summary',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                _buildStatRow(
+                  'Total Delivered Transactions:',
+                  '$totalDeliveredTransactions',
+                ),
+                _buildStatRow(
+                  'Unique Serial Numbers:',
+                  '$uniqueDeliveredSerials',
+                ),
+                _buildStatRow(
+                  'Items Currently Delivered:',
+                  '$deliveredInInventory',
+                ),
+                _buildStatRow(
+                  'Multiple Deliveries:',
+                  '$multipleDeliveredCount',
+                ),
+                _buildStatRow(
+                  'Orphaned Transactions:',
+                  '${orphanedDeliveredTransactions.length}',
+                ),
+                const Divider(),
+                _buildStatRow(
+                  'Discrepancy:',
+                  '${totalDeliveredTransactions - deliveredInInventory} transactions',
+                  isHighlight: true,
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Orphaned Delivered Transactions
+          if (orphanedDeliveredTransactions.isNotEmpty) ...[
+            const Text(
+              'Orphaned Delivered Transactions:',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.red.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'These ${orphanedDeliveredTransactions.length} serial numbers have delivered transactions but no inventory records:',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  const SizedBox(height: 8),
+                  ...orphanedDeliveredTransactions.map(
+                    (serial) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.error, color: Colors.red, size: 16),
+                          const SizedBox(width: 8),
+                          Text(
+                            serial.toString(),
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 16),
+
+          // Explanation
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.grey.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Why the discrepancy?',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  '• Multiple deliveries: Some items were delivered, returned, then delivered again',
+                  style: TextStyle(fontSize: 12),
+                ),
+                Text(
+                  '• Orphaned transactions: Delivered transactions for serial numbers not in inventory',
+                  style: TextStyle(fontSize: 12),
+                ),
+                Text(
+                  '• Current status logic: Inventory Management shows current item status, not transaction count',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatRow(String label, String value, {bool isHighlight = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: isHighlight ? FontWeight.w600 : FontWeight.normal,
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: isHighlight ? Colors.red.shade700 : null,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSerialList(List<dynamic> serials, String emptyMessage) {
+    if (serials.isEmpty) {
+      return Center(
+        child: Text(
+          emptyMessage,
+          style: TextStyle(color: Colors.grey.shade600),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      itemCount: serials.length,
+      itemBuilder: (context, index) {
+        return ListTile(
+          leading: const Icon(Icons.inventory_2, size: 20),
+          title: Text(serials[index].toString()),
+          dense: true,
+        );
+      },
+    );
+  }
+
+  void _exportIntegrityReport(Map<String, dynamic> dataIntegrity) {
+    // TODO: Implement export functionality
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Export functionality will be implemented soon'),
+        backgroundColor: Colors.blue,
       ),
     );
   }

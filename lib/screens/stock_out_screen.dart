@@ -278,11 +278,15 @@ class _StockOutScreenState extends State<StockOutScreen> {
         _filteredItems = _activeItems;
         _showSuggestions = false;
       } else {
-        // Filter out items that are already selected
+        // Filter out items that are already selected (case-insensitive)
         final availableItems = _activeItems.where((item) {
-          final serialNumber = item['serial_number'] ?? '';
+          final serialNumber = (item['serial_number'] ?? '')
+              .toString()
+              .toLowerCase();
           return !_selectedItems.any(
-            (selected) => selected['serial_number'] == serialNumber,
+            (selected) =>
+                (selected['serial_number'] ?? '').toString().toLowerCase() ==
+                serialNumber,
           );
         }).toList();
 
@@ -305,10 +309,14 @@ class _StockOutScreenState extends State<StockOutScreen> {
 
   void _addItemToSelection(Map<String, dynamic> item) {
     setState(() {
-      // Check if item is already selected
-      final serialNumber = item['serial_number'] ?? '';
+      // Check if item is already selected (case-insensitive)
+      final serialNumber = (item['serial_number'] ?? '')
+          .toString()
+          .toLowerCase();
       final isAlreadySelected = _selectedItems.any(
-        (selected) => selected['serial_number'] == serialNumber,
+        (selected) =>
+            (selected['serial_number'] ?? '').toString().toLowerCase() ==
+            serialNumber,
       );
 
       if (!isAlreadySelected) {

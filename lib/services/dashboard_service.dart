@@ -43,6 +43,10 @@ class DashboardService {
       analytics['topCategories'] = futures[4]; // Top categories
       analytics['monthlyStats'] = futures[5]; // Monthly stats
 
+      // Add data integrity check
+      final integrityCheck = await _getDataIntegrityReport();
+      analytics['dataIntegrity'] = integrityCheck;
+
       return analytics;
     } catch (e) {
       print('Error fetching dashboard analytics: $e');
@@ -502,5 +506,216 @@ class DashboardService {
       print('Error fetching order status counts: $e');
       return {'reserved': 0, 'invoiced': 0, 'issued': 0, 'delivered': 0};
     }
+  }
+
+  // Get data integrity report
+  Future<Map<String, dynamic>> _getDataIntegrityReport() async {
+    try {
+      // Get all inventory items and transactions in parallel
+      final futures = await Future.wait([
+        _firestore.collection('inventory').get(),
+        _firestore.collection('transactions').get(),
+      ]);
+
+      final inventorySnapshot = futures[0];
+      final transactionsSnapshot = futures[1];
+
+      // Create sets for comparison
+      final Set<String> inventorySerials = {};
+      final Set<String> stockInSerials = {};
+      final Set<String> stockOutSerials = {};
+
+      // Process inventory items (case-insensitive)
+      for (final doc in inventorySnapshot.docs) {
+        final data = doc.data();
+        final serialNumber = data['serial_number'] as String?;
+        if (serialNumber != null && serialNumber.isNotEmpty) {
+          inventorySerials.add(serialNumber.toLowerCase());
+        }
+      }
+
+      // Process transactions (case-insensitive)
+      for (final doc in transactionsSnapshot.docs) {
+        final data = doc.data();
+        final serialNumber = data['serial_number'] as String?;
+        final type = data['type'] as String?;
+
+        if (serialNumber != null && serialNumber.isNotEmpty) {
+          final normalizedSerial = serialNumber.toLowerCase();
+          if (type == 'Stock_In') {
+            stockInSerials.add(normalizedSerial);
+          } else if (type == 'Stock_Out') {
+            stockOutSerials.add(normalizedSerial);
+          }
+        }
+      }
+
+      // Find discrepancies
+      final orphanedStockOuts = stockOutSerials
+          .difference(inventorySerials)
+          .toList();
+      final missingStockIns = inventorySerials
+          .difference(stockInSerials)
+          .toList();
+      final stockOutWithoutStockIn = stockOutSerials
+          .difference(stockInSerials)
+          .toList();
+
+      // Additional analysis: Check delivered transaction discrepancy (case-insensitive)
+      final deliveredTransactions = <String>[];
+      for (final doc in transactionsSnapshot.docs) {
+        final data = doc.data();
+        final serialNumber = data['serial_number'] as String?;
+        final status = data['status'] as String?;
+
+        if (serialNumber != null &&
+            serialNumber.isNotEmpty &&
+            status?.toLowerCase() == 'delivered') {
+          deliveredTransactions.add(serialNumber.toLowerCase());
+        }
+      }
+
+      final uniqueDeliveredSerials = deliveredTransactions.toSet();
+      final orphanedDeliveredTransactions = uniqueDeliveredSerials
+          .difference(inventorySerials)
+          .toList();
+
+      // Calculate actual delivered items using Inventory Management logic
+      // Group transactions by serial number (case-insensitive)
+      final Map<String, List<Map<String, dynamic>>> transactionsBySerial = {};
+      for (final doc in transactionsSnapshot.docs) {
+        final data = doc.data();
+        final serialNumber = data['serial_number'] as String?;
+        if (serialNumber != null && serialNumber.isNotEmpty) {
+          final normalizedSerial = serialNumber.toLowerCase();
+          transactionsBySerial.putIfAbsent(normalizedSerial, () => []);
+          transactionsBySerial[normalizedSerial]!.add(data);
+        }
+      }
+
+      // Count inventory items with current status = 'Delivered' (case-insensitive)
+      int actualDeliveredItems = 0;
+      for (final serial in inventorySerials) {
+        final transactions = transactionsBySerial[serial] ?? [];
+        final currentStatus = _calculateCurrentStatus(serial, transactions);
+        if (currentStatus == 'Delivered') {
+          actualDeliveredItems++;
+        }
+      }
+
+      // Calculate summary
+      final totalIssues = orphanedStockOuts.length + missingStockIns.length;
+      final lastChecked = DateTime.now();
+
+      return {
+        'totalIssues': totalIssues,
+        'lastChecked': lastChecked,
+        'orphanedStockOuts': orphanedStockOuts,
+        'missingStockIns': missingStockIns,
+        'stockOutWithoutStockIn': stockOutWithoutStockIn,
+        'deliveredAnalysis': {
+          'totalDeliveredTransactions': deliveredTransactions.length,
+          'uniqueDeliveredSerials': uniqueDeliveredSerials.length,
+          'deliveredInInventory': actualDeliveredItems,
+          'orphanedDeliveredTransactions': orphanedDeliveredTransactions,
+          'multipleDeliveredCount':
+              deliveredTransactions.length - uniqueDeliveredSerials.length,
+        },
+        'summary': {
+          'totalInventoryItems': inventorySerials.length,
+          'totalStockInTransactions': stockInSerials.length,
+          'totalStockOutTransactions': stockOutSerials.length,
+          'orphanedStockOutsCount': orphanedStockOuts.length,
+          'missingStockInsCount': missingStockIns.length,
+          'deliveredDiscrepancy':
+              deliveredTransactions.length - actualDeliveredItems,
+        },
+      };
+    } catch (e) {
+      print('Error generating data integrity report: $e');
+      return {
+        'totalIssues': 0,
+        'lastChecked': DateTime.now(),
+        'orphanedStockOuts': <String>[],
+        'missingStockIns': <String>[],
+        'stockOutWithoutStockIn': <String>[],
+        'summary': {
+          'totalInventoryItems': 0,
+          'totalStockInTransactions': 0,
+          'totalStockOutTransactions': 0,
+          'orphanedStockOutsCount': 0,
+          'missingStockInsCount': 0,
+        },
+      };
+    }
+  }
+
+  // Helper method to calculate current status (same logic as InventoryManagementService)
+  String _calculateCurrentStatus(
+    String serialNumber,
+    List<Map<String, dynamic>> transactions,
+  ) {
+    if (transactions.isEmpty) {
+      return 'Active';
+    }
+
+    // Sort transactions by date (most recent first)
+    transactions.sort((a, b) {
+      // Handle uploaded_at which could be Timestamp or String
+      final aTime = a['uploaded_at'];
+      final bTime = b['uploaded_at'];
+
+      DateTime aDate;
+      DateTime bDate;
+
+      if (aTime is Timestamp) {
+        aDate = aTime.toDate();
+      } else if (aTime is String) {
+        aDate = DateTime.tryParse(aTime) ?? DateTime.now();
+      } else {
+        aDate = DateTime.now();
+      }
+
+      if (bTime is Timestamp) {
+        bDate = bTime.toDate();
+      } else if (bTime is String) {
+        bDate = DateTime.tryParse(bTime) ?? DateTime.now();
+      } else {
+        bDate = DateTime.now();
+      }
+
+      return bDate.compareTo(aDate); // Most recent first
+    });
+
+    // Get the most recent transaction
+    final latestTransaction = transactions.first;
+    final transactionType = latestTransaction['type'] as String? ?? '';
+    final transactionStatus = latestTransaction['status'] as String? ?? '';
+
+    // Enhanced status logic to include Reserved status:
+    // - Stock_Out with status='Reserved' → Reserved
+    // - Stock_Out with status='Delivered' → Delivered
+    // - Stock_Out with status='Active' → Active (returned to stock)
+    // - Stock_In → Active
+    // - No transactions → Active
+    String status;
+    if (transactionType == 'Stock_Out') {
+      switch (transactionStatus.toLowerCase()) {
+        case 'reserved':
+          status = 'Reserved';
+          break;
+        case 'delivered':
+          status = 'Delivered';
+          break;
+        case 'active':
+        default:
+          status = 'Active';
+          break;
+      }
+    } else {
+      status = 'Active';
+    }
+
+    return status;
   }
 }

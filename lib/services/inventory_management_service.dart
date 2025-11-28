@@ -97,14 +97,15 @@ class InventoryManagementService {
     final items = <Map<String, dynamic>>[];
     int totalFiltered = 0;
 
-    // Create transaction lookup map for performance
+    // Create transaction lookup map for performance (case-insensitive)
     final Map<String, List<Map<String, dynamic>>> transactionsBySerial = {};
     for (final doc in transactionDocs) {
       final data = doc.data() as Map<String, dynamic>;
       final serialNumber = data['serial_number'] as String?;
       if (serialNumber != null) {
-        transactionsBySerial.putIfAbsent(serialNumber, () => []);
-        transactionsBySerial[serialNumber]!.add({...data, 'id': doc.id});
+        final normalizedSerial = serialNumber.toLowerCase();
+        transactionsBySerial.putIfAbsent(normalizedSerial, () => []);
+        transactionsBySerial[normalizedSerial]!.add({...data, 'id': doc.id});
       }
     }
 
@@ -112,10 +113,10 @@ class InventoryManagementService {
       final data = doc.data() as Map<String, dynamic>;
       final serialNumber = data['serial_number'] as String? ?? '';
 
-      // Calculate current status and location
+      // Calculate current status and location (case-insensitive)
       final statusInfo = _calculateCurrentStatus(
         serialNumber,
-        transactionsBySerial[serialNumber] ?? [],
+        transactionsBySerial[serialNumber.toLowerCase()] ?? [],
       );
 
       final item = {
@@ -130,7 +131,8 @@ class InventoryManagementService {
         'current_status': statusInfo['status'],
         'current_location': statusInfo['location'],
         'last_activity': statusInfo['lastActivity'],
-        'transaction_count': (transactionsBySerial[serialNumber] ?? []).length,
+        'transaction_count':
+            (transactionsBySerial[serialNumber.toLowerCase()] ?? []).length,
       };
 
       // Apply search filter
@@ -300,8 +302,9 @@ class InventoryManagementService {
         final data = doc.data();
         final serialNumber = data['serial_number'] as String?;
         if (serialNumber != null) {
-          transactionsBySerial.putIfAbsent(serialNumber, () => []);
-          transactionsBySerial[serialNumber]!.add({...data, 'id': doc.id});
+          final normalizedSerial = serialNumber.toLowerCase();
+          transactionsBySerial.putIfAbsent(normalizedSerial, () => []);
+          transactionsBySerial[normalizedSerial]!.add({...data, 'id': doc.id});
         }
       }
 
@@ -310,10 +313,10 @@ class InventoryManagementService {
         final data = doc.data();
         final serialNumber = data['serial_number'] as String? ?? '';
 
-        // Calculate current location for this item
+        // Calculate current location for this item (case-insensitive)
         final statusInfo = _calculateCurrentStatus(
           serialNumber,
-          transactionsBySerial[serialNumber] ?? [],
+          transactionsBySerial[serialNumber.toLowerCase()] ?? [],
         );
 
         final location = statusInfo['location'] as String?;
@@ -358,8 +361,9 @@ class InventoryManagementService {
         final data = doc.data();
         final serialNumber = data['serial_number'] as String?;
         if (serialNumber != null) {
-          transactionsBySerial.putIfAbsent(serialNumber, () => []);
-          transactionsBySerial[serialNumber]!.add(data);
+          final normalizedSerial = serialNumber.toLowerCase();
+          transactionsBySerial.putIfAbsent(normalizedSerial, () => []);
+          transactionsBySerial[normalizedSerial]!.add(data);
         }
       }
 
@@ -374,7 +378,7 @@ class InventoryManagementService {
 
         final statusInfo = _calculateCurrentStatus(
           serialNumber,
-          transactionsBySerial[serialNumber] ?? [],
+          transactionsBySerial[serialNumber.toLowerCase()] ?? [],
         );
 
         totalItems++;
