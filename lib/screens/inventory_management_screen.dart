@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:provider/provider.dart';
 import '../services/inventory_management_service.dart';
+import '../providers/auth_provider.dart';
 import 'stock_in_screen.dart';
 import 'stock_out_screen.dart';
 
@@ -46,6 +48,7 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
     'Issued',
     'Delivered',
     'Demo',
+    'Returned',
   ];
 
   @override
@@ -575,15 +578,31 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
             ),
           ],
         ),
-        trailing: PopupMenuButton<String>(
-          onSelected: (value) => _handleItemAction(value, item),
-          itemBuilder: (context) => [
-            const PopupMenuItem(value: 'details', child: Text('View Details')),
-            if (status == 'Active')
-              const PopupMenuItem(value: 'stock_out', child: Text('Stock Out')),
-            const PopupMenuItem(value: 'edit', child: Text('Edit Item')),
-            const PopupMenuItem(value: 'delete', child: Text('Delete Item')),
-          ],
+        trailing: Consumer<AuthProvider>(
+          builder: (context, authProvider, child) {
+            return PopupMenuButton<String>(
+              onSelected: (value) => _handleItemAction(value, item),
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'details',
+                  child: Text('View Details'),
+                ),
+                if (status == 'Active')
+                  const PopupMenuItem(
+                    value: 'stock_out',
+                    child: Text('Stock Out'),
+                  ),
+                // Only show edit and delete options for admin users
+                if (authProvider.hasAdminAccess()) ...[
+                  const PopupMenuItem(value: 'edit', child: Text('Edit Item')),
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: Text('Delete Item'),
+                  ),
+                ],
+              ],
+            );
+          },
         ),
         children: [
           Padding(
@@ -640,6 +659,10 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
         return Colors.orange;
       case 'delivered':
         return Colors.purple;
+      case 'demo':
+        return Colors.cyan;
+      case 'returned':
+        return Colors.red;
       default:
         return Colors.grey;
     }
@@ -659,6 +682,8 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
         return Icons.local_shipping;
       case 'demo':
         return Icons.play_circle_outline;
+      case 'returned':
+        return Icons.assignment_return;
       default:
         return Icons.help;
     }

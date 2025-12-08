@@ -4,17 +4,16 @@ import 'package:intl/intl.dart';
 import '../providers/auth_provider.dart';
 import '../services/demo_service.dart';
 import 'demo_detail_screen.dart';
-import 'demo_history_screen.dart';
 
-class DemoReturnScreen extends StatefulWidget {
-  const DemoReturnScreen({super.key});
+class DemoHistoryScreen extends StatefulWidget {
+  const DemoHistoryScreen({super.key});
 
   @override
-  State<DemoReturnScreen> createState() => _DemoReturnScreenState();
+  State<DemoHistoryScreen> createState() => _DemoHistoryScreenState();
 }
 
-class _DemoReturnScreenState extends State<DemoReturnScreen> {
-  List<Map<String, dynamic>> _activeDemos = [];
+class _DemoHistoryScreenState extends State<DemoHistoryScreen> {
+  List<Map<String, dynamic>> _returnedDemos = [];
   bool _isLoading = true;
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
@@ -22,7 +21,7 @@ class _DemoReturnScreenState extends State<DemoReturnScreen> {
   @override
   void initState() {
     super.initState();
-    _loadActiveDemos();
+    _loadReturnedDemos();
   }
 
   @override
@@ -31,7 +30,7 @@ class _DemoReturnScreenState extends State<DemoReturnScreen> {
     super.dispose();
   }
 
-  Future<void> _loadActiveDemos() async {
+  Future<void> _loadReturnedDemos() async {
     setState(() {
       _isLoading = true;
     });
@@ -40,15 +39,15 @@ class _DemoReturnScreenState extends State<DemoReturnScreen> {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final demoService = DemoService(authService: authProvider.authService);
 
-      // Get active demos only
+      // Get returned demos only
       final demos = await demoService.getDemoHistory(
-        status: 'Active',
+        status: 'Returned',
         limit: 100,
       );
 
       if (mounted) {
         setState(() {
-          _activeDemos = demos;
+          _returnedDemos = demos;
           _isLoading = false;
         });
       }
@@ -59,7 +58,7 @@ class _DemoReturnScreenState extends State<DemoReturnScreen> {
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error loading demos: $e'),
+            content: Text('Error loading demo history: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -69,9 +68,9 @@ class _DemoReturnScreenState extends State<DemoReturnScreen> {
 
   List<Map<String, dynamic>> get _filteredDemos {
     if (_searchQuery.isEmpty) {
-      return _activeDemos;
+      return _returnedDemos;
     }
-    return _activeDemos.where((demo) {
+    return _returnedDemos.where((demo) {
       final demoNumber = (demo['demo_number'] ?? '').toString().toLowerCase();
       final demoPurpose = (demo['demo_purpose'] ?? '').toString().toLowerCase();
       final dealer = (demo['customer_dealer'] ?? '').toString().toLowerCase();
@@ -86,40 +85,25 @@ class _DemoReturnScreenState extends State<DemoReturnScreen> {
   }
 
   Future<void> _navigateToDetailScreen(Map<String, dynamic> demo) async {
-    final result = await Navigator.push<bool>(
+    await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => DemoDetailScreen(demo: demo)),
     );
-
-    // If demo was successfully returned, refresh the list
-    if (result == true) {
-      _loadActiveDemos();
-    }
+    // No need to refresh on return as history shouldn't change from detail view interaction usually
+    // But if we add features later, we might want to.
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Demo Return'),
-        backgroundColor: Colors.green,
+        title: const Text('Demo History'),
+        backgroundColor: Colors.blueGrey,
         foregroundColor: Colors.white,
         actions: [
           IconButton(
-            icon: const Icon(Icons.history),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const DemoHistoryScreen(),
-                ),
-              );
-            },
-            tooltip: 'History',
-          ),
-          IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _isLoading ? null : _loadActiveDemos,
+            onPressed: _isLoading ? null : _loadReturnedDemos,
             tooltip: 'Refresh',
           ),
         ],
@@ -134,7 +118,7 @@ class _DemoReturnScreenState extends State<DemoReturnScreen> {
               controller: _searchController,
               decoration: InputDecoration(
                 hintText:
-                    'Search demos by number, purpose, dealer, or client...',
+                    'Search history by number, purpose, dealer, or client...',
                 prefixIcon: const Icon(Icons.search),
                 suffixIcon: _searchQuery.isNotEmpty
                     ? IconButton(
@@ -182,35 +166,25 @@ class _DemoReturnScreenState extends State<DemoReturnScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              _searchQuery.isNotEmpty
-                  ? Icons.search_off
-                  : Icons.assignment_return,
+              _searchQuery.isNotEmpty ? Icons.search_off : Icons.history,
               size: 64,
               color: Colors.grey,
             ),
             const SizedBox(height: 16),
             Text(
               _searchQuery.isNotEmpty
-                  ? 'No demos found matching "$_searchQuery"'
-                  : 'No active demos available for return',
+                  ? 'No history found matching "$_searchQuery"'
+                  : 'No returned demos found',
               style: const TextStyle(fontSize: 16, color: Colors.grey),
               textAlign: TextAlign.center,
             ),
-            if (_searchQuery.isEmpty) ...[
-              const SizedBox(height: 8),
-              const Text(
-                'Active demos will appear here when available',
-                style: TextStyle(fontSize: 14, color: Colors.grey),
-                textAlign: TextAlign.center,
-              ),
-            ],
           ],
         ),
       );
     }
 
     return RefreshIndicator(
-      onRefresh: _loadActiveDemos,
+      onRefresh: _loadReturnedDemos,
       child: ListView.builder(
         padding: const EdgeInsets.all(16),
         itemCount: filteredDemos.length,
@@ -226,15 +200,13 @@ class _DemoReturnScreenState extends State<DemoReturnScreen> {
     final demoPurpose = demo['demo_purpose'] ?? 'No purpose';
     final dealer = demo['customer_dealer'] ?? 'Unknown';
     final client = demo['customer_client'] ?? 'N/A';
-    final location = demo['location'] ?? 'Unknown';
     final itemCount = demo['total_items'] ?? 0;
     final createdDate = demo['created_date'];
-    final expectedReturnDate = demo['expected_return_date'];
-    final remarks = demo['remarks'] ?? '';
+    final actualReturnDate = demo['actual_return_date'];
 
     // Format dates
     String createdDateStr = 'Unknown';
-    String expectedReturnStr = 'Not set';
+    String returnDateStr = 'Unknown';
 
     if (createdDate != null) {
       try {
@@ -245,19 +217,12 @@ class _DemoReturnScreenState extends State<DemoReturnScreen> {
       }
     }
 
-    if (expectedReturnDate != null) {
+    if (actualReturnDate != null) {
       try {
-        final date = expectedReturnDate.toDate();
-        expectedReturnStr = DateFormat('dd/MM/yyyy').format(date);
-
-        // Check if overdue
-        final now = DateTime.now();
-        final isOverdue = date.isBefore(now);
-        if (isOverdue) {
-          expectedReturnStr += ' (OVERDUE)';
-        }
+        final date = actualReturnDate.toDate();
+        returnDateStr = DateFormat('dd/MM/yyyy').format(date);
       } catch (e) {
-        expectedReturnStr = 'Invalid date';
+        returnDateStr = 'Invalid date';
       }
     }
 
@@ -269,7 +234,7 @@ class _DemoReturnScreenState extends State<DemoReturnScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header with demo number and return button
+            // Header
             Row(
               children: [
                 Expanded(
@@ -281,7 +246,7 @@ class _DemoReturnScreenState extends State<DemoReturnScreen> {
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
-                          color: Colors.green,
+                          color: Colors.blueGrey,
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -292,31 +257,45 @@ class _DemoReturnScreenState extends State<DemoReturnScreen> {
                     ],
                   ),
                 ),
-                ElevatedButton.icon(
-                  onPressed: () => _navigateToDetailScreen(demo),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
                   ),
-                  icon: const Icon(Icons.visibility, size: 18),
-                  label: const Text('View Details'),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[200],
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey),
+                  ),
+                  child: const Text(
+                    'Returned',
+                    style: TextStyle(
+                      color: Colors.grey,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ],
             ),
             const SizedBox(height: 16),
 
-            // Demo details
+            // Details
             _buildDetailRow('Dealer', dealer),
             _buildDetailRow('Client', client),
-            _buildDetailRow('Location', location),
             _buildDetailRow('Items', '$itemCount items'),
             _buildDetailRow('Created', createdDateStr),
-            _buildDetailRow('Expected Return', expectedReturnStr),
+            _buildDetailRow('Returned', returnDateStr),
 
-            if (remarks.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              _buildDetailRow('Remarks', remarks),
-            ],
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _navigateToDetailScreen(demo),
+                icon: const Icon(Icons.visibility, size: 18),
+                label: const Text('View Details'),
+              ),
+            ),
           ],
         ),
       ),
@@ -340,15 +319,7 @@ class _DemoReturnScreenState extends State<DemoReturnScreen> {
             ),
           ),
           Expanded(
-            child: Text(
-              value,
-              style: TextStyle(
-                color: value.contains('OVERDUE') ? Colors.red : Colors.black87,
-                fontWeight: value.contains('OVERDUE')
-                    ? FontWeight.bold
-                    : FontWeight.normal,
-              ),
-            ),
+            child: Text(value, style: const TextStyle(color: Colors.black87)),
           ),
         ],
       ),

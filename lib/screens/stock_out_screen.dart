@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import '../services/order_service.dart';
+
 import '../providers/auth_provider.dart';
 import '../utils/platform_features.dart';
 import 'qr_scanner_screen.dart';
@@ -16,6 +17,7 @@ class StockOutScreen extends StatefulWidget {
 
 class _StockOutScreenState extends State<StockOutScreen> {
   final _formKey = GlobalKey<FormState>();
+
   final _poNumberController = TextEditingController();
   final _dealerNameController = TextEditingController();
   final _clientNameController = TextEditingController();
@@ -97,138 +99,29 @@ class _StockOutScreenState extends State<StockOutScreen> {
         });
       }
 
-      // Step 1: Get transactions with limit to avoid performance issues
-      // Use a reasonable limit that covers most recent transactions
-      // NOTE: This approach has limitations - if you have more than 1000 transactions,
-      // some older items might not appear in the search results.
-      // For production, consider implementing a more efficient approach using
-      // a separate 'available_items' collection or status indexing.
-      final allTransactionsQuery = await FirebaseFirestore.instance
-          .collection('transactions')
-          .orderBy(
-            'transaction_id',
-            descending: true,
-          ) // Get latest transactions first
-          .limit(1000) // Add limit to prevent performance issues
-          .get()
-          .timeout(
-            const Duration(seconds: 10),
-            onTimeout: () {
-              throw TimeoutException(
-                'Query timeout',
-                const Duration(seconds: 10),
-              );
-            },
-          );
+      // Query inventory collection directly for active items
+      final snapshot = await FirebaseFirestore.instance
+          .collection('inventory')
+          .where('status', isEqualTo: 'Active')
+          .limit(1000)
+          .get();
 
-      if (allTransactionsQuery.docs.isEmpty) {
-        setState(() {
-          _activeItems = [];
-          _isLoadingItems = false;
-        });
-        return;
-      }
-
-      // Step 2: Find the latest transaction for each serial number
-      final Map<String, Map<String, dynamic>> latestTransactionBySerial = {};
-
-      for (final doc in allTransactionsQuery.docs) {
+      final activeItems = snapshot.docs.map((doc) {
         final data = doc.data();
-        final serialNumber = data['serial_number'] as String?;
-
-        if (serialNumber != null &&
-            !latestTransactionBySerial.containsKey(serialNumber)) {
-          // This is the latest transaction for this serial number
-          latestTransactionBySerial[serialNumber] = data;
-        }
-      }
-
-      // Step 3: Filter to only include items that are truly available (latest status is Active from Stock_In)
-      final availableSerialNumbers = <String>[];
-      final availableTransactions = <Map<String, dynamic>>[];
-
-      for (final entry in latestTransactionBySerial.entries) {
-        final serialNumber = entry.key;
-        final transaction = entry.value;
-
-        // Item is available if:
-        // 1. Latest transaction type is Stock_In AND status is Active
-        // 2. Latest transaction type is Cancellation AND status is Active (cancelled order items)
-        // 3. Latest transaction type is Demo AND status is Active (returned demo items)
-        if (transaction['status'] == 'Active' &&
-            [
-              'Stock_In',
-              'Cancellation',
-              'Demo',
-            ].contains(transaction['type'])) {
-          availableSerialNumbers.add(serialNumber);
-          availableTransactions.add(transaction);
-        }
-      }
-
-      if (availableSerialNumbers.isEmpty) {
-        setState(() {
-          _activeItems = [];
-          _isLoadingItems = false;
-        });
-        return;
-      }
-
-      // Step 3: Get all inventory items in batches (Firestore 'in' query limit is 10)
-      List<Map<String, dynamic>> allInventoryItems = [];
-
-      // Process in batches of 10 (Firestore 'in' query limitation)
-      for (int i = 0; i < availableSerialNumbers.length; i += 10) {
-        final batch = availableSerialNumbers.skip(i).take(10).toList();
-
-        final inventoryQuery = await FirebaseFirestore.instance
-            .collection('inventory')
-            .where('serial_number', whereIn: batch)
-            .get();
-
-        allInventoryItems.addAll(
-          inventoryQuery.docs.map((doc) => doc.data()).toList(),
-        );
-      }
-
-      // Step 4: Create a map for quick inventory lookup
-      final inventoryMap = <String, Map<String, dynamic>>{};
-      for (final item in allInventoryItems) {
-        final serialNumber = item['serial_number'] as String?;
-        if (serialNumber != null) {
-          inventoryMap[serialNumber] = item;
-        }
-      }
-
-      // Step 5: Combine transaction and inventory data efficiently
-      List<Map<String, dynamic>> activeItems = [];
-
-      for (final transactionData in availableTransactions) {
-        final serialNumber = transactionData['serial_number'] as String?;
-
-        if (serialNumber != null && inventoryMap.containsKey(serialNumber)) {
-          final inventoryData = inventoryMap[serialNumber]!;
-
-          activeItems.add({
-            'serial_number': serialNumber,
-            'equipment_category':
-                inventoryData['equipment_category'] ??
-                transactionData['equipment_category'],
-            'model': transactionData['model'],
-            'size': inventoryData['size'],
-            'batch': inventoryData['batch'],
-            'date': inventoryData['date'],
-            'remark': inventoryData['remark'],
-            'transaction_id': transactionData['transaction_id'],
-            'location': transactionData['location'],
-          });
-        }
-      }
+        return {
+          ...data,
+          'id': doc.id,
+          'current_status': 'Active',
+          'location': 'HQ', // Default location for Active items (usually HQ)
+          'transaction_id':
+              null, // Not strictly needed for new stock out, will be generated
+        };
+      }).toList();
 
       if (mounted) {
         setState(() {
           _activeItems = activeItems;
-          _filteredItems = activeItems; // Initialize filtered items
+          _filteredItems = activeItems;
           _isLoadingItems = false;
         });
       }
@@ -272,12 +165,16 @@ class _StockOutScreenState extends State<StockOutScreen> {
     }
   }
 
+  Timer? _debounceTimer;
+
   void _onSearchChanged(String query) {
     setState(() {
       if (query.isEmpty) {
         _filteredItems = _activeItems;
         _showSuggestions = false;
+        _debounceTimer?.cancel();
       } else {
+        // 1. Local Search (Immediate)
         // Filter out items that are already selected (case-insensitive)
         final availableItems = _activeItems.where((item) {
           final serialNumber = (item['serial_number'] ?? '')
@@ -302,9 +199,97 @@ class _StockOutScreenState extends State<StockOutScreen> {
               equipmentCategory.contains(searchQuery) ||
               model.contains(searchQuery);
         }).toList();
-        _showSuggestions = _filteredItems.isNotEmpty;
+        _showSuggestions = true; // Always show suggestions when typing
+
+        // 2. Backend Search (Debounced)
+        // Only search backend if query is at least 3 characters to avoid spam
+        if (query.length >= 3) {
+          _debounceTimer?.cancel();
+          _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+            _performBackendSearch(query);
+          });
+        }
       }
     });
+  }
+
+  Future<void> _performBackendSearch(String query) async {
+    try {
+      // Search in inventory collection for serial numbers starting with query
+      // Note: Firestore range queries are case-sensitive.
+      // We'll try to match exact case or common variations if needed,
+      // but for now we'll rely on the user typing somewhat correctly or exact matches.
+      // A better approach for case-insensitive search in Firestore requires a separate lowercase field.
+      // Assuming 'serial_number' is stored as is.
+
+      // We will fetch items where serial_number >= query AND serial_number < query + 'z'
+      // This performs a prefix search.
+      final inventoryQuery = await FirebaseFirestore.instance
+          .collection('inventory')
+          .where('serial_number', isGreaterThanOrEqualTo: query)
+          .where('serial_number', isLessThan: query + 'z')
+          .limit(20) // Limit results
+          .get();
+
+      if (inventoryQuery.docs.isEmpty) return;
+
+      final List<Map<String, dynamic>> newCandidates = [];
+
+      for (final doc in inventoryQuery.docs) {
+        final data = doc.data();
+        final serialNumber = data['serial_number'] as String?;
+
+        if (serialNumber == null) continue;
+
+        // Check if this item is already in our _activeItems list (avoid duplicates)
+        final isAlreadyLoaded = _activeItems.any(
+          (item) =>
+              (item['serial_number'] ?? '').toString().toLowerCase() ==
+              serialNumber.toLowerCase(),
+        );
+
+        if (isAlreadyLoaded) continue;
+
+        // Check if this item is already selected
+        final isSelected = _selectedItems.any(
+          (item) =>
+              (item['serial_number'] ?? '').toString().toLowerCase() ==
+              serialNumber.toLowerCase(),
+        );
+
+        if (isSelected) continue;
+
+        // Check status directly from inventory document
+        final status = data['status'] as String? ?? 'Unknown';
+
+        if (status == 'Active') {
+          newCandidates.add({
+            'serial_number': serialNumber,
+            'equipment_category': data['equipment_category'] ?? 'Unknown',
+            'model': data['model'] ?? 'Unknown',
+            'size': data['size'],
+            'batch': data['batch'],
+            'date': data['date'],
+            'remark': data['remark'],
+            'transaction_id': null, // Not strictly needed for new stock out
+            'location': 'HQ', // Default
+          });
+        }
+      }
+
+      if (newCandidates.isNotEmpty && mounted) {
+        setState(() {
+          // Add new candidates to _activeItems so they stay available
+          _activeItems.addAll(newCandidates);
+
+          // Re-run filter to include them in current view
+          // (We just append them to filtered items to avoid resetting the view abruptly)
+          _filteredItems.addAll(newCandidates);
+        });
+      }
+    } catch (e) {
+      print('Error in backend search: $e');
+    }
   }
 
   void _addItemToSelection(Map<String, dynamic> item) {

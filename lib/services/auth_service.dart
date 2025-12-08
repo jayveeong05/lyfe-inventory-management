@@ -216,8 +216,10 @@ class AuthService {
     switch (e.code) {
       case 'user-not-found':
         return 'No user found with this email address.';
+      case 'invalid-credential':
+        return 'The current password you entered is incorrect.';
       case 'wrong-password':
-        return 'Incorrect password.';
+        return 'The current password you entered is incorrect.';
       case 'email-already-in-use':
         return 'An account already exists with this email address.';
       case 'weak-password':
@@ -292,6 +294,36 @@ class AuthService {
   Future<void> resetPassword(String email) async {
     try {
       await _auth.sendPasswordResetEmail(email: email);
+    } on FirebaseAuthException catch (e) {
+      throw _handleAuthException(e);
+    }
+  }
+
+  // Change password for currently signed-in user
+  Future<void> changePassword(
+    String currentPassword,
+    String newPassword,
+  ) async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw Exception('No user signed in');
+    }
+
+    if (user.email == null) {
+      throw Exception('User email not found');
+    }
+
+    try {
+      // Re-authenticate user
+      final credential = EmailAuthProvider.credential(
+        email: user.email!,
+        password: currentPassword,
+      );
+
+      await user.reauthenticateWithCredential(credential);
+
+      // Update password
+      await user.updatePassword(newPassword);
     } on FirebaseAuthException catch (e) {
       throw _handleAuthException(e);
     }

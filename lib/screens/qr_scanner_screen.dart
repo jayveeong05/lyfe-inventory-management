@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:path_provider/path_provider.dart';
 import 'package:image_picker/image_picker.dart';
+import 'image_cropper_screen.dart';
 import '../utils/platform_features.dart';
 import '../services/qr_image_service.dart';
 
@@ -42,25 +46,45 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
         // Stop the camera scanner
         controller.stop();
 
-        // Analyze the picked image for QR codes
-        final BarcodeCapture? result = await controller.analyzeImage(
-          image.path,
+        // Crop the image using our custom widget screen
+        final Uint8List? croppedBytes = await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ImageCropperScreen(imagePath: image.path),
+          ),
         );
 
-        if (result != null && result.barcodes.isNotEmpty) {
-          final barcode = result.barcodes.first;
-          if (barcode.rawValue != null) {
-            setState(() {
-              scannedData = barcode.rawValue;
-              isScanning = false;
-            });
+        if (croppedBytes != null) {
+          // Save cropped bytes to a temporary file for analysis
+          final tempDir = await getTemporaryDirectory();
+          final tempFile = File(
+            '${tempDir.path}/cropped_qr_${DateTime.now().millisecondsSinceEpoch}.png',
+          );
+          await tempFile.writeAsBytes(croppedBytes);
+
+          // Analyze the picked (and cropped) image for QR codes
+          final BarcodeCapture? result = await controller.analyzeImage(
+            tempFile.path,
+          );
+
+          if (result != null && result.barcodes.isNotEmpty) {
+            final barcode = result.barcodes.first;
+            if (barcode.rawValue != null) {
+              setState(() {
+                scannedData = barcode.rawValue;
+                isScanning = false;
+              });
+            } else {
+              _showErrorDialog('No QR code found in the selected image.');
+              controller.start(); // Restart camera if no QR code found
+            }
           } else {
             _showErrorDialog('No QR code found in the selected image.');
             controller.start(); // Restart camera if no QR code found
           }
         } else {
-          _showErrorDialog('No QR code found in the selected image.');
-          controller.start(); // Restart camera if no QR code found
+          // User cancelled cropping
+          controller.start();
         }
       }
     } catch (e) {

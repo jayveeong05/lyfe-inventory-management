@@ -147,8 +147,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         if (value == null || value.isEmpty) {
                           return 'Please enter your email';
                         }
+                        // Updated regex to support longer TLDs like .technology
                         if (!RegExp(
-                          r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
+                          r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,}$',
                         ).hasMatch(value)) {
                           return 'Please enter a valid email address';
                         }

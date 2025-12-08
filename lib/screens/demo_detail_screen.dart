@@ -18,12 +18,20 @@ class _DemoDetailScreenState extends State<DemoDetailScreen> {
   bool _isReturning = false;
   List<Map<String, dynamic>> _demoItems = [];
   bool _isLoadingItems = true;
+  final TextEditingController _returnRemarksController =
+      TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _actualReturnDate = DateTime.now(); // Default to today
     _loadDemoItems();
+  }
+
+  @override
+  void dispose() {
+    _returnRemarksController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadDemoItems() async {
@@ -143,6 +151,7 @@ class _DemoDetailScreenState extends State<DemoDetailScreen> {
         demoId: widget.demo['id'],
         demoNumber: widget.demo['demo_number'],
         actualReturnDate: _actualReturnDate,
+        returnRemarks: _returnRemarksController.text.trim(),
       );
 
       if (mounted) {
@@ -355,6 +364,17 @@ class _DemoDetailScreenState extends State<DemoDetailScreen> {
                           ),
                         ),
                       ],
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _returnRemarksController,
+                      decoration: const InputDecoration(
+                        labelText: 'Return Remarks (Optional)',
+                        hintText: 'Enter any remarks about the return...',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.note),
+                      ),
+                      maxLines: 3,
                     ),
                   ],
                 ),

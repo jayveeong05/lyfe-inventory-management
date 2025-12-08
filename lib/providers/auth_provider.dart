@@ -28,7 +28,17 @@ class AuthProvider extends ChangeNotifier {
     // Listen to auth state changes
     _authService.authStateChanges.listen((User? user) async {
       if (user != null) {
-        // User is signed in, ensure they have a profile and load it
+        // If the user is already signed in and the UID hasn't changed,
+        // just update the user reference silently without notifying listeners.
+        // This prevents UI interference during operations like re-authentication for password changes.
+        if (_user?.uid == user.uid) {
+          _user = user;
+          // Do NOT call notifyListeners() here - it can interfere with ongoing async operations
+          // like password changes that are using this user object.
+          return;
+        }
+
+        // User is signed in (fresh login or different user)
         _user = user;
         _isLoading = true;
 
@@ -223,6 +233,28 @@ class AuthProvider extends ChangeNotifier {
 
     try {
       await _authService.deleteUser(uid);
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // Change password
+  Future<bool> changePassword(
+    String currentPassword,
+    String newPassword,
+  ) async {
+    try {
+      // Do not set _isLoading = true here, as it triggers a global app rebuild in main.dart
+      // which destroys the navigation stack (closing the dialog and ProfileScreen).
+      _errorMessage = null;
+      notifyListeners();
+
+      await _authService.changePassword(currentPassword, newPassword);
+
+      notifyListeners();
       return true;
     } catch (e) {
       _errorMessage = e.toString();

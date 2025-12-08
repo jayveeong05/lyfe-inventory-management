@@ -19,216 +19,227 @@ class DashboardScreen extends StatelessWidget {
     return Consumer<AuthProvider>(
       builder: (context, authProvider, child) {
         return Scaffold(
-          appBar: AppBar(
-            title: const Text('👤 USER DASHBOARD'),
-            backgroundColor: Colors.blue.shade600,
-            automaticallyImplyLeading:
-                false, // Remove back button since this is main page
-            actions: [
-              // User menu
-              PopupMenuButton<String>(
-                icon: const Icon(Icons.account_circle),
-                onSelected: (value) async {
-                  switch (value) {
-                    case 'profile':
-                      _showUserProfile(context, authProvider);
-                      break;
-                    case 'logout':
-                      try {
-                        await authProvider.signOut();
-                        // Force navigation to login screen
-                        if (context.mounted) {
-                          Navigator.of(context).pushAndRemoveUntil(
-                            MaterialPageRoute(
-                              builder: (context) => const LoginScreen(),
-                            ),
-                            (route) => false,
-                          );
-                        }
-                      } catch (e) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Logout failed: $e'),
-                              backgroundColor: Colors.red,
-                            ),
-                          );
-                        }
-                      }
-                      break;
-                  }
-                },
-                itemBuilder: (context) => [
-                  PopupMenuItem(
-                    value: 'profile',
-                    child: Row(
+          body: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Header section with title and user menu
+                  _buildHeaderSection(context, authProvider),
+                  const SizedBox(height: 24),
+                  // Welcome section
+                  _buildWelcomeSection(authProvider),
+                  const SizedBox(height: 24),
+                  Expanded(
+                    child: GridView.count(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
+                      childAspectRatio: 1.1,
                       children: [
-                        const Icon(Icons.person),
-                        const SizedBox(width: 8),
-                        Text(
-                          authProvider.userProfile?.displayName ?? 'Profile',
+                        _buildDashboardButton(
+                          context,
+                          'Stock In',
+                          'Add new inventory items',
+                          Icons.add_box,
+                          Colors.green,
+                          () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const StockInScreen(),
+                              ),
+                            );
+                          },
                         ),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'logout',
-                    child: Row(
-                      children: [
-                        Icon(Icons.logout),
-                        SizedBox(width: 8),
-                        Text('Logout'),
+                        _buildDashboardButton(
+                          context,
+                          'Order',
+                          'Create orders',
+                          Icons.remove_circle_outline,
+                          Colors.red,
+                          () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const StockOutScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        _buildDashboardButton(
+                          context,
+                          'Demo',
+                          'Record demo items',
+                          Icons.science,
+                          Colors.amber,
+                          () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const DemoScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        _buildDashboardButton(
+                          context,
+                          'Demo Return',
+                          'Return demo items',
+                          Icons.assignment_return,
+                          Colors.green,
+                          () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const DemoReturnScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        _buildDashboardButton(
+                          context,
+                          'Invoice',
+                          'Upload PDF invoices',
+                          Icons.receipt_long,
+                          Colors.blue,
+                          () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const InvoiceScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        _buildDashboardButton(
+                          context,
+                          'Delivery Order',
+                          'Upload delivery PDFs',
+                          Icons.local_shipping,
+                          Colors.orange,
+                          () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    const DeliveryOrderScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        _buildDashboardButton(
+                          context,
+                          'Inventory',
+                          'View all inventory items',
+                          Icons.inventory_2,
+                          Colors.purple,
+                          () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    const InventoryManagementScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        _buildDashboardButton(
+                          context,
+                          'Profile',
+                          'View profile and settings',
+                          Icons.person,
+                          Colors.teal,
+                          () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const ProfileScreen(),
+                              ),
+                            );
+                          },
+                        ),
                       ],
                     ),
                   ),
                 ],
               ),
-            ],
-          ),
-          body: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Welcome section
-                _buildWelcomeSection(authProvider),
-                const SizedBox(height: 24),
-                Expanded(
-                  child: GridView.count(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                    childAspectRatio: 1.1,
-                    children: [
-                      _buildDashboardButton(
-                        context,
-                        'Stock In',
-                        'Add new inventory items',
-                        Icons.add_box,
-                        Colors.green,
-                        () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const StockInScreen(),
-                            ),
-                          );
-                        },
-                      ),
-                      _buildDashboardButton(
-                        context,
-                        'Order',
-                        'Create orders',
-                        Icons.remove_circle_outline,
-                        Colors.red,
-                        () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const StockOutScreen(),
-                            ),
-                          );
-                        },
-                      ),
-                      _buildDashboardButton(
-                        context,
-                        'Demo',
-                        'Record demo items',
-                        Icons.science,
-                        Colors.amber,
-                        () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const DemoScreen(),
-                            ),
-                          );
-                        },
-                      ),
-                      _buildDashboardButton(
-                        context,
-                        'Demo Return',
-                        'Return demo items',
-                        Icons.assignment_return,
-                        Colors.green,
-                        () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const DemoReturnScreen(),
-                            ),
-                          );
-                        },
-                      ),
-                      _buildDashboardButton(
-                        context,
-                        'Invoice',
-                        'Upload PDF invoices',
-                        Icons.receipt_long,
-                        Colors.blue,
-                        () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const InvoiceScreen(),
-                            ),
-                          );
-                        },
-                      ),
-                      _buildDashboardButton(
-                        context,
-                        'Delivery Order',
-                        'Upload delivery PDFs',
-                        Icons.local_shipping,
-                        Colors.orange,
-                        () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const DeliveryOrderScreen(),
-                            ),
-                          );
-                        },
-                      ),
-                      _buildDashboardButton(
-                        context,
-                        'Inventory',
-                        'View all inventory items',
-                        Icons.inventory_2,
-                        Colors.purple,
-                        () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) =>
-                                  const InventoryManagementScreen(),
-                            ),
-                          );
-                        },
-                      ),
-                      _buildDashboardButton(
-                        context,
-                        'Profile',
-                        'View profile and settings',
-                        Icons.person,
-                        Colors.teal,
-                        () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const ProfileScreen(),
-                            ),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ],
             ),
           ),
         );
       },
+    );
+  }
+
+  Widget _buildHeaderSection(BuildContext context, AuthProvider authProvider) {
+    return Row(
+      children: [
+        const Text(
+          '👤 USER DASHBOARD',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.black87,
+          ),
+        ),
+        const Spacer(),
+        PopupMenuButton<String>(
+          icon: const Icon(Icons.account_circle, size: 28),
+          onSelected: (value) async {
+            switch (value) {
+              case 'profile':
+                _showUserProfile(context, authProvider);
+                break;
+              case 'logout':
+                try {
+                  await authProvider.signOut();
+                  // Force navigation to login screen
+                  if (context.mounted) {
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(
+                        builder: (context) => const LoginScreen(),
+                      ),
+                      (route) => false,
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Logout failed: $e'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
+                break;
+            }
+          },
+          itemBuilder: (context) => [
+            PopupMenuItem(
+              value: 'profile',
+              child: Row(
+                children: [
+                  const Icon(Icons.person),
+                  const SizedBox(width: 8),
+                  Text(authProvider.userProfile?.displayName ?? 'Profile'),
+                ],
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'logout',
+              child: Row(
+                children: [
+                  Icon(Icons.logout),
+                  SizedBox(width: 8),
+                  Text('Logout'),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 

@@ -4,7 +4,7 @@
 
 This document provides comprehensive API reference for all services in the Inventory Management System. Each service handles specific business logic and Firebase operations.
 
-**Status: Production Ready ✅** - All APIs documented below are fully implemented, tested, and production-ready as of Version 2.1.0 (November 2025).
+**Status: Production Ready ✅** - All APIs documented below are fully implemented, tested, and production-ready as of Version 2.1.0 (December 2025).
 
 ## Authentication Service
 
@@ -37,6 +37,22 @@ This document provides comprehensive API reference for all services in the Inven
 ##### `getCurrentUser()`
 - **Purpose**: Get current authenticated user
 - **Returns**: `User?`
+
+##### `changePassword(String currentPassword, String newPassword)`
+- **Purpose**: Securely update user password with re-authentication
+- **Parameters**:
+  - `currentPassword`: Current password for verification
+  - `newPassword`: New password to set
+- **Returns**: `Future<bool>` - true if successful, false otherwise
+- **Operations**:
+  - Re-authenticates user with current password
+  - Updates password in Firebase Auth
+  - Handles detailed error messages for wrong password/weak password
+
+##### `hasAdminAccess()`
+- **Purpose**: Check if current user has admin privileges
+- **Returns**: `bool`
+- **Usage**: Used for role-based UI controls and security restrictions
 
 ## Stock Service
 
@@ -129,6 +145,21 @@ This document provides comprehensive API reference for all services in the Inven
   - Creates multiple transaction records (one per item) with individual warranty information
   - Creates single purchase order with multiple transaction IDs
   - Uses Firestore batch operations for atomicity
+
+##### `processItemReturn({required String returnedSerial, required String replacementSerial, required String dealerName, required String remarks, required String userUid})`
+- **Purpose**: Process stock return with replacement
+- **Parameters**:
+  - `returnedSerial`: Serial number of item being returned
+  - `replacementSerial`: Serial number of replacement item (from active inventory)
+  - `dealerName`: Associated dealer/client name
+  - `remarks`: Return remarks
+  - `userUid`: User ID performing operation
+- **Returns**: `Future<Map<String, dynamic>>`
+- **Operations**:
+  - Updates returned item status to 'Returned'
+  - Updates replacement item status to 'Reserved' (preserving Dealer/Client info)
+  - Creates return transaction records
+  - Syncs inventory status fields for consistency
 
 ##### `getAllPurchaseOrders()`
 - **Purpose**: Retrieve all purchase orders
@@ -385,6 +416,32 @@ This document provides comprehensive API reference for all services in the Inven
 - **Summary Calculations**: Include ALL items for accurate totals
 - **Size Breakdown**: Exclude "Others" category (no meaningful sizes)
 - **Category Breakdown**: Include ALL categories dynamically
+
+## Inventory Management Service (Enhanced Security)
+
+### InventoryManagementService (`lib/services/inventory_management_service.dart`)
+
+#### Security Enhancements
+
+##### Role-Based UI Controls
+- **Admin-Only Operations**: Edit and delete inventory items restricted to admin users
+- **Dynamic Menu Generation**: PopupMenuButton uses Consumer<AuthProvider> for real-time role checking
+- **Preserved Functionality**: All users can view details and perform stock-out operations
+- **Security Pattern**: `if (authProvider.hasAdminAccess()) ...` controls menu item visibility
+
+##### Implementation Details
+```dart
+// Admin-only menu items in inventory management
+if (authProvider.hasAdminAccess()) ...[
+  const PopupMenuItem(value: 'edit', child: Text('Edit Item')),
+  const PopupMenuItem(value: 'delete', child: Text('Delete Item')),
+],
+```
+
+##### User Experience by Role
+- **Regular Users**: See "View Details" and "Stock Out" options only
+- **Admin Users**: See all options including "Edit Item" and "Delete Item"
+- **Real-time Updates**: Permissions update immediately when user role changes
 
 ## Data Upload Service
 
@@ -700,6 +757,9 @@ All collections implement role-based security rules:
 - Read access: Authenticated users
 - Write access: Admin users only
 - User profile access: Own profile only
+- **UI-Level Security**: Role-based menu options and button visibility
+- **Inventory Management**: Edit/delete operations restricted to admin users only
+- **Dynamic Permissions**: Real-time role checking with Consumer<AuthProvider> pattern
 
 ## Performance Considerations
 

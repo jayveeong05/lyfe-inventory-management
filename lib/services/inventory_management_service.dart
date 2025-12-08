@@ -54,7 +54,7 @@ class InventoryManagementService {
       // Get all transactions for status calculation
       final transactionSnapshot = await _firestore
           .collection('transactions')
-          .orderBy('uploaded_at', descending: true)
+          .orderBy('date', descending: true)
           .get();
 
       // Process items with current status
@@ -113,9 +113,9 @@ class InventoryManagementService {
       final data = doc.data() as Map<String, dynamic>;
       final serialNumber = data['serial_number'] as String? ?? '';
 
-      // Calculate current status and location (case-insensitive)
-      final statusInfo = _calculateCurrentStatus(
-        serialNumber,
+      // Use stored status from inventory document as primary source of truth
+      final statusInfo = _determineItemStatus(
+        data,
         transactionsBySerial[serialNumber.toLowerCase()] ?? [],
       );
 
@@ -174,95 +174,67 @@ class InventoryManagementService {
     return {'items': items, 'totalFiltered': totalFiltered};
   }
 
-  /// Calculate current status and location for an item
-  /// Uses the same logic as Dashboard Service for consistency
-  Map<String, dynamic> _calculateCurrentStatus(
-    String serialNumber,
+  /// Determine item status using stored data as primary source
+  Map<String, dynamic> _determineItemStatus(
+    Map<String, dynamic> inventoryData,
     List<Map<String, dynamic>> transactions,
   ) {
-    if (transactions.isEmpty) {
-      return {'status': 'Active', 'location': 'Unknown', 'lastActivity': null};
-    }
+    // 1. Try to get status from inventory document first (Primary)
+    String? status = inventoryData['status'] ?? inventoryData['current_status'];
+    String? location =
+        inventoryData['location'] ?? inventoryData['current_location'];
 
-    // Sort transactions by date (most recent first)
-    transactions.sort((a, b) {
-      // Handle uploaded_at which could be Timestamp or String
-      DateTime? aDateTime;
-      DateTime? bDateTime;
-
-      final aValue = a['uploaded_at'];
-      if (aValue is Timestamp) {
-        aDateTime = aValue.toDate();
-      } else if (aValue is String) {
-        try {
-          aDateTime = DateTime.parse(aValue);
-        } catch (e) {
-          // Ignore parse errors
-        }
-      }
-
-      final bValue = b['uploaded_at'];
-      if (bValue is Timestamp) {
-        bDateTime = bValue.toDate();
-      } else if (bValue is String) {
-        try {
-          bDateTime = DateTime.parse(bValue);
-        } catch (e) {
-          // Ignore parse errors
-        }
-      }
-
-      if (aDateTime == null || bDateTime == null) return 0;
-      return bDateTime.compareTo(aDateTime);
-    });
-
-    final latestTransaction = transactions.first;
-    final transactionType = latestTransaction['type'] as String? ?? '';
-    final transactionStatus = latestTransaction['status'] as String? ?? '';
-    final location = latestTransaction['location'] as String? ?? 'Unknown';
-
-    // Handle uploaded_at which could be Timestamp or String
+    // 2. Get last activity from transactions
     DateTime? lastActivity;
-    final uploadedAtValue = latestTransaction['uploaded_at'];
-    if (uploadedAtValue != null) {
-      if (uploadedAtValue is Timestamp) {
-        lastActivity = uploadedAtValue.toDate();
-      } else if (uploadedAtValue is String) {
-        try {
-          lastActivity = DateTime.parse(uploadedAtValue);
-        } catch (e) {
-          // Ignore parse errors
+    if (transactions.isNotEmpty) {
+      // Sort transactions by date (most recent first) to find last activity
+      transactions.sort((a, b) {
+        final aTime = a['date'];
+        final bTime = b['date'];
+        DateTime aDate = (aTime is Timestamp)
+            ? aTime.toDate()
+            : DateTime.tryParse(aTime.toString()) ?? DateTime.now();
+        DateTime bDate = (bTime is Timestamp)
+            ? bTime.toDate()
+            : DateTime.tryParse(bTime.toString()) ?? DateTime.now();
+        return bDate.compareTo(aDate);
+      });
+
+      final latestTransaction = transactions.first;
+      final dateValue = latestTransaction['date'];
+      if (dateValue is Timestamp) {
+        lastActivity = dateValue.toDate();
+      } else if (dateValue is String) {
+        lastActivity = DateTime.tryParse(dateValue);
+      }
+
+      // Fallback: if status is missing in inventory, calculate from latest transaction
+      if (status == null || status == 'Unknown') {
+        final type = latestTransaction['type'] as String?;
+        final transactionStatus = latestTransaction['status'] as String?;
+        location ??= latestTransaction['location'] as String? ?? 'Unknown';
+
+        if (type == 'Stock_Out') {
+          status = (transactionStatus == 'Delivered')
+              ? 'Delivered'
+              : 'Reserved';
+        } else if (type == 'Stock_In') {
+          status = 'Active';
+        } else if (type == 'Demo') {
+          status = 'Demo'; // Correctly map Demo type to Demo status
+        } else if (type == 'Cancellation') {
+          status = 'Active';
+        } else if (type == 'Returned') {
+          status = 'Returned';
+        } else {
+          status = 'Active';
         }
       }
-    }
-
-    // Enhanced status logic to include Reserved status:
-    // - Stock_Out with status='Reserved' → Reserved
-    // - Stock_Out with status='Delivered' → Delivered
-    // - Stock_Out with status='Active' → Active (returned to stock)
-    // - Stock_In → Active
-    // - No transactions → Active
-    String status;
-    if (transactionType == 'Stock_Out') {
-      switch (transactionStatus.toLowerCase()) {
-        case 'reserved':
-          status = 'Reserved';
-          break;
-        case 'delivered':
-          status = 'Delivered';
-          break;
-        case 'active':
-        default:
-          status = 'Active';
-          break;
-      }
-    } else {
-      status = 'Active';
     }
 
     return {
-      'status': status,
-      'location': location,
+      'status': status ?? 'Active',
+      'location': location ?? 'HQ', // Default location
       'lastActivity': lastActivity,
     };
   }
@@ -293,7 +265,7 @@ class InventoryManagementService {
       // This ensures filter options match what users actually see
       final transactionSnapshot = await _firestore
           .collection('transactions')
-          .orderBy('uploaded_at', descending: true)
+          .orderBy('date', descending: true)
           .get();
 
       // Calculate current locations for all items
@@ -314,8 +286,9 @@ class InventoryManagementService {
         final serialNumber = data['serial_number'] as String? ?? '';
 
         // Calculate current location for this item (case-insensitive)
-        final statusInfo = _calculateCurrentStatus(
-          serialNumber,
+        // Calculate current location for this item (case-insensitive)
+        final statusInfo = _determineItemStatus(
+          data,
           transactionsBySerial[serialNumber.toLowerCase()] ?? [],
         );
 
@@ -352,7 +325,7 @@ class InventoryManagementService {
       final inventorySnapshot = await _firestore.collection('inventory').get();
       final transactionSnapshot = await _firestore
           .collection('transactions')
-          .orderBy('uploaded_at', descending: true)
+          .orderBy('date', descending: true)
           .get();
 
       // Create transaction lookup map
@@ -376,8 +349,8 @@ class InventoryManagementService {
         final data = doc.data();
         final serialNumber = data['serial_number'] as String? ?? '';
 
-        final statusInfo = _calculateCurrentStatus(
-          serialNumber,
+        final statusInfo = _determineItemStatus(
+          data,
           transactionsBySerial[serialNumber.toLowerCase()] ?? [],
         );
 

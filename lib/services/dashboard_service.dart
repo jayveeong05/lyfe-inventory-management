@@ -54,53 +54,76 @@ class DashboardService {
     }
   }
 
-  // Get inventory statistics
+  // Get inventory statistics using new 1+1 logic
   Future<Map<String, dynamic>> _getInventoryStats() async {
     try {
-      // Get all inventory items (no date filter - count ALL inventory records)
+      // Get all inventory items
       final inventorySnapshot = await _firestore.collection('inventory').get();
       final totalInventoryItems = inventorySnapshot.docs.length;
 
-      // Get all stock out transactions to determine which items are no longer available
-      final stockOutSnapshot = await _firestore
+      // Get all transactions for status calculation
+      final transactionSnapshot = await _firestore
           .collection('transactions')
-          .where('type', isEqualTo: 'Stock_Out')
+          .orderBy('date', descending: true)
           .get();
 
-      // Get stocked out serial numbers (excluding 'Active' status)
-      Set<String> stockedOutSerials = {};
-      for (final doc in stockOutSnapshot.docs) {
+      // Create transaction lookup map (case-insensitive)
+      final Map<String, List<Map<String, dynamic>>> transactionsBySerial = {};
+      for (final doc in transactionSnapshot.docs) {
         final data = doc.data();
-        final status = data['status'] as String?;
         final serialNumber = data['serial_number'] as String?;
-
-        if (status != null && status != 'Active' && serialNumber != null) {
-          stockedOutSerials.add(serialNumber);
+        if (serialNumber != null) {
+          final normalizedSerial = serialNumber.toLowerCase();
+          transactionsBySerial.putIfAbsent(normalizedSerial, () => []);
+          transactionsBySerial[normalizedSerial]!.add({...data, 'id': doc.id});
         }
       }
 
-      // Count active and stocked out items using inventory-based logic
+      // Count items by status using new 1+1 logic
       int activeStock = 0;
-      int stockedOutItems = stockedOutSerials.length;
+      int reservedItems = 0;
+      int deliveredItems = 0;
 
       for (final doc in inventorySnapshot.docs) {
         final data = doc.data();
         final serialNumber = data['serial_number'] as String?;
 
-        if (serialNumber != null && !stockedOutSerials.contains(serialNumber)) {
-          // Item is still active (in inventory and not stocked out)
-          activeStock++;
+        if (serialNumber != null) {
+          final normalizedSerial = serialNumber.toLowerCase();
+          final transactions = transactionsBySerial[normalizedSerial] ?? [];
+          final status = _calculateCurrentStatus(serialNumber, transactions);
+
+          switch (status) {
+            case 'Active':
+              activeStock++;
+              break;
+            case 'Reserved':
+              reservedItems++;
+              break;
+            case 'Delivered':
+              deliveredItems++;
+              break;
+          }
         }
       }
 
       return {
         'totalInventoryItems': totalInventoryItems,
         'activeStock': activeStock,
-        'stockedOutItems': stockedOutItems,
+        'stockedOutItems':
+            deliveredItems, // For backward compatibility with Key Metrics
+        'reservedItems': reservedItems,
+        'deliveredItems': deliveredItems,
       };
     } catch (e) {
       print('Error fetching inventory stats: $e');
-      return {'totalInventoryItems': 0, 'activeStock': 0, 'stockedOutItems': 0};
+      return {
+        'totalInventoryItems': 0,
+        'activeStock': 0,
+        'stockedOutItems': 0,
+        'reservedItems': 0,
+        'deliveredItems': 0,
+      };
     }
   }
 
@@ -271,27 +294,63 @@ class DashboardService {
     }
   }
 
-  // Get top equipment categories
+  // Get top equipment categories by active items count
   Future<List<Map<String, dynamic>>> _getTopCategories() async {
     try {
-      final snapshot = await _firestore.collection('inventory').get();
+      // Get all inventory items and all transactions to calculate active status
+      final futures = await Future.wait([
+        _firestore.collection('inventory').get(),
+        _firestore.collection('transactions').get(),
+      ]);
 
-      Map<String, int> categoryCount = {};
-      for (final doc in snapshot.docs) {
+      final inventorySnapshot = futures[0];
+      final transactionSnapshot = futures[1];
+
+      // Group transactions by serial number (case-insensitive)
+      final transactionsBySerial = <String, List<Map<String, dynamic>>>{};
+      for (final doc in transactionSnapshot.docs) {
         final data = doc.data();
-        final category = data['equipment_category'] as String?;
-        if (category != null) {
-          categoryCount[category] = (categoryCount[category] ?? 0) + 1;
+        final serialNumber = data['serial_number'] as String?;
+        if (serialNumber != null) {
+          final normalizedSerial = serialNumber.toLowerCase();
+          transactionsBySerial[normalizedSerial] ??= [];
+          transactionsBySerial[normalizedSerial]!.add({'id': doc.id, ...data});
         }
       }
 
-      // Sort by count and return top 5
-      final sortedCategories = categoryCount.entries.toList()
+      Map<String, int> categoryActiveCount = {};
+
+      // Process each inventory item to check if it's currently active
+      for (final doc in inventorySnapshot.docs) {
+        final data = doc.data();
+        final category = data['equipment_category'] as String?;
+        final serialNumber = data['serial_number'] as String?;
+
+        if (category != null && serialNumber != null) {
+          final normalizedSerial = serialNumber.toLowerCase();
+          final transactions = transactionsBySerial[normalizedSerial] ?? [];
+
+          // Calculate current status using enhanced 1+1 logic
+          final currentStatus = _calculateCurrentStatus(
+            serialNumber,
+            transactions,
+          );
+
+          // Only count active items
+          if (currentStatus == 'Active') {
+            categoryActiveCount[category] =
+                (categoryActiveCount[category] ?? 0) + 1;
+          }
+        }
+      }
+
+      // Sort by active count and return top 5
+      final sortedCategories = categoryActiveCount.entries.toList()
         ..sort((a, b) => b.value.compareTo(a.value));
 
       return sortedCategories
           .take(5)
-          .map((entry) => {'category': entry.key, 'count': entry.value})
+          .map((entry) => {'category': entry.key, 'active_count': entry.value})
           .toList();
     } catch (e) {
       print('Error fetching top categories: $e');
@@ -453,6 +512,8 @@ class DashboardService {
       'totalInventoryItems': 0,
       'activeStock': 0,
       'stockedOutItems': 0,
+      'reservedItems': 0,
+      'deliveredItems': 0,
       'totalOrders': 0,
       'invoicedOrders': 0,
       'pendingOrders': 0,
@@ -650,7 +711,7 @@ class DashboardService {
     }
   }
 
-  // Helper method to calculate current status (same logic as InventoryManagementService)
+  // Helper method to calculate current status using enhanced logic to handle dual Stock_Out transactions
   String _calculateCurrentStatus(
     String serialNumber,
     List<Map<String, dynamic>> transactions,
@@ -659,63 +720,48 @@ class DashboardService {
       return 'Active';
     }
 
-    // Sort transactions by date (most recent first)
-    transactions.sort((a, b) {
-      // Handle uploaded_at which could be Timestamp or String
-      final aTime = a['uploaded_at'];
-      final bTime = b['uploaded_at'];
+    // Count Stock_In and Stock_Out transactions
+    int stockInCount = 0;
+    int stockOutCount = 0;
+    bool hasDeliveredStockOut = false;
+    bool hasReservedStockOut = false;
 
-      DateTime aDate;
-      DateTime bDate;
+    for (final transaction in transactions) {
+      final type = transaction['type'] as String?;
+      final status = transaction['status'] as String?;
 
-      if (aTime is Timestamp) {
-        aDate = aTime.toDate();
-      } else if (aTime is String) {
-        aDate = DateTime.tryParse(aTime) ?? DateTime.now();
-      } else {
-        aDate = DateTime.now();
+      if (type == 'Stock_In') {
+        stockInCount++;
+      } else if (type == 'Stock_Out') {
+        stockOutCount++;
+        if (status == 'Delivered') {
+          hasDeliveredStockOut = true;
+        } else if (status == 'Reserved') {
+          hasReservedStockOut = true;
+        }
       }
-
-      if (bTime is Timestamp) {
-        bDate = bTime.toDate();
-      } else if (bTime is String) {
-        bDate = DateTime.tryParse(bTime) ?? DateTime.now();
-      } else {
-        bDate = DateTime.now();
-      }
-
-      return bDate.compareTo(aDate); // Most recent first
-    });
-
-    // Get the most recent transaction
-    final latestTransaction = transactions.first;
-    final transactionType = latestTransaction['type'] as String? ?? '';
-    final transactionStatus = latestTransaction['status'] as String? ?? '';
-
-    // Enhanced status logic to include Reserved status:
-    // - Stock_Out with status='Reserved' → Reserved
-    // - Stock_Out with status='Delivered' → Delivered
-    // - Stock_Out with status='Active' → Active (returned to stock)
-    // - Stock_In → Active
-    // - No transactions → Active
-    String status;
-    if (transactionType == 'Stock_Out') {
-      switch (transactionStatus.toLowerCase()) {
-        case 'reserved':
-          status = 'Reserved';
-          break;
-        case 'delivered':
-          status = 'Delivered';
-          break;
-        case 'active':
-        default:
-          status = 'Active';
-          break;
-      }
-    } else {
-      status = 'Active';
     }
 
-    return status;
+    // Enhanced logic to handle dual Stock_Out transaction system:
+    // - 1 Stock_In + Stock_Out(s) with any 'Delivered' status = Delivered
+    // - 1 Stock_In + Stock_Out(s) with only 'Reserved' status = Reserved
+    // - Stock_Out without matching Stock_In = Reserved (pending delivery)
+    // - Stock_In without Stock_Out = Active (in stock)
+    // - No transactions = Active
+    if (stockInCount == 1 && stockOutCount >= 1) {
+      if (hasDeliveredStockOut) {
+        return 'Delivered';
+      } else if (hasReservedStockOut) {
+        return 'Reserved';
+      } else {
+        return 'Reserved'; // Default for Stock_Out without clear status
+      }
+    } else if (stockOutCount > 0 && stockInCount == 0) {
+      return 'Reserved'; // Ordered but not received
+    } else if (stockOutCount > stockInCount) {
+      return 'Reserved'; // More orders than received
+    } else {
+      return 'Active'; // In stock or default
+    }
   }
 }

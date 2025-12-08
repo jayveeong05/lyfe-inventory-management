@@ -4,6 +4,7 @@ import '../providers/auth_provider.dart';
 import '../services/stock_service.dart';
 import '../utils/platform_features.dart';
 import 'qr_scanner_screen.dart';
+// import 'data_upload_screen.dart';
 
 class StockInScreen extends StatefulWidget {
   const StockInScreen({super.key});
@@ -135,6 +136,27 @@ class _StockInScreenState extends State<StockInScreen> {
       appBar: AppBar(
         title: const Text('Stock In'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: [
+          Consumer<AuthProvider>(
+            builder: (context, authProvider, child) {
+              // if (authProvider.hasAdminAccess()) {
+              //   return IconButton(
+              //     icon: const Icon(Icons.cloud_upload),
+              //     tooltip: 'Bulk Import',
+              //     onPressed: () {
+              //       Navigator.push(
+              //         context,
+              //         MaterialPageRoute(
+              //           builder: (context) => const DataUploadScreen(),
+              //         ),
+              //       );
+              //     },
+              //   );
+              // }
+              return const SizedBox.shrink();
+            },
+          ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),

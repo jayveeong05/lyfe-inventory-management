@@ -351,8 +351,6 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
             const SizedBox(height: 20),
             _buildLocationBreakdown(),
             const SizedBox(height: 20),
-            _buildAgingAnalysis(),
-            const SizedBox(height: 20),
             _buildInventoryItems(),
           ],
         ),
@@ -706,66 +704,6 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
                       title: Text(location['location'] ?? 'Unknown'),
                       trailing: Text(
                         '${location['count']} items',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    );
-                  }).toList(),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAgingAnalysis() {
-    final agingAnalysis =
-        _reportData!['aging_analysis'] as List<dynamic>? ?? [];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Aging Analysis',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 12),
-        Card(
-          child: Column(
-            children: agingAnalysis.isEmpty
-                ? [
-                    const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Text('No aging data available'),
-                    ),
-                  ]
-                : agingAnalysis.map((age) {
-                    final ageGroup = age['age_group'] as String? ?? 'Unknown';
-                    final count = age['count'] as int? ?? 0;
-
-                    MaterialColor ageColor;
-                    IconData ageIcon;
-
-                    if (ageGroup.contains('0-7')) {
-                      ageColor = Colors.green;
-                      ageIcon = Icons.new_releases;
-                    } else if (ageGroup.contains('8-30')) {
-                      ageColor = Colors.blue;
-                      ageIcon = Icons.schedule;
-                    } else if (ageGroup.contains('31-90')) {
-                      ageColor = Colors.orange;
-                      ageIcon = Icons.warning;
-                    } else {
-                      ageColor = Colors.red;
-                      ageIcon = Icons.error;
-                    }
-
-                    return ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: ageColor.shade100,
-                        child: Icon(ageIcon, color: ageColor.shade600),
-                      ),
-                      title: Text(ageGroup),
-                      trailing: Text(
-                        '$count items',
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                     );

@@ -89,7 +89,7 @@ class DemoService {
           };
         }
 
-        // Create Demo transaction record
+        // Create Demo transaction record with model data from inventory
         final transactionData = {
           'transaction_id': transactionId,
           'serial_number': serialNumber,
@@ -105,6 +105,14 @@ class DemoService {
           'demo_purpose': demoPurpose,
           'expected_return_date': expectedReturnTimestamp,
           'remarks': remarks ?? '',
+          // Include model data from inventory
+          'category': item['equipment_category'] ?? 'Unknown',
+          'model': item['model'] ?? 'Unknown',
+          'size': item['size'] ?? 'Unknown',
+          'brand': item['brand'] ?? 'Unknown',
+          'item_name': item['item_name'] ?? 'Unknown',
+          'specifications': item['specifications'] ?? '',
+          'batch': item['batch'] ?? '',
         };
 
         // Add transaction to batch
@@ -134,6 +142,20 @@ class DemoService {
       // Add demo to batch
       final demoRef = _firestore.collection('demos').doc();
       batch.set(demoRef, demoData);
+
+      // Inventory Status Sync: Update items to 'Demo'
+      for (final item in selectedItems) {
+        final serialNumber = item['serial_number'] as String;
+        final inventoryQuery = await _firestore
+            .collection('inventory')
+            .where('serial_number', isEqualTo: serialNumber)
+            .limit(1)
+            .get();
+
+        if (inventoryQuery.docs.isNotEmpty) {
+          batch.update(inventoryQuery.docs.first.reference, {'status': 'Demo'});
+        }
+      }
 
       // Commit all operations
       await batch.commit();
@@ -211,6 +233,7 @@ class DemoService {
     required String demoId,
     required String demoNumber,
     DateTime? actualReturnDate,
+    String? returnRemarks,
   }) async {
     try {
       final currentUser = _authService.currentUser;
@@ -260,10 +283,22 @@ class DemoService {
         final demoTransaction = demoDoc.data();
         final serialNumber = demoTransaction['serial_number'] as String;
 
+        // Get complete inventory details for this item
+        final inventoryQuery = await _firestore
+            .collection('inventory')
+            .where('serial_number', isEqualTo: serialNumber)
+            .limit(1)
+            .get();
+
+        Map<String, dynamic> inventoryData = {};
+        if (inventoryQuery.docs.isNotEmpty) {
+          inventoryData = inventoryQuery.docs.first.data();
+        }
+
         // Get next transaction ID for the return transaction
         final nextTransactionId = await getNextTransactionId();
 
-        // Create Stock_In return transaction
+        // Create Stock_In return transaction with complete inventory details
         final returnTransactionData = {
           'transaction_id': nextTransactionId,
           'serial_number': serialNumber,
@@ -278,7 +313,43 @@ class DemoService {
           'uploaded_by_uid': currentUser.uid,
           'returned_from_demo': demoNumber,
           'original_demo_transaction_id': demoTransaction['transaction_id'],
+          'remarks': returnRemarks ?? '', // Add return remarks to transaction
+          // Copy ALL inventory details
+          'category':
+              inventoryData['equipment_category'] ??
+              demoTransaction['category'] ??
+              'Unknown',
+          'model':
+              inventoryData['model'] ?? demoTransaction['model'] ?? 'Unknown',
+          'size': inventoryData['size'] ?? demoTransaction['size'] ?? 'Unknown',
+          'brand':
+              inventoryData['brand'] ?? demoTransaction['brand'] ?? 'Unknown',
+          'item_name':
+              inventoryData['item_name'] ??
+              demoTransaction['item_name'] ??
+              'Unknown',
+          'specifications':
+              inventoryData['specifications'] ??
+              demoTransaction['specifications'] ??
+              '',
+          'batch': inventoryData['batch'] ?? demoTransaction['batch'] ?? '',
+          'equipment_model': inventoryData['equipment_model'] ?? '',
+          'purchase_price': inventoryData['purchase_price'] ?? 0.0,
+          'selling_price': inventoryData['selling_price'] ?? 0.0,
+          'supplier': inventoryData['supplier'] ?? '',
+          'warranty_type': inventoryData['warranty_type'] ?? '',
+          'warranty_period': inventoryData['warranty_period'] ?? 0,
+          'purchase_date': inventoryData['purchase_date'],
+          'warranty_start_date': inventoryData['warranty_start_date'],
+          'warranty_end_date': inventoryData['warranty_end_date'],
         };
+
+        // Update inventory item status back to 'Active'
+        if (inventoryQuery.docs.isNotEmpty) {
+          batch.update(inventoryQuery.docs.first.reference, {
+            'status': 'Active',
+          });
+        }
 
         // Add return transaction to batch
         final returnTransactionRef = _firestore
@@ -294,6 +365,7 @@ class DemoService {
         'actual_return_date': timestamp,
         'updated_at': FieldValue.serverTimestamp(),
         'returned_by_uid': currentUser.uid,
+        'return_remarks': returnRemarks ?? '', // Save return remarks
       });
 
       // Commit all operations
@@ -352,7 +424,7 @@ class DemoService {
           .get();
 
       return querySnapshot.docs.map((doc) {
-        final data = doc.data() as Map<String, dynamic>;
+        final data = doc.data();
         data['id'] = doc.id; // Add document ID
         return data;
       }).toList();

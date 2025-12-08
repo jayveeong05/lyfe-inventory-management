@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:zxing_lib/zxing.dart';
 import 'package:zxing_lib/common.dart';
 import 'package:image/image.dart' as img;
+import '../screens/image_cropper_screen.dart';
 
 /// Service for decoding QR codes from image files
 ///
@@ -26,7 +27,20 @@ class QRImageService {
 
       if (result != null && result.files.single.path != null) {
         final filePath = result.files.single.path!;
-        return await decodeQRFromImageFile(filePath);
+
+        // Crop the image using our custom widget screen
+        final Uint8List? croppedBytes = await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ImageCropperScreen(imagePath: filePath),
+          ),
+        );
+
+        if (croppedBytes != null) {
+          return await decodeQRFromImageBytes(croppedBytes);
+        }
+
+        return null; // User cancelled cropping
       }
 
       return null; // User cancelled

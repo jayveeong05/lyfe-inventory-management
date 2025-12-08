@@ -500,14 +500,18 @@ class _KeyMetricsScreenState extends State<KeyMetricsScreen> {
                   size: 24,
                 ),
                 const SizedBox(width: 8),
-                const Text(
-                  'Data Integrity Report',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                const Expanded(
+                  child: Text(
+                    'Data Integrity Report',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
                 ),
-                const Spacer(),
-                Text(
-                  'Last checked: ${_formatTimeAgo(lastChecked)}',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                Flexible(
+                  child: Text(
+                    'Last checked: ${_formatTimeAgo(lastChecked)}',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ],
             ),
@@ -560,48 +564,12 @@ class _KeyMetricsScreenState extends State<KeyMetricsScreen> {
   }
 
   Widget _buildIntegrityDetails(Map<String, dynamic> dataIntegrity) {
-    final orphanedStockOuts =
-        dataIntegrity['orphanedStockOuts'] as List<dynamic>;
-    final missingStockIns = dataIntegrity['missingStockIns'] as List<dynamic>;
     final deliveredAnalysis =
         dataIntegrity['deliveredAnalysis'] as Map<String, dynamic>;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Issue Breakdown:',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 12),
-
-        // Issue cards
-        Row(
-          children: [
-            Expanded(
-              child: _buildIssueCard(
-                'Orphaned Stock-Outs',
-                'Stock-Out transactions without inventory records',
-                orphanedStockOuts.length,
-                Icons.warning,
-                Colors.red,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildIssueCard(
-                'Missing Stock-Ins',
-                'Inventory items without Stock-In transactions',
-                missingStockIns.length,
-                Icons.info,
-                Colors.orange,
-              ),
-            ),
-          ],
-        ),
-
-        const SizedBox(height: 12),
-
         // Delivered Analysis Section
         if (deliveredAnalysis['totalDeliveredTransactions'] > 0) ...[
           Container(
@@ -667,18 +635,6 @@ class _KeyMetricsScreenState extends State<KeyMetricsScreen> {
           children: [
             Expanded(
               child: ElevatedButton.icon(
-                onPressed: () => _showDetailedReport(dataIntegrity),
-                icon: const Icon(Icons.visibility),
-                label: const Text('View Details'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  foregroundColor: Colors.white,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: ElevatedButton.icon(
                 onPressed: () {
                   Navigator.push(
                     context,
@@ -689,7 +645,9 @@ class _KeyMetricsScreenState extends State<KeyMetricsScreen> {
                   );
                 },
                 icon: const Icon(Icons.search),
-                label: const Text('Find 24'),
+                label: Text(
+                  'Find ${deliveredAnalysis['totalDeliveredTransactions'] - deliveredAnalysis['deliveredInInventory']}',
+                ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.orange,
                   foregroundColor: Colors.white,

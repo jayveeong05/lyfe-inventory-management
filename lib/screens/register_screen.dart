@@ -126,7 +126,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       textInputAction: TextInputAction.next,
                       textCapitalization: TextCapitalization.words,
                       decoration: InputDecoration(
-                        labelText: 'Full Name',
+                        labelText: 'Name',
                         prefixIcon: const Icon(Icons.person_outlined),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -136,7 +136,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ),
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
-                          return 'Please enter your full name';
+                          return 'Please enter your name';
                         }
                         if (value.trim().length < 2) {
                           return 'Name must be at least 2 characters';
@@ -165,8 +165,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         if (value == null || value.isEmpty) {
                           return 'Please enter your email';
                         }
+                        // Updated regex to support longer TLDs like .technology
                         if (!RegExp(
-                          r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
+                          r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,}$',
                         ).hasMatch(value)) {
                           return 'Please enter a valid email address';
                         }

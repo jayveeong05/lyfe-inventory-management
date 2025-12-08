@@ -327,7 +327,7 @@ class ReportService {
       // Get all transactions for movement analysis
       final transactionSnapshot = await _firestore
           .collection('transactions')
-          .orderBy('uploaded_at', descending: true)
+          .orderBy('date', descending: true)
           .get();
 
       // Process inventory data
@@ -356,29 +356,16 @@ class ReportService {
     final categoryStats = <String, Map<String, dynamic>>{};
     final statusStats = <String, int>{};
     final locationStats = <String, int>{};
-    final agingAnalysis = <String, int>{};
 
-    // Build transaction map for quick lookup
+    // Build transaction map for quick lookup (case-insensitive)
     final transactionsBySerial = <String, List<Map<String, dynamic>>>{};
     for (final doc in transactionSnapshot.docs) {
       final data = doc.data() as Map<String, dynamic>;
       final serialNumber = data['serial_number'] as String?;
       if (serialNumber != null) {
-        transactionsBySerial[serialNumber] ??= [];
-        transactionsBySerial[serialNumber]!.add({'id': doc.id, ...data});
-      }
-    }
-
-    // Get all stocked out serial numbers for consistent active calculation
-    final stockedOutSerials = <String>{};
-    for (final doc in transactionSnapshot.docs) {
-      final data = doc.data() as Map<String, dynamic>;
-      final type = data['type'] as String?;
-      final status = data['status'] as String?;
-      final serialNumber = data['serial_number'] as String?;
-
-      if (type == 'Stock_Out' && status != 'Active' && serialNumber != null) {
-        stockedOutSerials.add(serialNumber);
+        final normalizedSerial = serialNumber.toLowerCase();
+        transactionsBySerial[normalizedSerial] ??= [];
+        transactionsBySerial[normalizedSerial]!.add({'id': doc.id, ...data});
       }
     }
 
@@ -389,67 +376,56 @@ class ReportService {
 
       if (serialNumber == null) continue;
 
-      // Get transaction history for this item
-      final itemTransactions = transactionsBySerial[serialNumber] ?? [];
-      itemTransactions.sort(
-        (a, b) =>
-            (b['transaction_id'] as int).compareTo(a['transaction_id'] as int),
-      );
+      // Get transaction history for this item (case-insensitive)
+      final normalizedSerial = serialNumber.toLowerCase();
+      final itemTransactions = transactionsBySerial[normalizedSerial] ?? [];
 
-      // Determine current status using consistent logic with dashboard
-      String currentStatus;
+      // Sort transactions by date (most recent first) - using date field
+      itemTransactions.sort((a, b) {
+        final aTime = a['date'];
+        final bTime = b['date'];
+
+        DateTime aDate;
+        DateTime bDate;
+
+        if (aTime is Timestamp) {
+          aDate = aTime.toDate();
+        } else if (aTime is String) {
+          aDate = DateTime.tryParse(aTime) ?? DateTime.now();
+        } else {
+          aDate = DateTime.now();
+        }
+
+        if (bTime is Timestamp) {
+          bDate = bTime.toDate();
+        } else if (bTime is String) {
+          bDate = DateTime.tryParse(bTime) ?? DateTime.now();
+        } else {
+          bDate = DateTime.now();
+        }
+
+        return bDate.compareTo(aDate); // Most recent first
+      });
+
+      // Calculate current status using new 1+1 logic
+      String currentStatus = _calculateCurrentStatus(
+        serialNumber,
+        itemTransactions,
+      );
       String? currentLocation;
       DateTime? lastActivity;
 
-      // Use same logic as dashboard: Active if not stocked out
-      if (stockedOutSerials.contains(serialNumber)) {
-        // Item has been stocked out - determine the stock out status
-        final stockOutTransactions = itemTransactions
-            .where((t) => t['type'] == 'Stock_Out')
-            .toList();
-        if (stockOutTransactions.isNotEmpty) {
-          final latestStockOut = stockOutTransactions.first;
-          currentStatus = latestStockOut['status'] as String? ?? 'Reserved';
-          currentLocation = latestStockOut['location'] as String?;
+      // Get location and activity from most recent transaction
+      if (itemTransactions.isNotEmpty) {
+        final latestTransaction = itemTransactions.first;
+        currentLocation = latestTransaction['location'] as String?;
 
-          // Handle uploaded_at which could be Timestamp or String
-          final uploadedAtValue = latestStockOut['uploaded_at'];
-          if (uploadedAtValue != null) {
-            if (uploadedAtValue is Timestamp) {
-              lastActivity = uploadedAtValue.toDate();
-            } else if (uploadedAtValue is String) {
-              try {
-                lastActivity = DateTime.parse(uploadedAtValue);
-              } catch (e) {
-                // Ignore parse errors
-              }
-            }
-          }
-        } else {
-          currentStatus = 'Reserved'; // Fallback
-        }
-      } else {
-        // Item is still active (not stocked out)
-        currentStatus = 'Active';
-
-        // Get location and activity from latest transaction if available
-        if (itemTransactions.isNotEmpty) {
-          final latestTransaction = itemTransactions.first;
-          currentLocation = latestTransaction['location'] as String?;
-
-          // Handle uploaded_at which could be Timestamp or String
-          final uploadedAtValue = latestTransaction['uploaded_at'];
-          if (uploadedAtValue != null) {
-            if (uploadedAtValue is Timestamp) {
-              lastActivity = uploadedAtValue.toDate();
-            } else if (uploadedAtValue is String) {
-              try {
-                lastActivity = DateTime.parse(uploadedAtValue);
-              } catch (e) {
-                // Ignore parse errors
-              }
-            }
-          }
+        // Handle date field for last activity
+        final dateValue = latestTransaction['date'];
+        if (dateValue is Timestamp) {
+          lastActivity = dateValue.toDate();
+        } else if (dateValue is String) {
+          lastActivity = DateTime.tryParse(dateValue);
         }
       }
 
@@ -500,24 +476,6 @@ class ReportService {
       statusStats[currentStatus] = (statusStats[currentStatus] ?? 0) + 1;
       locationStats[currentLocation ?? 'Unknown'] =
           (locationStats[currentLocation ?? 'Unknown'] ?? 0) + 1;
-
-      // Aging analysis
-      if (lastActivity != null) {
-        final daysSinceActivity = DateTime.now()
-            .difference(lastActivity)
-            .inDays;
-        String ageGroup;
-        if (daysSinceActivity <= 7) {
-          ageGroup = '0-7 days';
-        } else if (daysSinceActivity <= 30) {
-          ageGroup = '8-30 days';
-        } else if (daysSinceActivity <= 90) {
-          ageGroup = '31-90 days';
-        } else {
-          ageGroup = '90+ days';
-        }
-        agingAnalysis[ageGroup] = (agingAnalysis[ageGroup] ?? 0) + 1;
-      }
     }
 
     return {
@@ -551,9 +509,6 @@ class ReportService {
           .toList(),
       'location_breakdown': locationStats.entries
           .map((e) => {'location': e.key, 'count': e.value})
-          .toList(),
-      'aging_analysis': agingAnalysis.entries
-          .map((e) => {'age_group': e.key, 'count': e.value})
           .toList(),
     };
   }
@@ -943,6 +898,60 @@ class ReportService {
     } catch (e) {
       debugPrint('Error exporting monthly activity report to CSV: $e');
       return null;
+    }
+  }
+
+  /// Calculate current status using enhanced logic to handle dual Stock_Out transactions
+  String _calculateCurrentStatus(
+    String serialNumber,
+    List<Map<String, dynamic>> transactions,
+  ) {
+    if (transactions.isEmpty) {
+      return 'Active';
+    }
+
+    // Count Stock_In and Stock_Out transactions
+    int stockInCount = 0;
+    int stockOutCount = 0;
+    bool hasDeliveredStockOut = false;
+    bool hasReservedStockOut = false;
+
+    for (final transaction in transactions) {
+      final type = transaction['type'] as String?;
+      final status = transaction['status'] as String?;
+
+      if (type == 'Stock_In') {
+        stockInCount++;
+      } else if (type == 'Stock_Out') {
+        stockOutCount++;
+        if (status == 'Delivered') {
+          hasDeliveredStockOut = true;
+        } else if (status == 'Reserved') {
+          hasReservedStockOut = true;
+        }
+      }
+    }
+
+    // Enhanced logic to handle dual Stock_Out transaction system:
+    // - 1 Stock_In + Stock_Out(s) with any 'Delivered' status = Delivered
+    // - 1 Stock_In + Stock_Out(s) with only 'Reserved' status = Reserved
+    // - Stock_Out without matching Stock_In = Reserved (pending delivery)
+    // - Stock_In without Stock_Out = Active (in stock)
+    // - No transactions = Active
+    if (stockInCount == 1 && stockOutCount >= 1) {
+      if (hasDeliveredStockOut) {
+        return 'Delivered';
+      } else if (hasReservedStockOut) {
+        return 'Reserved';
+      } else {
+        return 'Reserved'; // Default for Stock_Out without clear status
+      }
+    } else if (stockOutCount > 0 && stockInCount == 0) {
+      return 'Reserved'; // Ordered but not received
+    } else if (stockOutCount > stockInCount) {
+      return 'Reserved'; // More orders than received
+    } else {
+      return 'Active'; // In stock or default
     }
   }
 }

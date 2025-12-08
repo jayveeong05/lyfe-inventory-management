@@ -16,7 +16,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Consumer<AuthProvider>(
       builder: (context, authProvider, child) {
         final user = authProvider.user;
-        
+
         return Scaffold(
           appBar: AppBar(
             title: const Text('Profile'),
@@ -31,15 +31,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 // Profile Header Card
                 _buildProfileHeaderCard(authProvider),
                 const SizedBox(height: 16),
-                
+
                 // Account Information Card
                 _buildAccountInfoCard(user),
                 const SizedBox(height: 16),
-                
+
                 // App Information Card
                 _buildAppInfoCard(),
                 const SizedBox(height: 16),
-                
+
                 // Actions Card
                 _buildActionsCard(authProvider),
               ],
@@ -59,15 +59,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
             // Profile Avatar
             CircleAvatar(
               radius: 40,
-              backgroundColor: authProvider.isAdmin ? Colors.green : Colors.blue,
-              child: Icon(
-                Icons.person,
-                size: 40,
-                color: Colors.white,
-              ),
+              backgroundColor: authProvider.isAdmin
+                  ? Colors.green
+                  : Colors.blue,
+              child: Icon(Icons.person, size: 40, color: Colors.white),
             ),
             const SizedBox(width: 16),
-            
+
             // User Info
             Expanded(
               child: Column(
@@ -117,18 +115,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
           children: [
             const Text(
               'Account Information',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
             _buildInfoRow('Email', user?.email ?? 'Not available'),
             _buildInfoRow('User ID', user?.uid ?? 'Not available'),
-            _buildInfoRow('Account Created', 
-              user?.metadata.creationTime?.toString().split(' ')[0] ?? 'Not available'),
-            _buildInfoRow('Last Sign In', 
-              user?.metadata.lastSignInTime?.toString().split(' ')[0] ?? 'Not available'),
+            _buildInfoRow(
+              'Account Created',
+              user?.metadata.creationTime?.toString().split(' ')[0] ??
+                  'Not available',
+            ),
+            _buildInfoRow(
+              'Last Sign In',
+              user?.metadata.lastSignInTime?.toString().split(' ')[0] ??
+                  'Not available',
+            ),
           ],
         ),
       ),
@@ -144,10 +145,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           children: [
             const Text(
               'App Information',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
             _buildInfoRow('App Name', 'Inventory Management System'),
@@ -168,13 +166,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
           children: [
             const Text(
               'Actions',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+
+            // Change Password Button
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => _showChangePasswordDialog(authProvider),
+                icon: const Icon(Icons.lock_outline),
+                label: const Text('Change Password'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
               ),
             ),
             const SizedBox(height: 12),
-            
+
             // Sign Out Button
             SizedBox(
               width: double.infinity,
@@ -254,5 +265,204 @@ class _ProfileScreenState extends State<ProfileScreen> {
         );
       }
     }
+  }
+
+  void _showChangePasswordDialog(AuthProvider authProvider) {
+    final formKey = GlobalKey<FormState>();
+    final currentPasswordController = TextEditingController();
+    final newPasswordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+    bool obscureCurrent = true;
+    bool obscureNew = true;
+    bool obscureConfirm = true;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        // Renamed to dialogContext
+        builder: (context, setState) {
+          // This intentionally shadows for the dialog's internal state
+          return AlertDialog(
+            title: const Text('Change Password'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: Form(
+                key: formKey,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextFormField(
+                        controller: currentPasswordController,
+                        obscureText: obscureCurrent,
+                        decoration: InputDecoration(
+                          labelText: 'Current Password',
+                          prefixIcon: const Icon(Icons.lock_open),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              obscureCurrent
+                                  ? Icons.visibility
+                                  : Icons.visibility_off,
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                obscureCurrent = !obscureCurrent;
+                              });
+                            },
+                          ),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Please enter current password';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: newPasswordController,
+                        obscureText: obscureNew,
+                        decoration: InputDecoration(
+                          labelText: 'New Password',
+                          prefixIcon: const Icon(Icons.lock),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              obscureNew
+                                  ? Icons.visibility
+                                  : Icons.visibility_off,
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                obscureNew = !obscureNew;
+                              });
+                            },
+                          ),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Please enter new password';
+                          }
+                          if (value.length < 6) {
+                            return 'Password must be at least 6 characters';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: confirmPasswordController,
+                        obscureText: obscureConfirm,
+                        decoration: InputDecoration(
+                          labelText: 'Confirm New Password',
+                          prefixIcon: const Icon(Icons.lock_outline),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              obscureConfirm
+                                  ? Icons.visibility
+                                  : Icons.visibility_off,
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                obscureConfirm = !obscureConfirm;
+                              });
+                            },
+                          ),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Please confirm new password';
+                          }
+                          if (value != newPasswordController.text) {
+                            return 'Passwords do not match';
+                          }
+                          return null;
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(
+                  dialogContext,
+                ), // Close dialog using dialogContext
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  if (formKey.currentState!.validate()) {
+                    // Capture the parent scaffold messenger BEFORE closing dialog
+                    final scaffoldMessenger = ScaffoldMessenger.of(
+                      this.context,
+                    );
+
+                    // Close dialog
+                    Navigator.pop(dialogContext);
+
+                    // Show loading
+                    scaffoldMessenger.showSnackBar(
+                      const SnackBar(
+                        content: Row(
+                          children: [
+                            SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.white,
+                                ),
+                              ),
+                            ),
+                            SizedBox(width: 12),
+                            Text('Updating password...'),
+                          ],
+                        ),
+                        duration: Duration(seconds: 30),
+                      ),
+                    );
+
+                    final success = await authProvider.changePassword(
+                      currentPasswordController.text,
+                      newPasswordController.text,
+                    );
+
+                    if (mounted) {
+                      scaffoldMessenger.hideCurrentSnackBar();
+
+                      if (success) {
+                        scaffoldMessenger.showSnackBar(
+                          const SnackBar(
+                            content: Text('Password updated successfully!'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      } else {
+                        scaffoldMessenger.showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'Failed to update password: ${authProvider.errorMessage}',
+                            ),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    }
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Update'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 }

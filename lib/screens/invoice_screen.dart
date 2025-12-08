@@ -2039,7 +2039,10 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                 ),
                 _buildDetailRow('Model', item['model']?.toString() ?? 'N/A'),
                 _buildDetailRow('Size', item['size']?.toString() ?? 'N/A'),
-                _buildDetailRow('Batch', item['batch']?.toString() ?? 'N/A'),
+                _buildDetailRow(
+                  'Warranty Type',
+                  item['warranty_type']?.toString() ?? 'No Warranty',
+                ),
                 if (item['transaction_id'] != null)
                   _buildDetailRow(
                     'Transaction ID',

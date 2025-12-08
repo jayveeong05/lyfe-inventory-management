@@ -6,7 +6,7 @@ A comprehensive Flutter-based inventory management application with Firebase bac
 
 **✅ PRODUCTION READY** - All core features implemented and tested
 
-### Version 2.1.0 - Latest Updates (November 2025)
+### Version 2.1.0 - Latest Updates (December 2025)
 - ✅ **Authentication System**: Login, registration, role-based access control
 - ✅ **Stock-In Operations**: Add inventory with QR scanning and batch processing
 - ✅ **Stock-Out Operations**: Reserve items for purchase orders with smart search
@@ -21,6 +21,8 @@ A comprehensive Flutter-based inventory management application with Firebase bac
 - ✅ **Architecture Improvements**: Dual status system, separate transaction audit trails, file type differentiation
 - ✅ **UI/UX Fixes**: Color-coded status indicators, responsive dialogs, file name display accuracy
 - ✅ **File Management**: Advanced file replacement, proper metadata tracking, Firebase Storage integration
+- ✅ **Enhanced Security**: Admin-only edit/delete restrictions in inventory management
+- ✅ **Improved User Interface**: Clean user dashboard without blue banner, mobile-optimized admin navigation
 
 ### Code Quality
 - **83% improvement** in code quality (29 → 5 minor issues)
@@ -90,11 +92,14 @@ A comprehensive Flutter-based inventory management application with Firebase bac
 - **Modern Material Design**: Clean, responsive UI following Material Design principles
 - **Loading Animations**: Professional loading indicators during operations
 - **Error Handling**: User-friendly error messages and validation feedback
-- **Role-Based Dashboards**: Admin users get comprehensive admin dashboard with integrated navigation, regular users get simplified dashboard
+- **Role-Based Dashboards**: Admin users get comprehensive admin dashboard with integrated navigation, regular users get clean banner-free dashboard
 - **Integrated Navigation**: Admin dashboard includes direct access to all core operations (Stock In/Out, Invoice, Delivery)
+- **Mobile-Optimized Navigation**: Admin dashboard features popup menus with back buttons on mobile, side navigation on desktop
+- **Clean User Interface**: User dashboard without blue banner for more immersive experience
 - **Search Functionality**: Advanced search for serial numbers and items
 - **Dropdown Interfaces**: Intuitive selection interfaces for complex data
 - **Information Cards**: Professional display of detailed information
+- **Security-Based UI**: Role-based menu options with admin-only edit/delete restrictions
 
 ## 🏗️ Architecture
 
@@ -152,6 +157,8 @@ lib/
 - Full access to all application features
 - Manage purchase order lifecycle
 - Access to all stock management operations
+- **Exclusive edit/delete permissions**: Only admins can edit or delete inventory items
+- **Advanced inventory management**: Full CRUD operations on inventory data
 
 #### Regular Users
 - View inventory and transaction data
@@ -161,6 +168,7 @@ lib/
 - Cannot modify any data
 - Cannot upload files or create purchase orders
 - Read-only access to all features
+- **Restricted inventory access**: Can view inventory details and perform stock-out operations, but cannot edit or delete items
 
 ### Security Features
 - **Firebase Authentication**: Industry-standard security
@@ -341,7 +349,17 @@ For support and questions:
 
 ## 🔄 Version History
 
-### v2.1.0 (Current - November 2025)
+### v2.1.1 (Current - December 2025)
+- ✅ **Change Password Feature**: Secure self-service password change functionality for all users with re-authentication
+- ✅ **Enhanced Email Validation**: Updated validation logic to support top-level domains with 2+ characters (e.g., .technology, .consulting)
+- ✅ **Advanced Item Return Search**:
+  - Split Dealer and Client search into separate dedicated fields
+  - Added role indicators ("Recorded as: Dealer/Client") in search dropdowns
+  - smart serial number filtering combining results from both entities
+- ✅ **Admin Dashboard Improvements**: Replaced Logout button with Profile button for direct access to user settings and password management
+- ✅ **Inventory Status Synchronization**: Improved status syncing between transaction and inventory records during returns and stock-outs
+
+### v2.1.0 (December 2025)
 - ✅ **Dual Status System Architecture**: Implemented separate invoice_status and delivery_status fields for better workflow separation
 - ✅ **Delivery Order Management**: Complete dual PDF workflow supporting normal delivery order and signed delivery order uploads
 - ✅ **Enhanced Transaction System**: Creates separate "Delivered" transactions while preserving "Reserved" audit trail
@@ -355,6 +373,10 @@ For support and questions:
 - ✅ **Database Migration System**: Seamless migration from single status to dual status system
 - ✅ **Development Tools**: Enhanced delete functionality for delivery data testing and development
 - ✅ **Architectural Improvements**: Separate file references with shared delivery information for optimal data organization
+- ✅ **Enhanced Security Model**: Admin-only edit/delete restrictions in inventory management with role-based UI controls
+- ✅ **Improved User Dashboard**: Removed blue banner for cleaner interface, integrated header with user menu in body content
+- ✅ **Mobile Navigation Enhancement**: Admin dashboard popup menus with back buttons on mobile, hidden on desktop
+- ✅ **Key Metrics Optimization**: Fixed overflow errors, dynamic button text based on actual discrepancy values
 
 ### v2.0.22
 - ✅ **Monthly Inventory Activity Critical Fixes**: Resolved Flutter rendering errors that prevented complete size breakdown display

@@ -55,6 +55,7 @@ class StockService {
         'uploaded_at': FieldValue.serverTimestamp(),
         'source': 'stock_in_manual',
         'uploaded_by_uid': currentUser.uid,
+        'status': 'Active', // Initial status
       };
 
       // Prepare transaction data (only include relevant fields for stock-in)
@@ -80,7 +81,16 @@ class StockService {
 
       // Add to inventory collection
       final inventoryRef = _firestore.collection('inventory').doc();
-      firestoreBatch.set(inventoryRef, inventoryData);
+      firestoreBatch.set(inventoryRef, {
+        ...inventoryData,
+        'status': 'Active', // Explicitly set status to Active
+      });
+      // Note: If item already exists, we return early above.
+      // If we allowed re-stocking existing serials, we would use update here.
+      // Since we check `existingItem.docs.isNotEmpty` at start, this is a NEW item.
+      // So setting 'status': 'Active' in `inventoryData` or here is sufficient.
+      // I added it explicitly above or I should add it to inventoryData map.
+      // Let's check inventoryData map in code. It didn't have status. So I add it here.
 
       // Add to transactions collection
       final transactionRef = _firestore.collection('transactions').doc();

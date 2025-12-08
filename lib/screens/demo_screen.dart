@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../providers/auth_provider.dart';
 import '../services/demo_service.dart';
+
 import '../utils/platform_features.dart';
 import 'qr_scanner_screen.dart';
 
@@ -17,6 +18,7 @@ class DemoScreen extends StatefulWidget {
 
 class _DemoScreenState extends State<DemoScreen> {
   final _formKey = GlobalKey<FormState>();
+
   final _demoNumberController = TextEditingController();
   final _demoPurposeController = TextEditingController();
   final _dealerNameController = TextEditingController();
@@ -95,84 +97,23 @@ class _DemoScreenState extends State<DemoScreen> {
         });
       }
 
-      // Get transactions with limit to avoid performance issues
-      final allTransactionsQuery = await FirebaseFirestore.instance
-          .collection('transactions')
-          .orderBy('transaction_id', descending: true)
+      // Query inventory collection directly for active items
+      final snapshot = await FirebaseFirestore.instance
+          .collection('inventory')
+          .where('status', isEqualTo: 'Active')
           .limit(1000)
-          .get()
-          .timeout(
-            const Duration(seconds: 10),
-            onTimeout: () {
-              throw TimeoutException(
-                'Query timeout',
-                const Duration(seconds: 10),
-              );
-            },
-          );
+          .get();
 
-      if (allTransactionsQuery.docs.isEmpty) {
-        setState(() {
-          _activeItems = [];
-          _isLoadingItems = false;
-        });
-        return;
-      }
-
-      // Find the latest transaction for each serial number
-      final Map<String, Map<String, dynamic>> latestTransactionBySerial = {};
-
-      for (final doc in allTransactionsQuery.docs) {
+      final activeItems = snapshot.docs.map((doc) {
         final data = doc.data();
-        final serialNumber = data['serial_number'] as String?;
-
-        if (serialNumber != null &&
-            !latestTransactionBySerial.containsKey(serialNumber)) {
-          latestTransactionBySerial[serialNumber] = data;
-        }
-      }
-
-      // Filter to only include items that are available (latest status is Active from Stock_In)
-      final availableSerialNumbers = <String>[];
-      final availableTransactions = <Map<String, dynamic>>[];
-
-      for (final entry in latestTransactionBySerial.entries) {
-        final serialNumber = entry.key;
-        final transaction = entry.value;
-
-        // Item is available if latest transaction type is Stock_In AND status is Active
-        if (transaction['type'] == 'Stock_In' &&
-            transaction['status'] == 'Active') {
-          availableSerialNumbers.add(serialNumber);
-          availableTransactions.add(transaction);
-        }
-      }
-
-      if (availableSerialNumbers.isEmpty) {
-        setState(() {
-          _activeItems = [];
-          _isLoadingItems = false;
-        });
-        return;
-      }
-
-      // Get inventory details for available items (batch process to handle Firestore whereIn limit)
-      final List<Map<String, dynamic>> activeItems = [];
-
-      // Process in batches of 10 (Firestore whereIn limit)
-      for (int i = 0; i < availableSerialNumbers.length; i += 10) {
-        final batch = availableSerialNumbers.skip(i).take(10).toList();
-
-        final inventoryQuery = await FirebaseFirestore.instance
-            .collection('inventory')
-            .where('serial_number', whereIn: batch)
-            .get();
-
-        for (final doc in inventoryQuery.docs) {
-          final inventoryData = doc.data();
-          activeItems.add(inventoryData);
-        }
-      }
+        return {
+          ...data,
+          'id': doc.id,
+          'current_status': 'Active',
+          'location': 'HQ', // Default location
+          'transaction_id': null, // Not strictly needed
+        };
+      }).toList();
 
       if (mounted) {
         setState(() {
@@ -229,12 +170,16 @@ class _DemoScreenState extends State<DemoScreen> {
     }
   }
 
+  Timer? _debounceTimer;
+
   void _onSearchChanged(String query) {
     setState(() {
       if (query.isEmpty) {
         _filteredItems = _activeItems;
         _showSuggestions = false;
+        _debounceTimer?.cancel();
       } else {
+        // 1. Local Search (Immediate)
         // Filter out items that are already selected (case-insensitive)
         final availableItems = _activeItems.where((item) {
           final serialNumber = (item['serial_number'] ?? '')
@@ -259,9 +204,95 @@ class _DemoScreenState extends State<DemoScreen> {
               equipmentCategory.contains(searchQuery) ||
               model.contains(searchQuery);
         }).toList();
-        _showSuggestions = _filteredItems.isNotEmpty;
+        _showSuggestions = true; // Always show suggestions when typing
+
+        // 2. Backend Search (Debounced)
+        // Only search backend if query is at least 3 characters to avoid spam
+        if (query.length >= 3) {
+          _debounceTimer?.cancel();
+          _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+            _performBackendSearch(query);
+          });
+        }
       }
     });
+  }
+
+  Future<void> _performBackendSearch(String query) async {
+    try {
+      // Search in inventory collection for serial numbers starting with query
+      // Note: Firestore range queries are case-sensitive.
+      // We'll try to match exact case or common variations if needed,
+      // but for now we'll rely on the user typing somewhat correctly or exact matches.
+      // A better approach for case-insensitive search in Firestore requires a separate lowercase field.
+      // Assuming 'serial_number' is stored as is.
+
+      // We will fetch items where serial_number >= query AND serial_number < query + 'z'
+      // This performs a prefix search.
+      final inventoryQuery = await FirebaseFirestore.instance
+          .collection('inventory')
+          .where('serial_number', isGreaterThanOrEqualTo: query)
+          .where('serial_number', isLessThan: query + 'z')
+          .limit(20) // Limit results
+          .get();
+
+      if (inventoryQuery.docs.isEmpty) return;
+
+      final List<Map<String, dynamic>> newCandidates = [];
+
+      for (final doc in inventoryQuery.docs) {
+        final data = doc.data();
+        final serialNumber = data['serial_number'] as String?;
+
+        if (serialNumber == null) continue;
+
+        // Check if this item is already in our _activeItems list (avoid duplicates)
+        final isAlreadyLoaded = _activeItems.any(
+          (item) =>
+              (item['serial_number'] ?? '').toString().toLowerCase() ==
+              serialNumber.toLowerCase(),
+        );
+
+        if (isAlreadyLoaded) continue;
+
+        // Check if this item is already selected
+        final isSelected = _selectedItems.any(
+          (item) =>
+              (item['serial_number'] ?? '').toString().toLowerCase() ==
+              serialNumber.toLowerCase(),
+        );
+
+        if (isSelected) continue;
+
+        // Check status directly from inventory document
+        final status = data['status'] as String? ?? 'Unknown';
+
+        if (status == 'Active') {
+          newCandidates.add({
+            'serial_number': serialNumber,
+            'equipment_category': data['equipment_category'] ?? 'Unknown',
+            'model': data['model'] ?? 'Unknown',
+            'size': data['size'],
+            'status': status,
+            'transaction_id': null, // Not needed
+            'location': 'HQ', // Default
+          });
+        }
+      }
+
+      if (newCandidates.isNotEmpty && mounted) {
+        setState(() {
+          // Add new candidates to _activeItems so they stay available
+          _activeItems.addAll(newCandidates);
+
+          // Re-run filter to include them in current view
+          // (We just append them to filtered items to avoid resetting the view abruptly)
+          _filteredItems.addAll(newCandidates);
+        });
+      }
+    } catch (e) {
+      print('Error in backend search: $e');
+    }
   }
 
   void _addItemToSelection(Map<String, dynamic> item) {

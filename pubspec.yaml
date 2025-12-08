@@ -51,6 +51,7 @@ dependencies:
   mobile_scanner: ^5.0.0
   zxing_lib: ^1.1.4  # Pure Dart QR decoder for desktop image upload
   image: ^4.2.0  # Image processing for QR decoding
+  crop_your_image: ^1.0.0
 
   # Image picker for QR code testing
   image_picker: ^1.1.2
@@ -72,6 +73,7 @@ dependencies:
 
   # Excel file reading
   spreadsheet_decoder: ^2.2.0
+  excel: ^4.0.2
 
   # File operations
   path: ^1.9.0
@@ -81,6 +83,7 @@ dependencies:
 
   # PDF text extraction (direct approach)
   syncfusion_flutter_pdf: ^26.2.14
+
 
 dev_dependencies:
   flutter_test:

@@ -59,8 +59,8 @@ class OrderService {
         selectedItems.length,
       );
 
-      // Get the next available entry numbers for all Stock_Out items
-      final nextEntryNumbers = await _getNextEntryNumbers(selectedItems.length);
+      // Get one entry number for the entire order
+      final int entryNo = await getNextEntryNumber();
 
       // Prepare batch operations
       final batch = _firestore.batch();
@@ -73,7 +73,7 @@ class OrderService {
         final warrantyType = item['warranty_type'] as String? ?? 'No Warranty';
         final warrantyPeriod = item['warranty_period'] as int? ?? 0;
         final transactionId = nextTransactionIds[i];
-        final entryNo = nextEntryNumbers[i];
+        // final entryNo = nextEntryNumbers[i]; // Removed: now using single entryNo
 
         transactionIds.add(transactionId);
 
@@ -86,11 +86,37 @@ class OrderService {
             .get();
 
         if (activeTransactions.docs.isEmpty) {
-          return {
-            'success': false,
-            'error':
-                'Item with serial number $serialNumber is not available or already reserved.',
-          };
+          // Fallback: Check inventory status directly
+          final invCheck = await _firestore
+              .collection('inventory')
+              .where('serial_number', isEqualTo: serialNumber)
+              .limit(1)
+              .get();
+          bool isAvailable = false;
+          if (invCheck.docs.isNotEmpty) {
+            final status = invCheck.docs.first.data()['status'];
+            if (status == 'Active') isAvailable = true;
+          }
+
+          if (!isAvailable) {
+            return {
+              'success': false,
+              'error':
+                  'Item with serial number $serialNumber is not active or available.',
+            };
+          }
+        }
+
+        // Update inventory status
+        final inventoryDoc = await _firestore
+            .collection('inventory')
+            .where('serial_number', isEqualTo: serialNumber)
+            .limit(1)
+            .get();
+        if (inventoryDoc.docs.isNotEmpty) {
+          batch.update(inventoryDoc.docs.first.reference, {
+            'status': 'Reserved',
+          });
         }
 
         // Create Stock_Out transaction record
@@ -126,6 +152,7 @@ class OrderService {
         'customer_dealer': dealerName,
         'customer_client': effectiveClientName,
         'transaction_ids': transactionIds, // Only store transaction IDs
+        'entry_no': entryNo, // Store entry_no in order as well for reference
         'total_items': selectedItems.length,
         'total_quantity': selectedItems.length,
         'created_by_uid': currentUser.uid,
@@ -163,6 +190,122 @@ class OrderService {
         'success': false,
         'error': 'Failed to create order: ${e.toString()}',
       };
+    }
+  }
+
+  /// Process an item return and replacement
+  /// Creates a 'Returned' transaction for the old item
+  /// Creates a 'Stock_Out' transaction for the replacement item
+  Future<Map<String, dynamic>> processItemReturn({
+    required String returnedSerial,
+    required String replacementSerial,
+    required String dealerName,
+    required String remarks,
+    required String userUid,
+  }) async {
+    try {
+      final batch = _firestore.batch();
+      final timestamp = Timestamp.now();
+
+      // 0. Fetch original transaction to get correct dealer/client info and entry_no
+      final originalTransactionQuery = await _firestore
+          .collection('transactions')
+          .where('serial_number', isEqualTo: returnedSerial)
+          .where('type', isEqualTo: 'Stock_Out')
+          .orderBy('date', descending: true)
+          .limit(1)
+          .get();
+
+      String customerDealer = dealerName;
+      String customerClient = 'N/A';
+      int? originalEntryNo;
+
+      if (originalTransactionQuery.docs.isNotEmpty) {
+        final originalData = originalTransactionQuery.docs.first.data();
+        customerDealer = originalData['customer_dealer'] ?? dealerName;
+        customerClient = originalData['customer_client'] ?? 'N/A';
+        originalEntryNo = originalData['entry_no'];
+      }
+
+      // 1. Create 'Returned' transaction for the old item
+      final returnedTransactionId = await getNextTransactionId();
+      final returnedTransactionRef = _firestore
+          .collection('transactions')
+          .doc();
+
+      final returnedData = {
+        'transaction_id': returnedTransactionId,
+        'serial_number': returnedSerial.trim().toUpperCase(),
+        'type': 'Returned',
+        'status': 'Returned',
+        'customer_dealer': customerDealer,
+        'customer_client': customerClient,
+        'remarks': 'Replaced by $replacementSerial. $remarks',
+        'date': timestamp,
+        'uploaded_at': FieldValue.serverTimestamp(),
+        'uploaded_by_uid': userUid,
+      };
+
+      batch.set(returnedTransactionRef, returnedData);
+
+      // 2. Create 'Stock_Out' transaction for the replacement item
+      // We need a new transaction ID (incremented)
+      final replacementTransactionId = returnedTransactionId + 1;
+      // Use original entry_no if available, otherwise generate new one
+      final replacementEntryNo = originalEntryNo ?? await getNextEntryNumber();
+      final replacementTransactionRef = _firestore
+          .collection('transactions')
+          .doc();
+
+      final replacementData = {
+        'transaction_id': replacementTransactionId,
+        'entry_no': replacementEntryNo,
+        'serial_number': replacementSerial.trim().toUpperCase(),
+        'type': 'Stock_Out',
+        'status': 'Delivered', // Status is Delivered as requested
+        'customer_dealer': customerDealer,
+        'customer_client': customerClient,
+        'remarks': 'Replacement for $returnedSerial',
+        'date': timestamp,
+        'uploaded_at': FieldValue.serverTimestamp(),
+        'uploaded_by_uid': userUid,
+        'source': 'item_replacement',
+      };
+
+      batch.set(replacementTransactionRef, replacementData);
+
+      // 3. Update Inventory Status
+      // Returned item becomes 'Returned' (needs inspection/action)
+      final returnedInventoryQuery = await _firestore
+          .collection('inventory')
+          .where('serial_number', isEqualTo: returnedSerial)
+          .limit(1)
+          .get();
+
+      if (returnedInventoryQuery.docs.isNotEmpty) {
+        batch.update(returnedInventoryQuery.docs.first.reference, {
+          'status': 'Returned',
+        });
+      }
+
+      // Replacement item becomes 'Reserved' (out of stock)
+      final replacementInventoryQuery = await _firestore
+          .collection('inventory')
+          .where('serial_number', isEqualTo: replacementSerial)
+          .limit(1)
+          .get();
+
+      if (replacementInventoryQuery.docs.isNotEmpty) {
+        batch.update(replacementInventoryQuery.docs.first.reference, {
+          'status': 'Reserved',
+        });
+      }
+
+      await batch.commit();
+
+      return {'success': true, 'message': 'Return processed successfully'};
+    } catch (e) {
+      return {'success': false, 'error': 'Failed to process return: $e'};
     }
   }
 
@@ -220,12 +363,6 @@ class OrderService {
   Future<List<int>> _getNextTransactionIds(int count) async {
     final startId = await getNextTransactionId();
     return List.generate(count, (index) => startId + index);
-  }
-
-  /// Get multiple sequential entry numbers for Stock_Out transactions
-  Future<List<int>> _getNextEntryNumbers(int count) async {
-    final startEntryNo = await getNextEntryNumber();
-    return List.generate(count, (index) => startEntryNo + index);
   }
 
   /// Get next entry number for Stock_Out transactions only
@@ -1153,6 +1290,27 @@ class OrderService {
               .get();
 
           for (final transactionDoc in transactionQuery.docs) {
+            final transactionData = transactionDoc.data();
+            final serialNumber = transactionData['serial_number'] as String?;
+
+            // Revert inventory status to 'Active' if serial number exists
+            if (serialNumber != null) {
+              final inventoryQuery = await _firestore
+                  .collection('inventory')
+                  .where('serial_number', isEqualTo: serialNumber)
+                  .limit(1)
+                  .get();
+
+              if (inventoryQuery.docs.isNotEmpty) {
+                batch.update(inventoryQuery.docs.first.reference, {
+                  'status': 'Active',
+                });
+                debugPrint(
+                  '🔄 Marked inventory status for $serialNumber to Active',
+                );
+              }
+            }
+
             batch.delete(transactionDoc.reference);
             deletionSummary['transactions_deleted']++;
             debugPrint('🔄 Marked transaction $transactionId for deletion');

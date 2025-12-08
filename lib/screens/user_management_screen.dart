@@ -448,12 +448,12 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                       TextFormField(
                         controller: displayNameController,
                         decoration: const InputDecoration(
-                          labelText: 'Full Name',
+                          labelText: 'Name',
                           prefixIcon: Icon(Icons.person),
                         ),
                         validator: (value) {
                           if (value == null || value.trim().isEmpty) {
-                            return 'Please enter full name';
+                            return 'Please enter name';
                           }
                           if (value.trim().length < 2) {
                             return 'Name must be at least 2 characters';
@@ -473,8 +473,9 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                           if (value == null || value.trim().isEmpty) {
                             return 'Please enter email';
                           }
+                          // Updated regex to support longer TLDs like .technology
                           if (!RegExp(
-                            r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
+                            r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,}$',
                           ).hasMatch(value)) {
                             return 'Please enter a valid email';
                           }
