@@ -258,6 +258,19 @@ class CancelOrderService {
 
           final cancellationRef = _firestore.collection('transactions').doc();
           batch.set(cancellationRef, cancellationData);
+
+          // Inventory Status Sync: Update inventory item status back to 'Active'
+          final inventoryQuery = await _firestore
+              .collection('inventory')
+              .where('serial_number', isEqualTo: originalData['serial_number'])
+              .limit(1)
+              .get();
+
+          if (inventoryQuery.docs.isNotEmpty) {
+            batch.update(inventoryQuery.docs.first.reference, {
+              'status': 'Active',
+            });
+          }
         }
       }
 

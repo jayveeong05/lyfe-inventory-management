@@ -39,60 +39,6 @@ class MonthlyInventoryService {
     return category.toLowerCase().replaceAll('_', ' ');
   }
 
-  /// Calculate current status using enhanced logic to handle dual Stock_Out transactions
-  String _calculateCurrentStatus(
-    String serialNumber,
-    List<Map<String, dynamic>> transactions,
-  ) {
-    if (transactions.isEmpty) {
-      return 'Active';
-    }
-
-    // Count Stock_In and Stock_Out transactions
-    int stockInCount = 0;
-    int stockOutCount = 0;
-    bool hasDeliveredStockOut = false;
-    bool hasReservedStockOut = false;
-
-    for (final transaction in transactions) {
-      final type = transaction['type'] as String?;
-      final status = transaction['status'] as String?;
-
-      if (type == 'Stock_In') {
-        stockInCount++;
-      } else if (type == 'Stock_Out') {
-        stockOutCount++;
-        if (status == 'Delivered') {
-          hasDeliveredStockOut = true;
-        } else if (status == 'Reserved') {
-          hasReservedStockOut = true;
-        }
-      }
-    }
-
-    // Enhanced logic to handle dual Stock_Out transaction system:
-    // - 1 Stock_In + Stock_Out(s) with any 'Delivered' status = Delivered
-    // - 1 Stock_In + Stock_Out(s) with only 'Reserved' status = Reserved
-    // - Stock_Out without matching Stock_In = Reserved (pending delivery)
-    // - Stock_In without Stock_Out = Active (in stock)
-    // - No transactions = Active
-    if (stockInCount == 1 && stockOutCount >= 1) {
-      if (hasDeliveredStockOut) {
-        return 'Delivered';
-      } else if (hasReservedStockOut) {
-        return 'Reserved';
-      } else {
-        return 'Reserved'; // Default for Stock_Out without clear status
-      }
-    } else if (stockOutCount > 0 && stockInCount == 0) {
-      return 'Reserved'; // Ordered but not received
-    } else if (stockOutCount > stockInCount) {
-      return 'Reserved'; // More orders than received
-    } else {
-      return 'Active'; // In stock or default
-    }
-  }
-
   /// Get the delivery transaction (Stock_Out) from a list of transactions
   Map<String, dynamic>? _getDeliveryTransaction(
     List<Map<String, dynamic>> transactions,
@@ -335,12 +281,12 @@ class MonthlyInventoryService {
   }
 
   /// Get stock out data from transactions collection for the specified month
-  /// Uses 1+1 logic: counts items that are currently delivered within the date range
+  /// Uses direct status field to find delivered items
   Future<Map<String, int>> _getStockOutData(
     DateTime startOfMonth,
     DateTime endOfMonth,
   ) async {
-    // Get all inventory items and all transactions to apply 1+1 logic
+    // Fetch all inventory and all transactions at once (optimized!)
     final futures = await Future.wait([
       _firestore.collection('inventory').get(),
       _firestore.collection('transactions').get(),
@@ -349,7 +295,7 @@ class MonthlyInventoryService {
     final inventorySnapshot = futures[0];
     final transactionSnapshot = futures[1];
 
-    // Group transactions by serial number (case-insensitive)
+    // Group transactions by serial number for quick lookup
     final transactionsBySerial = <String, List<Map<String, dynamic>>>{};
     for (final doc in transactionSnapshot.docs) {
       final data = doc.data();
@@ -370,41 +316,40 @@ class MonthlyInventoryService {
       final category = data['equipment_category'] as String? ?? 'Unknown';
       final size = data['size'] as String? ?? '';
 
-      if (serialNumber != null) {
+      if (serialNumber == null) continue;
+
+      // Use direct status field
+      final status = data['status'] as String? ?? 'Active';
+
+      // Only count items that are currently delivered
+      if (status == 'Delivered') {
+        // Get transactions for this item from our pre-fetched map
         final normalizedSerial = serialNumber.toLowerCase();
         final transactions = transactionsBySerial[normalizedSerial] ?? [];
 
-        // Calculate current status using 1+1 logic
-        final currentStatus = _calculateCurrentStatus(
-          serialNumber,
-          transactions,
-        );
+        // Find the delivery transaction
+        final deliveryTransaction = _getDeliveryTransaction(transactions);
 
-        // Only count items that are currently delivered
-        if (currentStatus == 'Delivered') {
-          // Check if the delivery happened within the specified month
-          final deliveryTransaction = _getDeliveryTransaction(transactions);
-          if (deliveryTransaction != null) {
-            final deliveryDate = _normalizeDate(deliveryTransaction['date']);
-            if (deliveryDate != null &&
-                !deliveryDate.isBefore(startOfMonth) &&
-                !deliveryDate.isAfter(endOfMonth)) {
-              // Skip items from "Others" category as they don't have meaningful sizes
-              if (category.toLowerCase() != 'others') {
-                String displaySize;
-                if (category.toLowerCase() == 'interactive flat panel' ||
-                    category.toLowerCase() == 'ifp') {
-                  displaySize = size.isEmpty ? 'Unknown' : size;
-                } else if (category.toLowerCase() == 'unknown' &&
-                    size.isNotEmpty) {
-                  displaySize = size;
-                } else {
-                  displaySize = 'Unknown';
-                }
-
-                stockOutBySize[displaySize] =
-                    (stockOutBySize[displaySize] ?? 0) + 1;
+        if (deliveryTransaction != null) {
+          final deliveryDate = _normalizeDate(deliveryTransaction['date']);
+          if (deliveryDate != null &&
+              !deliveryDate.isBefore(startOfMonth) &&
+              !deliveryDate.isAfter(endOfMonth)) {
+            // Skip items from "Others" category as they don't have meaningful sizes
+            if (category.toLowerCase() != 'others') {
+              String displaySize;
+              if (category.toLowerCase() == 'interactive flat panel' ||
+                  category.toLowerCase() == 'ifp') {
+                displaySize = size.isEmpty ? 'Unknown' : size;
+              } else if (category.toLowerCase() == 'unknown' &&
+                  size.isNotEmpty) {
+                displaySize = size;
+              } else {
+                displaySize = 'Unknown';
               }
+
+              stockOutBySize[displaySize] =
+                  (stockOutBySize[displaySize] ?? 0) + 1;
             }
           }
         }
@@ -415,12 +360,12 @@ class MonthlyInventoryService {
   }
 
   /// Get ALL stock out data (including Others category) for summary calculation
-  /// Uses 1+1 logic: counts items that are currently delivered within the date range
+  /// Uses direct status field to find delivered items
   Future<Map<String, int>> _getAllStockOutData(
     DateTime startOfMonth,
     DateTime endOfMonth,
   ) async {
-    // Get all inventory items and all transactions to apply 1+1 logic
+    // Fetch all inventory and all transactions at once (optimized!)
     final futures = await Future.wait([
       _firestore.collection('inventory').get(),
       _firestore.collection('transactions').get(),
@@ -429,7 +374,7 @@ class MonthlyInventoryService {
     final inventorySnapshot = futures[0];
     final transactionSnapshot = futures[1];
 
-    // Group transactions by serial number (case-insensitive)
+    // Group transactions by serial number for quick lookup
     final transactionsBySerial = <String, List<Map<String, dynamic>>>{};
     for (final doc in transactionSnapshot.docs) {
       final data = doc.data();
@@ -451,37 +396,36 @@ class MonthlyInventoryService {
         data['equipment_category'] as String?,
       );
 
-      if (serialNumber != null) {
+      if (serialNumber == null) continue;
+
+      // Use direct status field
+      final status = data['status'] as String? ?? 'Active';
+
+      // Only count items that are currently delivered
+      if (status == 'Delivered') {
+        // Get transactions for this item from our pre-fetched map
         final normalizedSerial = serialNumber.toLowerCase();
         final transactions = transactionsBySerial[normalizedSerial] ?? [];
 
-        // Calculate current status using 1+1 logic
-        final currentStatus = _calculateCurrentStatus(
-          serialNumber,
-          transactions,
-        );
+        // Find the delivery transaction
+        final deliveryTransaction = _getDeliveryTransaction(transactions);
 
-        // Only count items that are currently delivered
-        if (currentStatus == 'Delivered') {
-          // Check if the delivery happened within the specified month
-          final deliveryTransaction = _getDeliveryTransaction(transactions);
-          if (deliveryTransaction != null) {
-            final deliveryDate = _normalizeDate(deliveryTransaction['date']);
-            if (deliveryDate != null &&
-                !deliveryDate.isBefore(startOfMonth) &&
-                !deliveryDate.isAfter(endOfMonth)) {
-              String displayKey;
-              if (category == 'others') {
-                displayKey = 'Others'; // Group Others by category
-                stockOutBySize[displayKey] =
-                    (stockOutBySize[displayKey] ?? 0) + 1;
-              } else {
-                // For non-Others, get size from inventory data
-                final size = data['size'] as String? ?? '';
-                displayKey = size.isEmpty ? 'Unknown' : size;
-                stockOutBySize[displayKey] =
-                    (stockOutBySize[displayKey] ?? 0) + 1;
-              }
+        if (deliveryTransaction != null) {
+          final deliveryDate = _normalizeDate(deliveryTransaction['date']);
+          if (deliveryDate != null &&
+              !deliveryDate.isBefore(startOfMonth) &&
+              !deliveryDate.isAfter(endOfMonth)) {
+            String displayKey;
+            if (category == 'others') {
+              displayKey = 'Others'; // Group Others by category
+              stockOutBySize[displayKey] =
+                  (stockOutBySize[displayKey] ?? 0) + 1;
+            } else {
+              // For non-Others, get size from inventory data
+              final size = data['size'] as String? ?? '';
+              displayKey = size.isEmpty ? 'Unknown' : size;
+              stockOutBySize[displayKey] =
+                  (stockOutBySize[displayKey] ?? 0) + 1;
             }
           }
         }
@@ -492,13 +436,13 @@ class MonthlyInventoryService {
   }
 
   /// Get detailed stock out items for the specified month
-  /// Uses 1+1 logic: shows items that were delivered within the date range
+  /// Uses direct status field to show delivered items
   /// Gets size information directly from inventory collection
   Future<List<Map<String, dynamic>>> getDetailedStockOutData(
     DateTime startOfMonth,
     DateTime endOfMonth,
   ) async {
-    // Get all inventory items and all transactions to apply 1+1 logic
+    // Fetch all inventory and all transactions at once (optimized!)
     final futures = await Future.wait([
       _firestore.collection('inventory').get(),
       _firestore.collection('transactions').get(),
@@ -507,7 +451,7 @@ class MonthlyInventoryService {
     final inventorySnapshot = futures[0];
     final transactionSnapshot = futures[1];
 
-    // Group transactions by serial number (case-insensitive)
+    // Group transactions by serial number for quick lookup
     final transactionsBySerial = <String, List<Map<String, dynamic>>>{};
     for (final doc in transactionSnapshot.docs) {
       final data = doc.data();
@@ -528,14 +472,15 @@ class MonthlyInventoryService {
 
       if (serialNumber == null) continue;
 
-      final normalizedSerial = serialNumber.toLowerCase();
-      final transactions = transactionsBySerial[normalizedSerial] ?? [];
-
-      // Apply 1+1 logic to determine current status
-      final currentStatus = _calculateCurrentStatus(serialNumber, transactions);
+      // Use direct status field
+      final status = inventoryData['status'] as String? ?? 'Active';
 
       // Only include items that are currently "Delivered"
-      if (currentStatus != 'Delivered') continue;
+      if (status != 'Delivered') continue;
+
+      // Get transactions for this item from our pre-fetched map
+      final normalizedSerial = serialNumber.toLowerCase();
+      final transactions = transactionsBySerial[normalizedSerial] ?? [];
 
       // Find the delivery transaction (Stock_Out with "Delivered" status)
       Map<String, dynamic>? deliveryTransaction;
@@ -666,37 +611,18 @@ class MonthlyInventoryService {
     return await _calculateRemainingUsing1Plus1Logic(endDate);
   }
 
-  /// Calculate remaining using 1+1 logic: counts items that are currently active
+  /// Calculate remaining using direct status field: counts items that are currently active
   Future<Map<String, int>> _calculateRemainingUsing1Plus1Logic(
     DateTime endDate,
   ) async {
-    // Get all inventory items and all transactions to apply 1+1 logic
-    final futures = await Future.wait([
-      _firestore.collection('inventory').get(),
-      _firestore.collection('transactions').get(),
-    ]);
-
-    final inventorySnapshot = futures[0];
-    final transactionSnapshot = futures[1];
-
-    // Group transactions by serial number (case-insensitive)
-    final transactionsBySerial = <String, List<Map<String, dynamic>>>{};
-    for (final doc in transactionSnapshot.docs) {
-      final data = doc.data();
-      final serialNumber = data['serial_number'] as String?;
-      if (serialNumber != null) {
-        final normalizedSerial = serialNumber.toLowerCase();
-        transactionsBySerial[normalizedSerial] ??= [];
-        transactionsBySerial[normalizedSerial]!.add({'id': doc.id, ...data});
-      }
-    }
+    // Get all inventory items (no need to fetch transactions!)
+    final inventorySnapshot = await _firestore.collection('inventory').get();
 
     Map<String, int> remainingBySize = {};
 
-    // Check each inventory item to see if it's currently active up to the specified date
+    // Check each inventory item to see if it's currently active
     for (final doc in inventorySnapshot.docs) {
       final data = doc.data();
-      final serialNumber = data['serial_number'] as String?;
       final category = data['equipment_category'] as String? ?? 'Unknown';
       final size = data['size'] as String? ?? '';
 
@@ -706,39 +632,25 @@ class MonthlyInventoryService {
         continue; // Skip items created after the end date
       }
 
-      if (serialNumber != null) {
-        final normalizedSerial = serialNumber.toLowerCase();
-        final transactions = transactionsBySerial[normalizedSerial] ?? [];
+      // Use direct status from inventory collection (single source of truth)
+      final status = data['status'] as String? ?? 'Active';
 
-        // Filter transactions to only include those up to the end date
-        final filteredTransactions = transactions.where((transaction) {
-          final transactionDate = _normalizeDate(transaction['date']);
-          return transactionDate != null && !transactionDate.isAfter(endDate);
-        }).toList();
-
-        // Calculate current status using 1+1 logic with filtered transactions
-        final currentStatus = _calculateCurrentStatus(
-          serialNumber,
-          filteredTransactions,
-        );
-
-        // Only count items that are currently active
-        if (currentStatus == 'Active') {
-          // Skip items from "Others" category as they don't have meaningful sizes
-          if (category.toLowerCase() != 'others') {
-            String displaySize;
-            if (category.toLowerCase() == 'interactive flat panel' ||
-                category.toLowerCase() == 'ifp') {
-              displaySize = size.isEmpty ? 'Unknown' : size;
-            } else if (category.toLowerCase() == 'unknown' && size.isNotEmpty) {
-              displaySize = size;
-            } else {
-              displaySize = 'Unknown';
-            }
-
-            remainingBySize[displaySize] =
-                (remainingBySize[displaySize] ?? 0) + 1;
+      // Only count items that are currently active
+      if (status == 'Active') {
+        // Skip items from "Others" category as they don't have meaningful sizes
+        if (category.toLowerCase() != 'others') {
+          String displaySize;
+          if (category.toLowerCase() == 'interactive flat panel' ||
+              category.toLowerCase() == 'ifp') {
+            displaySize = size.isEmpty ? 'Unknown' : size;
+          } else if (category.toLowerCase() == 'unknown' && size.isNotEmpty) {
+            displaySize = size;
+          } else {
+            displaySize = 'Unknown';
           }
+
+          remainingBySize[displaySize] =
+              (remainingBySize[displaySize] ?? 0) + 1;
         }
       }
     }
@@ -852,12 +764,12 @@ class MonthlyInventoryService {
   }
 
   /// Get stock out data grouped by category
-  /// Uses 1+1 logic: counts items that are currently delivered within the date range
+  /// Uses direct status field to find delivered items
   Future<Map<String, int>> _getStockOutDataByCategory(
     DateTime startOfMonth,
     DateTime endOfMonth,
   ) async {
-    // Get all inventory items and all transactions to apply 1+1 logic
+    // Get all inventory items and all transactions
     final futures = await Future.wait([
       _firestore.collection('inventory').get(),
       _firestore.collection('transactions').get(),
@@ -866,7 +778,7 @@ class MonthlyInventoryService {
     final inventorySnapshot = futures[0];
     final transactionSnapshot = futures[1];
 
-    // Group transactions by serial number (case-insensitive)
+    // Group transactions by serial number for quick lookup
     final transactionsBySerial = <String, List<Map<String, dynamic>>>{};
     for (final doc in transactionSnapshot.docs) {
       final data = doc.data();
@@ -888,27 +800,25 @@ class MonthlyInventoryService {
         data['equipment_category'] as String?,
       );
 
-      if (serialNumber != null) {
+      if (serialNumber == null) continue;
+
+      // Use direct status field (single source of truth)
+      final status = data['status'] as String? ?? 'Active';
+
+      // Only count items that are currently delivered
+      if (status == 'Delivered') {
+        // Get transactions from pre-fetched map
         final normalizedSerial = serialNumber.toLowerCase();
         final transactions = transactionsBySerial[normalizedSerial] ?? [];
 
-        // Calculate current status using 1+1 logic
-        final currentStatus = _calculateCurrentStatus(
-          serialNumber,
-          transactions,
-        );
-
-        // Only count items that are currently delivered
-        if (currentStatus == 'Delivered') {
-          // Check if the delivery happened within the specified month
-          final deliveryTransaction = _getDeliveryTransaction(transactions);
-          if (deliveryTransaction != null) {
-            final deliveryDate = _normalizeDate(deliveryTransaction['date']);
-            if (deliveryDate != null &&
-                !deliveryDate.isBefore(startOfMonth) &&
-                !deliveryDate.isAfter(endOfMonth)) {
-              stockOutData[category] = (stockOutData[category] ?? 0) + 1;
-            }
+        // Check if the delivery happened within the specified month
+        final deliveryTransaction = _getDeliveryTransaction(transactions);
+        if (deliveryTransaction != null) {
+          final deliveryDate = _normalizeDate(deliveryTransaction['date']);
+          if (deliveryDate != null &&
+              !deliveryDate.isBefore(startOfMonth) &&
+              !deliveryDate.isAfter(endOfMonth)) {
+            stockOutData[category] = (stockOutData[category] ?? 0) + 1;
           }
         }
       }
@@ -918,35 +828,16 @@ class MonthlyInventoryService {
   }
 
   /// Get remaining data grouped by category (cumulative)
-  /// Uses 1+1 logic: counts items that are currently active up to the specified date
+  /// Uses direct status field: counts items that are currently active
   Future<Map<String, int>> _getRemainingDataByCategory(DateTime endDate) async {
-    // Get all inventory items and all transactions to apply 1+1 logic
-    final futures = await Future.wait([
-      _firestore.collection('inventory').get(),
-      _firestore.collection('transactions').get(),
-    ]);
-
-    final inventorySnapshot = futures[0];
-    final transactionSnapshot = futures[1];
-
-    // Group transactions by serial number (case-insensitive)
-    final transactionsBySerial = <String, List<Map<String, dynamic>>>{};
-    for (final doc in transactionSnapshot.docs) {
-      final data = doc.data();
-      final serialNumber = data['serial_number'] as String?;
-      if (serialNumber != null) {
-        final normalizedSerial = serialNumber.toLowerCase();
-        transactionsBySerial[normalizedSerial] ??= [];
-        transactionsBySerial[normalizedSerial]!.add({'id': doc.id, ...data});
-      }
-    }
+    // Get all inventory items (no need for transactions!)
+    final inventorySnapshot = await _firestore.collection('inventory').get();
 
     Map<String, int> remainingByCategory = {};
 
-    // Check each inventory item to see if it's currently active up to the specified date
+    // Check each inventory item to see if it's currently active
     for (final doc in inventorySnapshot.docs) {
       final data = doc.data();
-      final serialNumber = data['serial_number'] as String?;
       final category = _normalizeCategory(
         data['equipment_category'] as String?,
       );
@@ -957,27 +848,13 @@ class MonthlyInventoryService {
         continue; // Skip items created after the end date
       }
 
-      if (serialNumber != null) {
-        final normalizedSerial = serialNumber.toLowerCase();
-        final transactions = transactionsBySerial[normalizedSerial] ?? [];
+      // Use direct status from inventory collection (single source of truth)
+      final status = data['status'] as String? ?? 'Active';
 
-        // Filter transactions to only include those up to the end date
-        final filteredTransactions = transactions.where((transaction) {
-          final transactionDate = _normalizeDate(transaction['date']);
-          return transactionDate != null && !transactionDate.isAfter(endDate);
-        }).toList();
-
-        // Calculate current status using 1+1 logic with filtered transactions
-        final currentStatus = _calculateCurrentStatus(
-          serialNumber,
-          filteredTransactions,
-        );
-
-        // Only count items that are currently active
-        if (currentStatus == 'Active') {
-          remainingByCategory[category] =
-              (remainingByCategory[category] ?? 0) + 1;
-        }
+      // Only count items that are currently active
+      if (status == 'Active') {
+        remainingByCategory[category] =
+            (remainingByCategory[category] ?? 0) + 1;
       }
     }
 

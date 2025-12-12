@@ -47,11 +47,13 @@ class _MonthlyInventoryActivityScreenState
   }
 
   Future<void> _loadAvailableMonths() async {
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
     });
 
     final months = await _service.getAvailableMonths();
+    if (!mounted) return;
     setState(() {
       _availableMonths = months;
       if (months.isNotEmpty) {
@@ -66,6 +68,7 @@ class _MonthlyInventoryActivityScreenState
   Future<void> _loadReport() async {
     if (_selectedMonth == null) return;
 
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
       _error = null;
@@ -76,6 +79,7 @@ class _MonthlyInventoryActivityScreenState
       month: _selectedMonth!['month'],
     );
 
+    if (!mounted) return;
     setState(() {
       _isLoading = false;
       if (result['success'] == true) {
@@ -90,6 +94,7 @@ class _MonthlyInventoryActivityScreenState
   Future<void> _loadDetailedData() async {
     if (_selectedMonth == null) return;
 
+    if (!mounted) return;
     setState(() {
       _isLoadingDetails = true;
     });
@@ -110,6 +115,7 @@ class _MonthlyInventoryActivityScreenState
       );
       final remainingItems = await _getRemainingItems(endOfMonth);
 
+      if (!mounted) return;
       setState(() {
         _stockInItems = stockInItems;
         _stockOutItems = stockOutItems;
@@ -117,6 +123,7 @@ class _MonthlyInventoryActivityScreenState
         _isLoadingDetails = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _isLoadingDetails = false;
       });
@@ -1514,35 +1521,19 @@ class _MonthlyInventoryActivityScreenState
     return null; // Unsupported date type
   }
 
-  /// Get remaining items using 1+1 logic: items that are currently active
+  /// Get remaining items using direct status field: items that are currently active
   Future<List<Map<String, dynamic>>> _getRemainingItems(
     DateTime endDate,
   ) async {
     try {
-      // Get all inventory items and all transactions to apply 1+1 logic
-      final futures = await Future.wait([
-        FirebaseFirestore.instance.collection('inventory').get(),
-        FirebaseFirestore.instance.collection('transactions').get(),
-      ]);
-
-      final inventorySnapshot = futures[0];
-      final transactionSnapshot = futures[1];
-
-      // Group transactions by serial number (case-insensitive)
-      final transactionsBySerial = <String, List<Map<String, dynamic>>>{};
-      for (final doc in transactionSnapshot.docs) {
-        final data = doc.data();
-        final serialNumber = data['serial_number'] as String?;
-        if (serialNumber != null) {
-          final normalizedSerial = serialNumber.toLowerCase();
-          transactionsBySerial[normalizedSerial] ??= [];
-          transactionsBySerial[normalizedSerial]!.add({'id': doc.id, ...data});
-        }
-      }
+      // Get all inventory items (no need for transactions!)
+      final inventorySnapshot = await FirebaseFirestore.instance
+          .collection('inventory')
+          .get();
 
       List<Map<String, dynamic>> remainingItems = [];
 
-      // Check each inventory item to see if it's currently active up to the end date
+      // Check each inventory item to see if it's currently active
       for (final doc in inventorySnapshot.docs) {
         final data = doc.data();
         final serialNumber = data['serial_number'] as String?;
@@ -1553,24 +1544,12 @@ class _MonthlyInventoryActivityScreenState
           continue; // Skip items created after the end date
         }
 
-        if (serialNumber != null) {
-          final normalizedSerial = serialNumber.toLowerCase();
-          final transactions = transactionsBySerial[normalizedSerial] ?? [];
+        // Use direct status from inventory collection (single source of truth)
+        final status = data['status'] as String? ?? 'Active';
 
-          // Filter transactions to only include those up to the end date
-          final filteredTransactions = transactions.where((transaction) {
-            final transactionDate = _normalizeDate(transaction['date']);
-            return transactionDate != null && !transactionDate.isAfter(endDate);
-          }).toList();
-
-          // Calculate current status using 1+1 logic with filtered transactions
-          final currentStatus = _calculateCurrentStatus(
-            serialNumber,
-            filteredTransactions,
-          );
-
-          // Only include items that are currently active
-          if (currentStatus == 'Active') {
+        // Only include items that are currently active
+        if (status == 'Active') {
+          if (serialNumber != null) {
             remainingItems.add({
               'id': doc.id,
               'serial_number': serialNumber,
@@ -1589,60 +1568,6 @@ class _MonthlyInventoryActivityScreenState
       return remainingItems;
     } catch (e) {
       return [];
-    }
-  }
-
-  /// Calculate current status using enhanced logic to handle dual Stock_Out transactions
-  String _calculateCurrentStatus(
-    String serialNumber,
-    List<Map<String, dynamic>> transactions,
-  ) {
-    if (transactions.isEmpty) {
-      return 'Active';
-    }
-
-    // Count Stock_In and Stock_Out transactions
-    int stockInCount = 0;
-    int stockOutCount = 0;
-    bool hasDeliveredStockOut = false;
-    bool hasReservedStockOut = false;
-
-    for (final transaction in transactions) {
-      final type = transaction['type'] as String?;
-      final status = transaction['status'] as String?;
-
-      if (type == 'Stock_In') {
-        stockInCount++;
-      } else if (type == 'Stock_Out') {
-        stockOutCount++;
-        if (status == 'Delivered') {
-          hasDeliveredStockOut = true;
-        } else if (status == 'Reserved') {
-          hasReservedStockOut = true;
-        }
-      }
-    }
-
-    // Enhanced logic to handle dual Stock_Out transaction system:
-    // - 1 Stock_In + Stock_Out(s) with any 'Delivered' status = Delivered
-    // - 1 Stock_In + Stock_Out(s) with only 'Reserved' status = Reserved
-    // - Stock_Out without matching Stock_In = Reserved (pending delivery)
-    // - Stock_In without Stock_Out = Active (in stock)
-    // - No transactions = Active
-    if (stockInCount == 1 && stockOutCount >= 1) {
-      if (hasDeliveredStockOut) {
-        return 'Delivered';
-      } else if (hasReservedStockOut) {
-        return 'Reserved';
-      } else {
-        return 'Reserved'; // Default for Stock_Out without clear status
-      }
-    } else if (stockOutCount > 0 && stockInCount == 0) {
-      return 'Reserved'; // Ordered but not received
-    } else if (stockOutCount > stockInCount) {
-      return 'Reserved'; // More orders than received
-    } else {
-      return 'Active'; // In stock or default
     }
   }
 

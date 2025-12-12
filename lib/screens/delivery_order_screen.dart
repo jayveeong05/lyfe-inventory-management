@@ -30,11 +30,11 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
   DateTime _selectedDate = DateTime.now();
 
   // Normal Delivery Order PDF
-  File? _normalDeliveryFile;
+  PlatformFile? _normalDeliveryPlatformFile;
   String? _normalDeliveryFileName;
 
   // Signed Delivery Order PDF
-  File? _signedDeliveryFile;
+  PlatformFile? _signedDeliveryPlatformFile;
   String? _signedDeliveryFileName;
 
   bool _isLoadingOrders = false;
@@ -297,9 +297,9 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
         allowMultiple: false,
       );
 
-      if (result != null && result.files.single.path != null) {
+      if (result != null) {
         setState(() {
-          _normalDeliveryFile = File(result.files.single.path!);
+          _normalDeliveryPlatformFile = result.files.single;
           _normalDeliveryFileName = result.files.single.name;
         });
       }
@@ -323,9 +323,9 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
         allowMultiple: false,
       );
 
-      if (result != null && result.files.single.path != null) {
+      if (result != null) {
         setState(() {
-          _signedDeliveryFile = File(result.files.single.path!);
+          _signedDeliveryPlatformFile = result.files.single;
           _signedDeliveryFileName = result.files.single.name;
         });
       }
@@ -342,7 +342,7 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
   }
 
   Future<void> _extractDeliveryData() async {
-    if (_normalDeliveryFile == null) {
+    if (_normalDeliveryPlatformFile == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please select a normal delivery PDF file first'),
@@ -374,9 +374,22 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
       await _ocrService.initialize();
 
       // Extract data from file
-      final result = await _ocrService.extractDeliveryData(
-        _normalDeliveryFile!,
-      );
+      Map<String, dynamic> result;
+      if (kIsWeb) {
+        if (_normalDeliveryPlatformFile!.bytes == null) {
+          throw Exception('File bytes not available on web');
+        }
+        result = await _ocrService.extractDeliveryDataFromBytes(
+          _normalDeliveryPlatformFile!.bytes!,
+        );
+      } else {
+        if (_normalDeliveryPlatformFile!.path == null) {
+          throw Exception('File path not available');
+        }
+        result = await _ocrService.extractDeliveryData(
+          File(_normalDeliveryPlatformFile!.path!),
+        );
+      }
 
       if (result['success'] == true) {
         final confidence = result['confidence'] as double;
@@ -537,7 +550,7 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
   Future<void> _uploadNormalDeliveryOrder() async {
     if (!_formKey.currentState!.validate() ||
         _selectedOrderId == null ||
-        _normalDeliveryFile == null) {
+        _normalDeliveryPlatformFile == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -550,7 +563,7 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
     }
 
     await _uploadDeliveryFile(
-      file: _normalDeliveryFile!,
+      platformFile: _normalDeliveryPlatformFile!,
       fileType: 'delivery_order',
       targetStatus: 'Issued',
       uploadingFlag: 'normal',
@@ -562,7 +575,7 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
   Future<void> _uploadSignedDeliveryOrder() async {
     if (!_formKey.currentState!.validate() ||
         _selectedOrderId == null ||
-        _signedDeliveryFile == null) {
+        _signedDeliveryPlatformFile == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -575,7 +588,7 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
     }
 
     await _uploadDeliveryFile(
-      file: _signedDeliveryFile!,
+      platformFile: _signedDeliveryPlatformFile!,
       fileType: 'signed_delivery_order',
       targetStatus: 'Delivered',
       uploadingFlag: 'signed',
@@ -585,7 +598,7 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
 
   /// Common upload logic for both delivery order types
   Future<void> _uploadDeliveryFile({
-    required File file,
+    required PlatformFile platformFile,
     required String fileType,
     required String targetStatus,
     required String uploadingFlag,
@@ -615,27 +628,69 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
     });
 
     try {
-      // Step 1: Validate file before upload
-      final fileValidation = await _fileService.validateFile(file, fileType);
-      if (!fileValidation['valid']) {
-        throw Exception(fileValidation['error'] ?? 'File validation failed');
-      }
+      // Step 1 & 2: Validate and upload file using FileService
+      FileUploadResult uploadResult;
 
-      // Step 2: Upload or replace file using FileService
-      final uploadResult = isReplaceMode
-          ? await _fileService.replaceFile(
-              orderNumber: orderNumber,
-              fileType: fileType,
-              newFile: file,
-              originalFilename: uploadingFlag == 'normal'
-                  ? _normalDeliveryFileName
-                  : _signedDeliveryFileName,
-            )
-          : await _fileService.uploadFile(
-              file: file,
-              orderNumber: orderNumber,
-              fileType: fileType,
-            );
+      if (kIsWeb) {
+        if (platformFile.bytes == null) {
+          throw Exception('File bytes not available on web');
+        }
+
+        // Validate file from bytes
+        final fileValidation = await _fileService.validateFileFromBytes(
+          platformFile.bytes!,
+          platformFile.name,
+          fileType,
+        );
+        if (!fileValidation['valid']) {
+          throw Exception(fileValidation['error'] ?? 'File validation failed');
+        }
+
+        // Upload or replace using bytes
+        uploadResult = isReplaceMode
+            ? await _fileService.replaceFileFromBytes(
+                orderNumber: orderNumber,
+                fileType: fileType,
+                bytes: platformFile.bytes!,
+                originalFilename: uploadingFlag == 'normal'
+                    ? _normalDeliveryFileName ?? platformFile.name
+                    : _signedDeliveryFileName ?? platformFile.name,
+              )
+            : await _fileService.uploadFileFromBytes(
+                bytes: platformFile.bytes!,
+                orderNumber: orderNumber,
+                fileType: fileType,
+                originalFilename: platformFile.name,
+              );
+      } else {
+        // Mobile/Desktop
+        if (platformFile.path == null) {
+          throw Exception('File path not available');
+        }
+        final file = File(platformFile.path!);
+
+        // Validate file
+        final fileValidation = await _fileService.validateFile(file, fileType);
+        if (!fileValidation['valid']) {
+          throw Exception(fileValidation['error'] ?? 'File validation failed');
+        }
+
+        // Upload or replace using file
+        uploadResult = isReplaceMode
+            ? await _fileService.replaceFile(
+                orderNumber: orderNumber,
+                fileType: fileType,
+                newFile: file,
+                originalFilename: uploadingFlag == 'normal'
+                    ? _normalDeliveryFileName
+                    : _signedDeliveryFileName,
+              )
+            : await _fileService.uploadFile(
+                file: file,
+                orderNumber: orderNumber,
+                fileType: fileType,
+              );
+      }
 
       if (!uploadResult.success) {
         throw Exception(uploadResult.error ?? 'File upload failed');
@@ -692,14 +747,14 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
         setState(() {
           // Clear the appropriate file based on upload type
           if (uploadingFlag == 'normal') {
-            _normalDeliveryFile = null;
+            _normalDeliveryPlatformFile = null;
             _normalDeliveryFileName = null;
             _showNormalUploadForm = false;
             if (isReplaceMode) {
               _isNormalReplaceMode = false;
             }
           } else {
-            _signedDeliveryFile = null;
+            _signedDeliveryPlatformFile = null;
             _signedDeliveryFileName = null;
             _showSignedUploadForm = false;
             if (isReplaceMode) {
@@ -788,9 +843,9 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
           // Reset form and reload data
           setState(() {
             _currentDeliveryOrder = null;
-            _normalDeliveryFile = null;
+            _normalDeliveryPlatformFile = null;
             _normalDeliveryFileName = null;
-            _signedDeliveryFile = null;
+            _signedDeliveryPlatformFile = null;
             _signedDeliveryFileName = null;
             _isNormalReplaceMode = false;
             _isSignedReplaceMode = false;
@@ -983,6 +1038,10 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
                     _buildStatusLegendCard(),
                     const SizedBox(height: 16),
 
+                    // OCR Extraction Button
+                    if (_normalDeliveryPlatformFile != null) ...[
+                      const SizedBox(height: 12),
+                    ],
                     // Order Selection Card
                     _buildOrderSelectionCard(),
                     const SizedBox(height: 16),
@@ -1026,9 +1085,9 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.orange.withValues(alpha: 0.1),
+          color: Colors.orange.withOpacity(0.1),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+          border: Border.all(color: Colors.orange.withOpacity(0.3)),
         ),
         child: Row(
           children: [
@@ -1197,9 +1256,9 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
                   _isNormalReplaceMode = false;
                   _isSignedReplaceMode = false;
                   // Clear selected files
-                  _normalDeliveryFile = null;
+                  _normalDeliveryPlatformFile = null;
                   _normalDeliveryFileName = null;
-                  _signedDeliveryFile = null;
+                  _signedDeliveryPlatformFile = null;
                   _signedDeliveryFileName = null;
                 });
                 if (newValue != null) {
@@ -1774,22 +1833,22 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
                 child: Column(
                   children: [
                     Icon(
-                      _normalDeliveryFile != null
+                      _normalDeliveryPlatformFile != null
                           ? Icons.picture_as_pdf
                           : Icons.upload_file,
                       size: 48,
-                      color: _normalDeliveryFile != null
+                      color: _normalDeliveryPlatformFile != null
                           ? Colors.red
                           : Colors.grey.shade400,
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      _normalDeliveryFile != null
+                      _normalDeliveryPlatformFile != null
                           ? _normalDeliveryFileName ?? 'Selected file'
                           : 'No file selected',
                       style: TextStyle(
                         fontSize: 14,
-                        color: _normalDeliveryFile != null
+                        color: _normalDeliveryPlatformFile != null
                             ? Colors.black87
                             : Colors.grey.shade600,
                       ),
@@ -1800,9 +1859,9 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
                       onPressed: _selectNormalDeliveryFile,
                       icon: const Icon(Icons.folder_open),
                       label: Text(
-                        _normalDeliveryFile != null
+                        _normalDeliveryPlatformFile != null
                             ? 'Change File'
-                            : 'Select PDF',
+                            : 'Select Normal Delivery PDF',
                       ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.blue,
@@ -1830,7 +1889,8 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  onPressed: _normalDeliveryFile != null && !_isUploadingNormal
+                  onPressed:
+                      _normalDeliveryPlatformFile != null && !_isUploadingNormal
                       ? _uploadNormalDeliveryOrder
                       : null,
                   icon: _isUploadingNormal
@@ -1866,7 +1926,7 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
                   onPressed: () {
                     setState(() {
                       _showNormalUploadForm = false;
-                      _normalDeliveryFile = null;
+                      _normalDeliveryPlatformFile = null;
                       _normalDeliveryFileName = null;
                     });
                     _deliveryNumberController.clear();
@@ -2097,22 +2157,22 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
                 child: Column(
                   children: [
                     Icon(
-                      _signedDeliveryFile != null
+                      _signedDeliveryPlatformFile != null
                           ? Icons.picture_as_pdf
                           : Icons.upload_file,
                       size: 48,
-                      color: _signedDeliveryFile != null
+                      color: _signedDeliveryPlatformFile != null
                           ? Colors.red
                           : Colors.grey.shade400,
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      _signedDeliveryFile != null
+                      _signedDeliveryPlatformFile != null
                           ? _signedDeliveryFileName ?? 'Selected file'
                           : 'No file selected',
                       style: TextStyle(
                         fontSize: 14,
-                        color: _signedDeliveryFile != null
+                        color: _signedDeliveryPlatformFile != null
                             ? Colors.black87
                             : Colors.grey.shade600,
                       ),
@@ -2123,7 +2183,7 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
                       onPressed: _selectSignedDeliveryFile,
                       icon: const Icon(Icons.folder_open),
                       label: Text(
-                        _signedDeliveryFile != null
+                        _signedDeliveryPlatformFile != null
                             ? 'Change File'
                             : 'Select PDF',
                       ),
@@ -2153,7 +2213,8 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  onPressed: _signedDeliveryFile != null && !_isUploadingSigned
+                  onPressed:
+                      _signedDeliveryPlatformFile != null && !_isUploadingSigned
                       ? _uploadSignedDeliveryOrder
                       : null,
                   icon: _isUploadingSigned
@@ -2189,7 +2250,7 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
                   onPressed: () {
                     setState(() {
                       _showSignedUploadForm = false;
-                      _signedDeliveryFile = null;
+                      _signedDeliveryPlatformFile = null;
                       _signedDeliveryFileName = null;
                     });
                     _remarksController.clear();

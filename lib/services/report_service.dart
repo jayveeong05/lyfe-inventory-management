@@ -357,7 +357,7 @@ class ReportService {
     final statusStats = <String, int>{};
     final locationStats = <String, int>{};
 
-    // Build transaction map for quick lookup (case-insensitive)
+    // Build transaction map for history (not for status calculation)
     final transactionsBySerial = <String, List<Map<String, dynamic>>>{};
     for (final doc in transactionSnapshot.docs) {
       final data = doc.data() as Map<String, dynamic>;
@@ -376,11 +376,11 @@ class ReportService {
 
       if (serialNumber == null) continue;
 
-      // Get transaction history for this item (case-insensitive)
+      // Get transaction history for this item (for activity tracking only)
       final normalizedSerial = serialNumber.toLowerCase();
       final itemTransactions = transactionsBySerial[normalizedSerial] ?? [];
 
-      // Sort transactions by date (most recent first) - using date field
+      // Sort transactions by date (most recent first)
       itemTransactions.sort((a, b) {
         final aTime = a['date'];
         final bTime = b['date'];
@@ -407,18 +407,15 @@ class ReportService {
         return bDate.compareTo(aDate); // Most recent first
       });
 
-      // Calculate current status using new 1+1 logic
-      String currentStatus = _calculateCurrentStatus(
-        serialNumber,
-        itemTransactions,
-      );
-      String? currentLocation;
+      // Use direct status from inventory collection
+      String currentStatus = data['status'] as String? ?? 'Active';
+      String? currentLocation = data['location'] as String?;
       DateTime? lastActivity;
 
-      // Get location and activity from most recent transaction
+      // Get last activity from most recent transaction
       if (itemTransactions.isNotEmpty) {
         final latestTransaction = itemTransactions.first;
-        currentLocation = latestTransaction['location'] as String?;
+        currentLocation ??= latestTransaction['location'] as String?;
 
         // Handle date field for last activity
         final dateValue = latestTransaction['date'];

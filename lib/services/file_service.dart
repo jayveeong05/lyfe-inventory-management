@@ -117,6 +117,69 @@ class FileService {
     }
   }
 
+  /// Validate file from bytes (for web compatibility)
+  Future<Map<String, dynamic>> validateFileFromBytes(
+    Uint8List bytes,
+    String fileName,
+    String fileType,
+  ) async {
+    try {
+      // Check file extension
+      final lowerFileName = fileName.toLowerCase();
+      if (!FileConstants.allowedExtensions.any(
+        (ext) => lowerFileName.endsWith(ext),
+      )) {
+        return {
+          'valid': false,
+          'error':
+              'Only PDF files are allowed. Allowed extensions: ${FileConstants.allowedExtensions.join(', ')}',
+        };
+      }
+
+      // Check file size
+      final fileSize = bytes.length;
+      if (fileSize > FileConstants.maxFileSizeBytes) {
+        final maxSizeMB = (FileConstants.maxFileSizeBytes / (1024 * 1024))
+            .toStringAsFixed(1);
+        final currentSizeMB = (fileSize / (1024 * 1024)).toStringAsFixed(1);
+        return {
+          'valid': false,
+          'error':
+              'File size (${currentSizeMB}MB) exceeds maximum allowed size of ${maxSizeMB}MB',
+        };
+      }
+
+      // Basic PDF validation - check file header
+      if (bytes.length < 4 ||
+          bytes[0] != 0x25 ||
+          bytes[1] != 0x50 ||
+          bytes[2] != 0x44 ||
+          bytes[3] != 0x46) {
+        return {'valid': false, 'error': 'Invalid PDF file format'};
+      }
+
+      // Validate file type
+      if (![
+        'invoice',
+        'delivery_order',
+        'signed_delivery_order',
+      ].contains(fileType)) {
+        return {
+          'valid': false,
+          'error':
+              'Invalid file type. Must be "invoice", "delivery_order", or "signed_delivery_order"',
+        };
+      }
+
+      return {'valid': true, 'file_size': fileSize, 'file_name': fileName};
+    } catch (e) {
+      return {
+        'valid': false,
+        'error': 'File validation failed: ${e.toString()}',
+      };
+    }
+  }
+
   /// Generate file path for Firebase Storage
   String _generateFilePath(String orderNumber, String fileType) {
     final timestamp = DateTime.now();

@@ -54,56 +54,36 @@ class DashboardService {
     }
   }
 
-  // Get inventory statistics using new 1+1 logic
+  // Get inventory statistics using direct status field
   Future<Map<String, dynamic>> _getInventoryStats() async {
     try {
       // Get all inventory items
       final inventorySnapshot = await _firestore.collection('inventory').get();
       final totalInventoryItems = inventorySnapshot.docs.length;
 
-      // Get all transactions for status calculation
-      final transactionSnapshot = await _firestore
-          .collection('transactions')
-          .orderBy('date', descending: true)
-          .get();
-
-      // Create transaction lookup map (case-insensitive)
-      final Map<String, List<Map<String, dynamic>>> transactionsBySerial = {};
-      for (final doc in transactionSnapshot.docs) {
-        final data = doc.data();
-        final serialNumber = data['serial_number'] as String?;
-        if (serialNumber != null) {
-          final normalizedSerial = serialNumber.toLowerCase();
-          transactionsBySerial.putIfAbsent(normalizedSerial, () => []);
-          transactionsBySerial[normalizedSerial]!.add({...data, 'id': doc.id});
-        }
-      }
-
-      // Count items by status using new 1+1 logic
+      // Count items by status - read directly from inventory.status field
       int activeStock = 0;
       int reservedItems = 0;
       int deliveredItems = 0;
+      int demoItems = 0;
 
       for (final doc in inventorySnapshot.docs) {
         final data = doc.data();
-        final serialNumber = data['serial_number'] as String?;
+        final status = data['status'] as String? ?? 'Active';
 
-        if (serialNumber != null) {
-          final normalizedSerial = serialNumber.toLowerCase();
-          final transactions = transactionsBySerial[normalizedSerial] ?? [];
-          final status = _calculateCurrentStatus(serialNumber, transactions);
-
-          switch (status) {
-            case 'Active':
-              activeStock++;
-              break;
-            case 'Reserved':
-              reservedItems++;
-              break;
-            case 'Delivered':
-              deliveredItems++;
-              break;
-          }
+        switch (status) {
+          case 'Active':
+            activeStock++;
+            break;
+          case 'Reserved':
+            reservedItems++;
+            break;
+          case 'Delivered':
+            deliveredItems++;
+            break;
+          case 'Demo':
+            demoItems++;
+            break;
         }
       }
 
@@ -114,6 +94,7 @@ class DashboardService {
             deliveredItems, // For backward compatibility with Key Metrics
         'reservedItems': reservedItems,
         'deliveredItems': deliveredItems,
+        'demoItems': demoItems,
       };
     } catch (e) {
       print('Error fetching inventory stats: $e');
@@ -123,6 +104,7 @@ class DashboardService {
         'stockedOutItems': 0,
         'reservedItems': 0,
         'deliveredItems': 0,
+        'demoItems': 0,
       };
     }
   }
@@ -295,63 +277,39 @@ class DashboardService {
   }
 
   // Get top equipment categories by active items count
+  // Get top categories by active item count (direct status field)
   Future<List<Map<String, dynamic>>> _getTopCategories() async {
     try {
-      // Get all inventory items and all transactions to calculate active status
-      final futures = await Future.wait([
-        _firestore.collection('inventory').get(),
-        _firestore.collection('transactions').get(),
-      ]);
+      // Get all inventory items
+      final inventorySnapshot = await _firestore.collection('inventory').get();
 
-      final inventorySnapshot = futures[0];
-      final transactionSnapshot = futures[1];
+      // Group by category and count active items
+      final Map<String, int> categoryActiveCount = {};
 
-      // Group transactions by serial number (case-insensitive)
-      final transactionsBySerial = <String, List<Map<String, dynamic>>>{};
-      for (final doc in transactionSnapshot.docs) {
-        final data = doc.data();
-        final serialNumber = data['serial_number'] as String?;
-        if (serialNumber != null) {
-          final normalizedSerial = serialNumber.toLowerCase();
-          transactionsBySerial[normalizedSerial] ??= [];
-          transactionsBySerial[normalizedSerial]!.add({'id': doc.id, ...data});
-        }
-      }
-
-      Map<String, int> categoryActiveCount = {};
-
-      // Process each inventory item to check if it's currently active
       for (final doc in inventorySnapshot.docs) {
         final data = doc.data();
-        final category = data['equipment_category'] as String?;
-        final serialNumber = data['serial_number'] as String?;
+        final category = data['equipment_category'] as String? ?? 'Unknown';
+        final status = data['status'] as String? ?? 'Active';
 
-        if (category != null && serialNumber != null) {
-          final normalizedSerial = serialNumber.toLowerCase();
-          final transactions = transactionsBySerial[normalizedSerial] ?? [];
-
-          // Calculate current status using enhanced 1+1 logic
-          final currentStatus = _calculateCurrentStatus(
-            serialNumber,
-            transactions,
-          );
-
-          // Only count active items
-          if (currentStatus == 'Active') {
-            categoryActiveCount[category] =
-                (categoryActiveCount[category] ?? 0) + 1;
-          }
+        // Only count Active status items
+        if (status == 'Active') {
+          categoryActiveCount[category] =
+              (categoryActiveCount[category] ?? 0) + 1;
         }
       }
 
-      // Sort by active count and return top 5
-      final sortedCategories = categoryActiveCount.entries.toList()
-        ..sort((a, b) => b.value.compareTo(a.value));
-
-      return sortedCategories
-          .take(5)
+      // Convert to list and sort by count
+      final topCategories = categoryActiveCount.entries
           .map((entry) => {'category': entry.key, 'active_count': entry.value})
           .toList();
+
+      topCategories.sort(
+        (a, b) =>
+            (b['active_count'] as int).compareTo(a['active_count'] as int),
+      );
+
+      // Return top 5 categories
+      return topCategories.take(5).toList();
     } catch (e) {
       print('Error fetching top categories: $e');
       return [];

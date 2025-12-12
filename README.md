@@ -349,7 +349,17 @@ For support and questions:
 
 ## 🔄 Version History
 
-### v2.1.1 (Current - December 2025)
+### v2.1.2 (Current - December 2025)
+- ✅ **Inventory Status Refactoring - Complete**: Unified all inventory reporting to use `inventory.status` as single source of truth
+- ✅ **Performance Optimization**: Monthly Inventory screen loading improved by 93% (60+ seconds → 2-5 seconds)
+- ✅ **Data Accuracy Fixes**: Resolved 35-item discrepancy in Monthly Inventory reports (244 → 209)
+- ✅ **Code Simplification**: Removed 240 lines of complex transaction-based logic across 7 functions
+- ✅ **Batch Query Optimization**: Eliminated 100+ individual Firestore queries per Stock Out operation
+- ✅ **Widget Lifecycle Fixes**: Added mounted checks to prevent setState after dispose errors
+- ✅ **Unified Calculation Approach**: Dashboard, Category, Reports, and Monthly Inventory now use consistent direct status queries
+
+### v2.1.1 (December 2025)
+
 - ✅ **Change Password Feature**: Secure self-service password change functionality for all users with re-authentication
 - ✅ **Enhanced Email Validation**: Updated validation logic to support top-level domains with 2+ characters (e.g., .technology, .consulting)
 - ✅ **Advanced Item Return Search**:

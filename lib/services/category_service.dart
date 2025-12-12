@@ -6,29 +6,11 @@ class CategoryService {
   /// Get detailed category information with models and active counts
   Future<Map<String, dynamic>> getCategoryDetails(String categoryName) async {
     try {
-      // Get all inventory items and all transactions to calculate active status
-      final futures = await Future.wait([
-        _firestore
-            .collection('inventory')
-            .where('equipment_category', isEqualTo: categoryName)
-            .get(),
-        _firestore.collection('transactions').get(),
-      ]);
-
-      final inventorySnapshot = futures[0];
-      final transactionSnapshot = futures[1];
-
-      // Group transactions by serial number (case-insensitive)
-      final transactionsBySerial = <String, List<Map<String, dynamic>>>{};
-      for (final doc in transactionSnapshot.docs) {
-        final data = doc.data();
-        final serialNumber = data['serial_number'] as String?;
-        if (serialNumber != null) {
-          final normalizedSerial = serialNumber.toLowerCase();
-          transactionsBySerial[normalizedSerial] ??= [];
-          transactionsBySerial[normalizedSerial]!.add({'id': doc.id, ...data});
-        }
-      }
+      // Get inventory items for this category
+      final inventorySnapshot = await _firestore
+          .collection('inventory')
+          .where('equipment_category', isEqualTo: categoryName)
+          .get();
 
       Map<String, int> modelActiveCount = {}; // normalized model -> count
       Map<String, String> modelCaseMapping =
@@ -45,51 +27,40 @@ class CategoryService {
       // Process each inventory item in this category
       for (final doc in inventorySnapshot.docs) {
         final data = doc.data();
-        final serialNumber = data['serial_number'] as String?;
         final model = data['model'] as String? ?? 'Unknown';
         final size = _extractSizeFromInventoryData(data);
+        final status = data['status'] as String? ?? 'Active';
 
         totalItems++;
 
-        if (serialNumber != null) {
-          final normalizedSerial = serialNumber.toLowerCase();
-          final transactions = transactionsBySerial[normalizedSerial] ?? [];
+        // Count by status - read directly from inventory.status field
+        switch (status) {
+          case 'Active':
+            activeItems++;
 
-          // Calculate current status using enhanced 1+1 logic
-          final currentStatus = _calculateCurrentStatus(
-            serialNumber,
-            transactions,
-          );
+            // Use case-insensitive model grouping
+            final normalizedModel = model.toLowerCase();
+            modelActiveCount[normalizedModel] =
+                (modelActiveCount[normalizedModel] ?? 0) + 1;
+            modelCaseMapping[normalizedModel] = model; // Store original case
 
-          // Count by status
-          switch (currentStatus) {
-            case 'Active':
-              activeItems++;
+            // For Interactive Flat Panel, also count by size
+            if (categoryName == 'Interactive Flat Panel' && size != null) {
+              sizeModelActiveCount[size] ??= {};
+              sizeModelCaseMapping[size] ??= {};
 
-              // Use case-insensitive model grouping
-              final normalizedModel = model.toLowerCase();
-              modelActiveCount[normalizedModel] =
-                  (modelActiveCount[normalizedModel] ?? 0) + 1;
-              modelCaseMapping[normalizedModel] = model; // Store original case
-
-              // For Interactive Flat Panel, also count by size
-              if (categoryName == 'Interactive Flat Panel' && size != null) {
-                sizeModelActiveCount[size] ??= {};
-                sizeModelCaseMapping[size] ??= {};
-
-                sizeModelActiveCount[size]![normalizedModel] =
-                    (sizeModelActiveCount[size]![normalizedModel] ?? 0) + 1;
-                sizeModelCaseMapping[size]![normalizedModel] =
-                    model; // Store original case
-              }
-              break;
-            case 'Reserved':
-              reservedItems++;
-              break;
-            case 'Delivered':
-              deliveredItems++;
-              break;
-          }
+              sizeModelActiveCount[size]![normalizedModel] =
+                  (sizeModelActiveCount[size]![normalizedModel] ?? 0) + 1;
+              sizeModelCaseMapping[size]![normalizedModel] =
+                  model; // Store original case
+            }
+            break;
+          case 'Reserved':
+            reservedItems++;
+            break;
+          case 'Delivered':
+            deliveredItems++;
+            break;
         }
       }
 

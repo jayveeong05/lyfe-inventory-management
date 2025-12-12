@@ -29,7 +29,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   String? _selectedPOId;
   Map<String, dynamic>? _currentInvoice;
   DateTime _selectedDate = DateTime.now();
-  File? _selectedFile;
+  PlatformFile? _pickedFile;
   String? _selectedFileName;
 
   bool _isLoadingPOs = false;
@@ -222,7 +222,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
       _isReplaceMode = !_isReplaceMode;
       if (!_isReplaceMode) {
         // Reset form when exiting replace mode
-        _selectedFile = null;
+        _pickedFile = null;
         _selectedFileName = null;
         _invoiceNumberController.clear();
         _remarksController.clear();
@@ -248,9 +248,9 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
         allowMultiple: false,
       );
 
-      if (result != null && result.files.single.path != null) {
+      if (result != null) {
         setState(() {
-          _selectedFile = File(result.files.single.path!);
+          _pickedFile = result.files.single;
           _selectedFileName = result.files.single.name;
         });
       }
@@ -282,7 +282,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   }
 
   Future<void> _extractInvoiceData() async {
-    if (_selectedFile == null) {
+    if (_pickedFile == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please select a PDF file first'),
@@ -314,7 +314,20 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
       await _ocrService.initialize();
 
       // Extract data from file
-      final result = await _ocrService.extractInvoiceData(_selectedFile!);
+      Map<String, dynamic> result;
+      if (kIsWeb) {
+        if (_pickedFile!.bytes == null) {
+          throw Exception('File bytes not available on web');
+        }
+        result = await _ocrService.extractInvoiceDataFromBytes(
+          _pickedFile!.bytes!,
+        );
+      } else {
+        if (_pickedFile!.path == null) {
+          throw Exception('File path not available');
+        }
+        result = await _ocrService.extractInvoiceData(File(_pickedFile!.path!));
+      }
 
       if (result['success'] == true) {
         final confidence = result['confidence'] as double;
@@ -489,7 +502,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   Future<void> _uploadInvoiceWithFileService() async {
     if (!_formKey.currentState!.validate() ||
         _selectedPOId == null ||
-        _selectedFile == null) {
+        _pickedFile == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -529,21 +542,49 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
     });
 
     try {
-      // Step 1: Validate file before upload
-      final fileValidation = await _fileService.validateFile(
-        _selectedFile!,
-        'invoice',
-      );
-      if (!fileValidation['valid']) {
-        throw Exception(fileValidation['error'] ?? 'File validation failed');
-      }
-
       // Step 2: Upload file using FileService
-      final uploadResult = await _fileService.uploadFile(
-        file: _selectedFile!,
-        orderNumber: orderNumber,
-        fileType: 'invoice',
-      );
+      FileUploadResult uploadResult;
+
+      if (kIsWeb) {
+        if (_pickedFile!.bytes == null) {
+          throw Exception('File bytes not available on web');
+        }
+
+        // Validate first
+        final fileValidation = await _fileService.validateFileFromBytes(
+          _pickedFile!.bytes!,
+          _pickedFile!.name,
+          'invoice',
+        );
+        if (!fileValidation['valid']) {
+          throw Exception(fileValidation['error'] ?? 'File validation failed');
+        }
+
+        uploadResult = await _fileService.uploadFileFromBytes(
+          bytes: _pickedFile!.bytes!,
+          orderNumber: orderNumber,
+          fileType: 'invoice',
+          originalFilename: _pickedFile!.name,
+        );
+      } else {
+        // Mobile/Desktop
+        if (_pickedFile!.path == null) {
+          throw Exception('File path not available');
+        }
+        final file = File(_pickedFile!.path!);
+
+        // Validate file
+        final fileValidation = await _fileService.validateFile(file, 'invoice');
+        if (!fileValidation['valid']) {
+          throw Exception(fileValidation['error'] ?? 'File validation failed');
+        }
+
+        uploadResult = await _fileService.uploadFile(
+          file: file,
+          orderNumber: orderNumber,
+          fileType: 'invoice',
+        );
+      }
 
       if (!uploadResult.success) {
         throw Exception(uploadResult.error ?? 'File upload failed');
@@ -608,7 +649,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
         _remarksController.clear();
         setState(() {
           _selectedPOId = null;
-          _selectedFile = null;
+          _pickedFile = null;
           _selectedFileName = null;
           _selectedDate = DateTime.now();
           _currentInvoice = null;
@@ -921,7 +962,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   Future<void> _uploadInvoice() async {
     if (!_formKey.currentState!.validate() ||
         _selectedPOId == null ||
-        _selectedFile == null) {
+        _pickedFile == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -953,7 +994,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
         final uploadResult = await _fileService.replaceFile(
           orderNumber: orderNumber,
           fileType: 'invoice',
-          newFile: _selectedFile!,
+          newFile: File(_pickedFile!.path!),
           originalFilename: _selectedFileName,
         );
 
@@ -992,7 +1033,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
         result = await invoiceService.uploadInvoice(
           poId: _selectedPOId!,
           invoiceNumber: _invoiceNumberController.text.trim(),
-          pdfFile: _selectedFile!,
+          pdfFile: File(_pickedFile!.path!),
           invoiceDate: _selectedDate,
           remarks: _remarksController.text.trim(),
         );
@@ -1016,7 +1057,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
             // Exit replace mode and reload invoice data
             setState(() {
               _isReplaceMode = false;
-              _selectedFile = null;
+              _pickedFile = null;
               _selectedFileName = null;
             });
             // Reload invoice data to show updated information
@@ -1027,7 +1068,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
             _remarksController.clear();
             setState(() {
               _selectedPOId = null;
-              _selectedFile = null;
+              _pickedFile = null;
               _selectedFileName = null;
               _selectedDate = DateTime.now();
               _currentInvoice = null;
@@ -1308,7 +1349,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                     _currentInvoice = null;
                     _isReplaceMode = false;
                     // Reset form
-                    _selectedFile = null;
+                    _pickedFile = null;
                     _selectedFileName = null;
                     _invoiceNumberController.clear();
                     _remarksController.clear();
@@ -1642,27 +1683,27 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 border: Border.all(
-                  color: _selectedFile != null ? Colors.green : Colors.grey,
+                  color: _pickedFile != null ? Colors.green : Colors.grey,
                 ),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Column(
                 children: [
                   Icon(
-                    _selectedFile != null
+                    _pickedFile != null
                         ? Icons.picture_as_pdf
                         : Icons.upload_file,
                     size: 48,
-                    color: _selectedFile != null ? Colors.green : Colors.grey,
+                    color: _pickedFile != null ? Colors.green : Colors.grey,
                   ),
                   const SizedBox(height: 8),
                   Text(
                     _selectedFileName ?? 'No file selected',
                     style: TextStyle(
-                      fontWeight: _selectedFile != null
+                      fontWeight: _pickedFile != null
                           ? FontWeight.bold
                           : FontWeight.normal,
-                      color: _selectedFile != null ? Colors.green : Colors.grey,
+                      color: _pickedFile != null ? Colors.green : Colors.grey,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -1670,7 +1711,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                     onPressed: _pickFile,
                     icon: const Icon(Icons.folder_open),
                     label: Text(
-                      _selectedFile != null ? 'Change File' : 'Select PDF File',
+                      _pickedFile != null ? 'Change File' : 'Select PDF File',
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.blue,
@@ -1679,7 +1720,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                   ),
 
                   // OCR Extraction Button (only show when file is selected)
-                  if (_selectedFile != null) ...[
+                  if (_pickedFile != null) ...[
                     const SizedBox(height: 8),
                     ElevatedButton.icon(
                       onPressed: _isExtractingOCR ? null : _extractInvoiceData,
@@ -1849,29 +1890,27 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 border: Border.all(
-                  color: _selectedFile != null ? Colors.orange : Colors.grey,
+                  color: _pickedFile != null ? Colors.orange : Colors.grey,
                 ),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Column(
                 children: [
                   Icon(
-                    _selectedFile != null
+                    _pickedFile != null
                         ? Icons.picture_as_pdf
                         : Icons.upload_file,
                     size: 48,
-                    color: _selectedFile != null ? Colors.orange : Colors.grey,
+                    color: _pickedFile != null ? Colors.orange : Colors.grey,
                   ),
                   const SizedBox(height: 8),
                   Text(
                     _selectedFileName ?? 'No file selected',
                     style: TextStyle(
-                      fontWeight: _selectedFile != null
+                      fontWeight: _pickedFile != null
                           ? FontWeight.bold
                           : FontWeight.normal,
-                      color: _selectedFile != null
-                          ? Colors.orange
-                          : Colors.grey,
+                      color: _pickedFile != null ? Colors.orange : Colors.grey,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -1879,7 +1918,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                     onPressed: _pickFile,
                     icon: const Icon(Icons.folder_open),
                     label: Text(
-                      _selectedFile != null ? 'Change File' : 'Select PDF File',
+                      _pickedFile != null ? 'Change File' : 'Select PDF File',
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.blue,
@@ -1888,7 +1927,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                   ),
 
                   // OCR Extraction Button (only show when file is selected)
-                  if (_selectedFile != null) ...[
+                  if (_pickedFile != null) ...[
                     const SizedBox(height: 8),
                     ElevatedButton.icon(
                       onPressed: _isExtractingOCR ? null : _extractInvoiceData,

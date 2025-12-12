@@ -51,9 +51,27 @@ class InvoiceOcrService {
         );
       }
 
-      // Use direct PDF text extraction (fast and accurate!)
-      debugPrint('📄 Using direct PDF text extraction');
-      final extractedText = await _extractTextFromPdf(file);
+      // Read bytes
+      final bytes = await file.readAsBytes();
+      return await extractInvoiceDataFromBytes(bytes);
+    } catch (e) {
+      debugPrint('❌ PDF text extraction failed: $e');
+      return _createErrorResult('PDF text extraction failed: ${e.toString()}');
+    }
+  }
+
+  /// Extract invoice data from PDF bytes
+  Future<Map<String, dynamic>> extractInvoiceDataFromBytes(
+    Uint8List bytes,
+  ) async {
+    try {
+      if (!_isInitialized) {
+        await initialize();
+      }
+
+      // Use direct PDF text extraction
+      debugPrint('📄 Using direct PDF text extraction from bytes');
+      final extractedText = await _extractTextFromBytes(bytes);
 
       if (extractedText.isEmpty) {
         return _createErrorResult(
@@ -65,7 +83,7 @@ class InvoiceOcrService {
         '📄 Extracted text length: ${extractedText.length} characters',
       );
 
-      // Step 3: Parse the extracted text
+      // Parse the extracted text
       final parsedData = _parseInvoiceData(extractedText);
 
       return {
@@ -77,18 +95,15 @@ class InvoiceOcrService {
         'message': 'PDF text extraction completed successfully',
       };
     } catch (e) {
-      debugPrint('❌ PDF text extraction failed: $e');
+      debugPrint('❌ PDF text extraction from bytes failed: $e');
       return _createErrorResult('PDF text extraction failed: ${e.toString()}');
     }
   }
 
-  /// Extract text directly from PDF using Syncfusion PDF library
-  Future<String> _extractTextFromPdf(File pdfFile) async {
+  /// Extract text directly from PDF bytes
+  Future<String> _extractTextFromBytes(Uint8List pdfBytes) async {
     try {
       debugPrint('📄 Loading PDF document for text extraction...');
-
-      // Read PDF file bytes
-      final pdfBytes = await pdfFile.readAsBytes();
 
       // Load the PDF document
       final PdfDocument document = PdfDocument(inputBytes: pdfBytes);
@@ -110,7 +125,7 @@ class InvoiceOcrService {
       );
       return extractedText;
     } catch (e) {
-      debugPrint('❌ PDF text extraction failed: $e');
+      debugPrint('❌ PDF text extraction from bytes failed: $e');
       return '';
     }
   }
@@ -281,8 +296,26 @@ class InvoiceOcrService {
         );
       }
 
+      // Extract delivery data from bytes
+      final bytes = await file.readAsBytes();
+      return await extractDeliveryDataFromBytes(bytes);
+    } catch (e) {
+      debugPrint('❌ Error extracting delivery data: $e');
+      return _createErrorResult('Failed to extract delivery data: $e');
+    }
+  }
+
+  /// Extract delivery order data from PDF bytes
+  Future<Map<String, dynamic>> extractDeliveryDataFromBytes(
+    Uint8List bytes,
+  ) async {
+    try {
+      if (!_isInitialized) {
+        await initialize();
+      }
+
       // Extract text from PDF
-      final extractedText = await _extractTextFromPdf(file);
+      final extractedText = await _extractTextFromBytes(bytes);
 
       if (extractedText.isEmpty) {
         return _createErrorResult(
@@ -316,7 +349,7 @@ class InvoiceOcrService {
         'rawText': extractedText,
       };
     } catch (e) {
-      debugPrint('❌ Error extracting delivery data: $e');
+      debugPrint('❌ Error extracting delivery data from bytes: $e');
       return _createErrorResult('Failed to extract delivery data: $e');
     }
   }
