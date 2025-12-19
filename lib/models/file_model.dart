@@ -218,7 +218,12 @@ class FileConstants {
 
   // File constraints
   static const int maxFileSizeBytes = 5 * 1024 * 1024; // 5MB
-  static const List<String> allowedExtensions = ['.pdf'];
+  static const List<String> allowedExtensions = [
+    '.pdf',
+    '.jpg',
+    '.jpeg',
+    '.png',
+  ];
 
   // Query limits
   static const int defaultQueryLimit = 50;

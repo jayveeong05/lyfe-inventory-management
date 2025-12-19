@@ -75,7 +75,7 @@ class InvoiceOcrService {
 
       if (extractedText.isEmpty) {
         return _createErrorResult(
-          'No text found in PDF. The PDF might be image-based or encrypted.',
+          'Cannot extract text: PDF appears to be image-based (scanned). Please enter invoice details manually.',
         );
       }
 
@@ -319,7 +319,7 @@ class InvoiceOcrService {
 
       if (extractedText.isEmpty) {
         return _createErrorResult(
-          'No text could be extracted from the PDF. The file might be image-based or corrupted.',
+          'Cannot extract text: PDF appears to be image-based (scanned). Please enter delivery details manually.',
         );
       }
 

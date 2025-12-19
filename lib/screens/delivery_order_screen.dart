@@ -293,7 +293,7 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['pdf'],
+        allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
         allowMultiple: false,
       );
 
@@ -319,7 +319,7 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['pdf'],
+        allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
         allowMultiple: false,
       );
 
@@ -1872,6 +1872,39 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
                 ),
               ),
               const SizedBox(height: 16),
+
+              // OCR Extract Button - Only show if file is selected and platform supports it
+              if (_normalDeliveryPlatformFile != null &&
+                  PlatformFeatures.supportsPDFOCR)
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _isExtractingOCR ? null : _extractDeliveryData,
+                    icon: _isExtractingOCR
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.white,
+                              ),
+                            ),
+                          )
+                        : const Icon(Icons.text_fields),
+                    label: Text(
+                      _isExtractingOCR ? 'Extracting...' : 'Extract from PDF',
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.purple,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+              if (_normalDeliveryPlatformFile != null &&
+                  PlatformFeatures.supportsPDFOCR)
+                const SizedBox(height: 16),
 
               // Remarks Field
               TextFormField(

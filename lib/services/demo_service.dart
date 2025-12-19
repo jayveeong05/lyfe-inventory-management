@@ -229,9 +229,11 @@ class DemoService {
   }
 
   /// Return demo items back to active status
+  /// Supports partial returns by specifying which serial numbers to return
   Future<Map<String, dynamic>> returnDemoItems({
     required String demoId,
     required String demoNumber,
+    required List<String> serialNumbersToReturn,
     DateTime? actualReturnDate,
     String? returnRemarks,
   }) async {
@@ -239,6 +241,11 @@ class DemoService {
       final currentUser = _authService.currentUser;
       if (currentUser == null) {
         return {'success': false, 'error': 'User not authenticated.'};
+      }
+
+      // Validate input
+      if (serialNumbersToReturn.isEmpty) {
+        return {'success': false, 'error': 'No items selected for return.'};
       }
 
       // Get the demo record
@@ -250,6 +257,9 @@ class DemoService {
 
       final demoData = demoDoc.data()!;
       final transactionIds = List<int>.from(demoData['transaction_ids'] ?? []);
+      final returnedTransactionIds = List<int>.from(
+        demoData['returned_transaction_ids'] ?? [],
+      );
 
       if (transactionIds.isEmpty) {
         return {
@@ -258,7 +268,7 @@ class DemoService {
         };
       }
 
-      // Get all demo transactions
+      // Get all demo transactions that match the selected serial numbers
       final demoTransactions = await _firestore
           .collection('transactions')
           .where('transaction_id', whereIn: transactionIds)
@@ -266,10 +276,18 @@ class DemoService {
           .where('status', isEqualTo: 'Demo')
           .get();
 
-      if (demoTransactions.docs.isEmpty) {
+      // Filter to only include selected serial numbers
+      final transactionsToReturn = demoTransactions.docs
+          .where(
+            (doc) =>
+                serialNumbersToReturn.contains(doc.data()['serial_number']),
+          )
+          .toList();
+
+      if (transactionsToReturn.isEmpty) {
         return {
           'success': false,
-          'error': 'No active demo transactions found.',
+          'error': 'No active demo transactions found for selected items.',
         };
       }
 
@@ -277,11 +295,22 @@ class DemoService {
       final currentDate = DateTime.now();
       final returnDate = actualReturnDate ?? currentDate;
       final timestamp = Timestamp.fromDate(returnDate);
+      final returnedTransactionIdsThisBatch = <int>[];
 
-      // Create return transactions for each demo item
-      for (final demoDoc in demoTransactions.docs) {
+      // Get all transaction IDs needed upfront to avoid race conditions
+      final returnTransactionIds = await _getNextTransactionIds(
+        transactionsToReturn.length,
+      );
+
+      // Create return transactions for each selected demo item
+      int transactionIndex = 0;
+      for (final demoDoc in transactionsToReturn) {
         final demoTransaction = demoDoc.data();
         final serialNumber = demoTransaction['serial_number'] as String;
+        final originalTransactionId = demoTransaction['transaction_id'] as int;
+
+        // Track this transaction as returned
+        returnedTransactionIdsThisBatch.add(originalTransactionId);
 
         // Get complete inventory details for this item
         final inventoryQuery = await _firestore
@@ -295,8 +324,9 @@ class DemoService {
           inventoryData = inventoryQuery.docs.first.data();
         }
 
-        // Get next transaction ID for the return transaction
-        final nextTransactionId = await getNextTransactionId();
+        // Use pre-allocated transaction ID for the return transaction
+        final nextTransactionId = returnTransactionIds[transactionIndex];
+        transactionIndex++;
 
         // Create Stock_In return transaction with complete inventory details
         final returnTransactionData = {
@@ -360,22 +390,55 @@ class DemoService {
 
       // Update demo record status
       final demoRef = _firestore.collection('demos').doc(demoId);
-      batch.update(demoRef, {
-        'status': 'Returned',
-        'actual_return_date': timestamp,
+
+      // Merge the newly returned transaction IDs with existing ones
+      final allReturnedTransactionIds = [
+        ...returnedTransactionIds,
+        ...returnedTransactionIdsThisBatch,
+      ];
+
+      // Calculate remaining items
+      final totalItems = demoData['total_items'] ?? transactionIds.length;
+      final itemsReturnedCount = allReturnedTransactionIds.length;
+      final itemsRemainingCount = totalItems - itemsReturnedCount;
+
+      // Determine if this is a full or partial return
+      final isFullReturn = itemsRemainingCount == 0;
+
+      // Update demo record with appropriate fields
+      final demoUpdateData = {
+        'returned_transaction_ids': allReturnedTransactionIds,
+        'items_returned_count': itemsReturnedCount,
+        'items_remaining_count': itemsRemainingCount,
         'updated_at': FieldValue.serverTimestamp(),
         'returned_by_uid': currentUser.uid,
-        'return_remarks': returnRemarks ?? '', // Save return remarks
-      });
+        'return_remarks': returnRemarks ?? '',
+      };
+
+      // If all items returned, mark demo as fully returned
+      if (isFullReturn) {
+        demoUpdateData['status'] = 'Returned';
+        demoUpdateData['actual_return_date'] = timestamp;
+      } else {
+        // Partial return - keep status as Active but add flag
+        demoUpdateData['partially_returned'] = true;
+        demoUpdateData['last_partial_return_date'] = timestamp;
+      }
+
+      batch.update(demoRef, demoUpdateData);
 
       // Commit all operations
       await batch.commit();
 
       return {
         'success': true,
-        'message': 'Demo items returned successfully.',
+        'message': isFullReturn
+            ? 'All demo items returned successfully.'
+            : 'Partial demo return successful. ${itemsRemainingCount} item(s) remaining.',
         'demo_number': demoNumber,
-        'returned_items': demoTransactions.docs.length,
+        'returned_items': transactionsToReturn.length,
+        'remaining_items': itemsRemainingCount,
+        'is_full_return': isFullReturn,
       };
     } catch (e) {
       return {
@@ -451,6 +514,7 @@ class DemoService {
   }
 
   /// Get demo items for a specific demo
+  /// Returns all items including returned ones (UI will handle display)
   Future<List<Map<String, dynamic>>> getDemoItems(String demoId) async {
     try {
       // Get demo record to find transaction IDs
@@ -462,12 +526,15 @@ class DemoService {
 
       final demoData = demoDoc.data()!;
       final transactionIds = List<int>.from(demoData['transaction_ids'] ?? []);
+      final returnedTransactionIds = List<int>.from(
+        demoData['returned_transaction_ids'] ?? [],
+      );
 
       if (transactionIds.isEmpty) {
         return [];
       }
 
-      // Get transaction details for each demo item
+      // Get transaction details for all demo items
       List<Map<String, dynamic>> items = [];
 
       // Process in batches of 10 (Firestore whereIn limit)
@@ -481,6 +548,9 @@ class DemoService {
 
         for (final doc in transactionQuery.docs) {
           final data = doc.data();
+          final transactionId = data['transaction_id'] as int;
+          final isReturned = returnedTransactionIds.contains(transactionId);
+
           items.add({
             'transaction_id': doc.id,
             'serial_number': data['serial_number'],
@@ -489,6 +559,8 @@ class DemoService {
             'size': data['size'],
             'status': data['status'],
             'created_date': data['created_date'],
+            'is_returned':
+                isReturned, // Flag to indicate if this item was returned
           });
         }
       }

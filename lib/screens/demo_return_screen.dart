@@ -227,7 +227,13 @@ class _DemoReturnScreenState extends State<DemoReturnScreen> {
     final dealer = demo['customer_dealer'] ?? 'Unknown';
     final client = demo['customer_client'] ?? 'N/A';
     final location = demo['location'] ?? 'Unknown';
-    final itemCount = demo['total_items'] ?? 0;
+
+    // Use items_remaining_count if available (for partial returns), otherwise use total_items
+    final itemsRemaining = demo['items_remaining_count'];
+    final totalItems = demo['total_items'] ?? 0;
+    final itemCount = itemsRemaining ?? totalItems;
+    final isPartiallyReturned = demo['partially_returned'] == true;
+
     final createdDate = demo['created_date'];
     final expectedReturnDate = demo['expected_return_date'];
     final remarks = demo['remarks'] ?? '';
@@ -289,6 +295,28 @@ class _DemoReturnScreenState extends State<DemoReturnScreen> {
                         demoPurpose,
                         style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                       ),
+                      if (isPartiallyReturned) ...[
+                        const SizedBox(height: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.orange),
+                          ),
+                          child: Text(
+                            'Partially Returned',
+                            style: TextStyle(
+                              color: Colors.orange[700],
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -309,7 +337,12 @@ class _DemoReturnScreenState extends State<DemoReturnScreen> {
             _buildDetailRow('Dealer', dealer),
             _buildDetailRow('Client', client),
             _buildDetailRow('Location', location),
-            _buildDetailRow('Items', '$itemCount items'),
+            _buildDetailRow(
+              'Items',
+              isPartiallyReturned
+                  ? '$itemCount items remaining (of $totalItems)'
+                  : '$itemCount items',
+            ),
             _buildDetailRow('Created', createdDateStr),
             _buildDetailRow('Expected Return', expectedReturnStr),
 

@@ -81,14 +81,45 @@ class FileService {
         };
       }
 
-      // Basic PDF validation - check file header
+      // Validate file format based on file header
       final bytes = await file.readAsBytes();
-      if (bytes.length < 4 ||
-          bytes[0] != 0x25 ||
-          bytes[1] != 0x50 ||
-          bytes[2] != 0x44 ||
-          bytes[3] != 0x46) {
-        return {'valid': false, 'error': 'Invalid PDF file format'};
+
+      // Determine expected file type
+      bool isValidFormat = false;
+
+      if (fileName.endsWith('.pdf')) {
+        // PDF validation - check file header (%PDF)
+        if (bytes.length >= 4 &&
+            bytes[0] == 0x25 &&
+            bytes[1] == 0x50 &&
+            bytes[2] == 0x44 &&
+            bytes[3] == 0x46) {
+          isValidFormat = true;
+        }
+      } else if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) {
+        // JPEG validation - check file header (0xFFD8FF)
+        if (bytes.length >= 3 &&
+            bytes[0] == 0xFF &&
+            bytes[1] == 0xD8 &&
+            bytes[2] == 0xFF) {
+          isValidFormat = true;
+        }
+      } else if (fileName.endsWith('.png')) {
+        // PNG validation - check file header (0x89504E47)
+        if (bytes.length >= 4 &&
+            bytes[0] == 0x89 &&
+            bytes[1] == 0x50 &&
+            bytes[2] == 0x4E &&
+            bytes[3] == 0x47) {
+          isValidFormat = true;
+        }
+      }
+
+      if (!isValidFormat) {
+        return {
+          'valid': false,
+          'error': 'Invalid file format or corrupted file',
+        };
       }
 
       // Validate file type
@@ -149,13 +180,45 @@ class FileService {
         };
       }
 
-      // Basic PDF validation - check file header
-      if (bytes.length < 4 ||
-          bytes[0] != 0x25 ||
-          bytes[1] != 0x50 ||
-          bytes[2] != 0x44 ||
-          bytes[3] != 0x46) {
-        return {'valid': false, 'error': 'Invalid PDF file format'};
+      // Validate file format based on file header
+
+      // Determine expected file type
+      bool isValidFormat = false;
+
+      if (lowerFileName.endsWith('.pdf')) {
+        // PDF validation - check file header (%PDF)
+        if (bytes.length >= 4 &&
+            bytes[0] == 0x25 &&
+            bytes[1] == 0x50 &&
+            bytes[2] == 0x44 &&
+            bytes[3] == 0x46) {
+          isValidFormat = true;
+        }
+      } else if (lowerFileName.endsWith('.jpg') ||
+          lowerFileName.endsWith('.jpeg')) {
+        // JPEG validation - check file header (0xFFD8FF)
+        if (bytes.length >= 3 &&
+            bytes[0] == 0xFF &&
+            bytes[1] == 0xD8 &&
+            bytes[2] == 0xFF) {
+          isValidFormat = true;
+        }
+      } else if (lowerFileName.endsWith('.png')) {
+        // PNG validation - check file header (0x89504E47)
+        if (bytes.length >= 4 &&
+            bytes[0] == 0x89 &&
+            bytes[1] == 0x50 &&
+            bytes[2] == 0x4E &&
+            bytes[3] == 0x47) {
+          isValidFormat = true;
+        }
+      }
+
+      if (!isValidFormat) {
+        return {
+          'valid': false,
+          'error': 'Invalid file format or corrupted file',
+        };
       }
 
       // Validate file type
@@ -181,7 +244,11 @@ class FileService {
   }
 
   /// Generate file path for Firebase Storage
-  String _generateFilePath(String orderNumber, String fileType) {
+  String _generateFilePath(
+    String orderNumber,
+    String fileType,
+    String originalFilename,
+  ) {
     final timestamp = DateTime.now();
     final dateStr = timestamp
         .toIso8601String()
@@ -198,24 +265,45 @@ class FileService {
         ? FileConstants.storagePathInvoices
         : FileConstants.storagePathDeliveryOrders;
 
+    // Get file extension from original filename
+    final extension = originalFilename.split('.').last.toLowerCase();
+
     String fileName;
     if (fileType == 'invoice') {
-      fileName = 'invoice_${orderNumber}_${dateStr}_$timeStr.pdf';
+      fileName = 'invoice_${orderNumber}_${dateStr}_$timeStr.$extension';
     } else if (fileType == 'delivery_order') {
-      fileName = 'delivery_${orderNumber}_${dateStr}_$timeStr.pdf';
+      fileName = 'delivery_${orderNumber}_${dateStr}_$timeStr.$extension';
     } else if (fileType == 'signed_delivery_order') {
-      fileName = 'signed_delivery_${orderNumber}_${dateStr}_$timeStr.pdf';
+      fileName =
+          'signed_delivery_${orderNumber}_${dateStr}_$timeStr.$extension';
     } else {
-      fileName = 'unknown_${orderNumber}_${dateStr}_$timeStr.pdf';
+      fileName = 'unknown_${orderNumber}_${dateStr}_$timeStr.$extension';
     }
 
     return '$basePath/$fileName';
   }
 
+  /// Get MIME type based on file extension
+  String _getMimeType(String filename) {
+    final extension = filename.split('.').last.toLowerCase();
+    switch (extension) {
+      case 'pdf':
+        return 'application/pdf';
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      default:
+        return 'application/octet-stream';
+    }
+  }
+
   /// Upload file to Firebase Storage with retry logic and timeout
   Future<String> _uploadToStorage(
     File file,
-    String filePath, {
+    String filePath,
+    String filename, {
     int maxRetries = 2,
     Duration timeout = const Duration(seconds: 30),
   }) async {
@@ -225,9 +313,9 @@ class FileService {
       try {
         final ref = _storage.ref().child(filePath);
 
-        // Set metadata
+        // Set metadata with correct MIME type
         final metadata = SettableMetadata(
-          contentType: 'application/pdf',
+          contentType: _getMimeType(filename),
           customMetadata: {
             'uploaded_by': _authService.currentUser?.uid ?? 'unknown',
             'upload_attempt': attempt.toString(),
@@ -289,7 +377,8 @@ class FileService {
       }
 
       // Generate file path
-      final filePath = _generateFilePath(orderNumber, fileType);
+      final filename = originalFilename ?? validation['file_name'];
+      final filePath = _generateFilePath(orderNumber, fileType, filename);
 
       // Get next version number
       final nextVersion = await _filesCollectionService.getNextVersionNumber(
@@ -298,7 +387,7 @@ class FileService {
       );
 
       // Upload to Firebase Storage
-      final downloadUrl = await _uploadToStorage(file, filePath);
+      final downloadUrl = await _uploadToStorage(file, filePath, filename);
 
       // Create file model
       final fileModel = FileModel(
@@ -362,13 +451,14 @@ class FileService {
         );
       }
 
-      // Basic PDF validation
-      if (bytes.length < 4 ||
-          bytes[0] != 0x25 ||
-          bytes[1] != 0x50 ||
-          bytes[2] != 0x44 ||
-          bytes[3] != 0x46) {
-        return FileUploadResult.error('Invalid PDF file format');
+      // Validate file format based on file header
+      final validation = await validateFileFromBytes(
+        bytes,
+        originalFilename,
+        fileType,
+      );
+      if (!validation['valid']) {
+        return FileUploadResult.error(validation['error']);
       }
 
       // Validate file type
@@ -383,7 +473,11 @@ class FileService {
       }
 
       // Generate file path
-      final filePath = _generateFilePath(orderNumber, fileType);
+      final filePath = _generateFilePath(
+        orderNumber,
+        fileType,
+        originalFilename,
+      );
 
       // Get next version number
       final nextVersion = await _filesCollectionService.getNextVersionNumber(
@@ -392,7 +486,11 @@ class FileService {
       );
 
       // Upload to Firebase Storage
-      final downloadUrl = await _uploadBytesToStorage(bytes, filePath);
+      final downloadUrl = await _uploadBytesToStorage(
+        bytes,
+        filePath,
+        originalFilename,
+      );
 
       // Create file model
       final fileModel = FileModel(
@@ -435,7 +533,8 @@ class FileService {
   /// Upload bytes to Firebase Storage with retry logic and timeout
   Future<String> _uploadBytesToStorage(
     Uint8List bytes,
-    String filePath, {
+    String filePath,
+    String filename, {
     int maxRetries = 2,
     Duration timeout = const Duration(seconds: 30),
   }) async {
@@ -445,9 +544,9 @@ class FileService {
       try {
         final ref = _storage.ref().child(filePath);
 
-        // Set metadata
+        // Set metadata with correct MIME type
         final metadata = SettableMetadata(
-          contentType: 'application/pdf',
+          contentType: _getMimeType(filename),
           customMetadata: {
             'uploaded_by': _authService.currentUser?.uid ?? 'unknown',
             'upload_attempt': attempt.toString(),

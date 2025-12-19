@@ -13,6 +13,9 @@ A comprehensive Flutter-based inventory management application with Firebase bac
 - ✅ **Order Management**: Dual status system (invoice_status + delivery_status) for better workflow separation
 - ✅ **Invoice Management**: Upload, view, replace PDF invoices with OCR text extraction
 - ✅ **Delivery Order Management**: Dual PDF workflow (normal + signed delivery) with separate transaction creation
+- ✅ **Demo Program**: Create demos, track expected returns, and process partial or full demo returns
+- ✅ **Partial Demo Return**: Select specific items to return from demos, track remaining items, visual indicators for returned items
+- ✅ **Image Upload Support**: Accept PDF, JPG, JPEG, and PNG formats for invoice and delivery orders (mobile & web)
 - ✅ **Monthly Inventory Activity**: Comprehensive monthly reporting with size and category breakdowns
 - ✅ **Data Import**: Excel file processing for inventory and transaction data
 - ✅ **User Management**: Admin controls for user roles and permissions
@@ -60,22 +63,25 @@ A comprehensive Flutter-based inventory management application with Firebase bac
 - **Item Reservation**: Reserve specific serial numbers for orders
 - **Comprehensive Order Details**: Store dealer, client, and item information with enhanced metadata
 
-### Invoice Management (Enhanced)
-- **PDF Invoice Upload**: Upload and manage PDF invoices for orders with OCR text extraction
-- **OCR Text Extraction**: Automatic extraction of invoice numbers and dates from PDF files
-- **Invoice Viewing**: View PDF invoices in external applications
+### Invoice Management (New)
+- **PDF and Image Upload**: Support for PDF, JPG, JPEG, and PNG file formats (mobile & web)
+- **OCR Text Extraction**: Automatic extraction of invoice number and date from text-based PDFs
+- **Smart Data Processing**: Confidence scoring and validation dialogs for OCR results
 - **Invoice Replacement**: Replace existing invoices with new PDF files and proper metadata updates
-- **Firebase Storage Integration**: Secure cloud storage for PDF files with file type differentiation
+- **Firebase Storage Integration**: Secure cloud storage for files with file type differentiation
 - **Invoice Information Display**: Comprehensive invoice details and metadata
-- **Multi-platform PDF Support**: Robust PDF viewing with fallback options
+- **Multi-platform Support**: Robust file viewing with fallback options
+- **Format Validation**: Header-based validation for PDF (0x25504446), JPEG (0xFFD8FF), and PNG (0x89504E47)
 
 ### Delivery Order Management (New)
-- **Dual PDF Workflow**: Support for normal delivery order PDF and signed delivery order PDF
-- **Status Progression**: Normal PDF → "Issued" status, Signed PDF → "Delivered" status
+- **PDF and Image Upload**: Support for PDF, JPG, JPEG, and PNG file formats (mobile & web)
+- **OCR Text Extraction**: Automatic extraction of delivery number and date from text-based PDFs
+- **Dual File Workflow**: Support for normal delivery order and signed delivery order files
+- **Status Progression**: Normal file → "Issued" status, Signed file → "Delivered" status
 - **Separate Transaction Creation**: Creates new "Delivered" transactions while preserving "Reserved" audit trail
 - **File Type Differentiation**: Distinct file types ('delivery_order' vs 'signed_delivery_order') for proper organization
-- **Shared Delivery Information**: Common delivery details (number, date, remarks) shared between both PDF types
-- **Advanced File Management**: Replace functionality for both normal and signed delivery PDFs
+- **Shared Delivery Information**: Common delivery details (number, date, remarks) shared between both file types
+- **Advanced File Management**: Replace functionality for both normal and signed delivery files
 - **Color-coded Status Indicators**: Visual status differentiation (orange/green/blue/purple) across all screens
 
 ### Monthly Inventory Activity

@@ -20,12 +20,44 @@ class _DemoDetailScreenState extends State<DemoDetailScreen> {
   bool _isLoadingItems = true;
   final TextEditingController _returnRemarksController =
       TextEditingController();
+  Set<String> _selectedSerialNumbers = {};
+  bool _selectAllItems = false;
 
   @override
   void initState() {
     super.initState();
     _actualReturnDate = DateTime.now(); // Default to today
     _loadDemoItems();
+  }
+
+  void _toggleItemSelection(String serialNumber) {
+    setState(() {
+      if (_selectedSerialNumbers.contains(serialNumber)) {
+        _selectedSerialNumbers.remove(serialNumber);
+        _selectAllItems = false;
+      } else {
+        _selectedSerialNumbers.add(serialNumber);
+        if (_selectedSerialNumbers.length == _demoItems.length) {
+          _selectAllItems = true;
+        }
+      }
+    });
+  }
+
+  void _toggleSelectAll() {
+    setState(() {
+      if (_selectAllItems) {
+        _selectedSerialNumbers.clear();
+        _selectAllItems = false;
+      } else {
+        // Only select items that haven't been returned
+        _selectedSerialNumbers = _demoItems
+            .where((item) => item['is_returned'] != true)
+            .map((item) => item['serial_number'] as String)
+            .toSet();
+        _selectAllItems = true;
+      }
+    });
   }
 
   @override
@@ -83,6 +115,17 @@ class _DemoDetailScreenState extends State<DemoDetailScreen> {
   }
 
   Future<void> _confirmReturn() async {
+    // Validate that at least one item is selected
+    if (_selectedSerialNumbers.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select at least one item to return'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     if (_actualReturnDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -93,25 +136,35 @@ class _DemoDetailScreenState extends State<DemoDetailScreen> {
       return;
     }
 
+    final isFullReturn = _selectedSerialNumbers.length == _demoItems.length;
+    final selectedCount = _selectedSerialNumbers.length;
+    final totalCount = _demoItems.length;
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: const Text('Confirm Demo Return'),
+          title: Text(
+            isFullReturn
+                ? 'Confirm Full Demo Return'
+                : 'Confirm Partial Demo Return',
+          ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('Demo: ${widget.demo['demo_number']}'),
-              Text('Items: ${_demoItems.length} items'),
+              Text('Returning: $selectedCount of $totalCount items'),
               const SizedBox(height: 8),
               Text(
                 'Actual Return Date: ${DateFormat('dd/MM/yyyy').format(_actualReturnDate!)}',
               ),
               const SizedBox(height: 16),
-              const Text(
-                'This will return all demo items back to active status.',
-                style: TextStyle(fontWeight: FontWeight.w500),
+              Text(
+                isFullReturn
+                    ? 'This will return all demo items back to active status.'
+                    : 'This will return selected items. ${totalCount - selectedCount} item(s) will remain in demo.',
+                style: const TextStyle(fontWeight: FontWeight.w500),
               ),
             ],
           ),
@@ -150,6 +203,7 @@ class _DemoDetailScreenState extends State<DemoDetailScreen> {
       final result = await demoService.returnDemoItems(
         demoId: widget.demo['id'],
         demoNumber: widget.demo['demo_number'],
+        serialNumbersToReturn: _selectedSerialNumbers.toList(),
         actualReturnDate: _actualReturnDate,
         returnRemarks: _returnRemarksController.text.trim(),
       );
@@ -160,6 +214,8 @@ class _DemoDetailScreenState extends State<DemoDetailScreen> {
         });
 
         if (result['success']) {
+          final isFullReturn = result['is_full_return'] ?? false;
+
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(result['message']),
@@ -168,8 +224,15 @@ class _DemoDetailScreenState extends State<DemoDetailScreen> {
             ),
           );
 
-          // Navigate back to demo return screen
-          Navigator.of(context).pop(true); // Return true to indicate success
+          if (isFullReturn) {
+            // Full return - navigate back to demo return screen
+            Navigator.of(context).pop(true);
+          } else {
+            // Partial return - reload the demo items to show updated list
+            _selectedSerialNumbers.clear();
+            _selectAllItems = false;
+            await _loadDemoItems();
+          }
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -276,13 +339,45 @@ class _DemoDetailScreenState extends State<DemoDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Demo Items (${_demoItems.length})',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.green,
-                      ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Demo Items (${_demoItems.length})',
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green,
+                              ),
+                        ),
+                        if (_demoItems.isNotEmpty && !_isLoadingItems)
+                          TextButton.icon(
+                            onPressed: _toggleSelectAll,
+                            icon: Icon(
+                              _selectAllItems
+                                  ? Icons.check_box
+                                  : Icons.check_box_outline_blank,
+                              size: 20,
+                            ),
+                            label: Text(
+                              _selectAllItems ? 'Deselect All' : 'Select All',
+                            ),
+                          ),
+                      ],
                     ),
+                    if (_demoItems.isNotEmpty && !_isLoadingItems)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8, bottom: 8),
+                        child: Text(
+                          '${_selectedSerialNumbers.length} of ${_demoItems.where((item) => item['is_returned'] != true).length} available items selected',
+                          style: TextStyle(
+                            color: _selectedSerialNumbers.isEmpty
+                                ? Colors.grey
+                                : Colors.green,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
                     const SizedBox(height: 16),
                     if (_isLoadingItems)
                       const Center(child: CircularProgressIndicator())
@@ -387,10 +482,14 @@ class _DemoDetailScreenState extends State<DemoDetailScreen> {
               width: double.infinity,
               height: 50,
               child: ElevatedButton.icon(
-                onPressed: _isReturning ? null : _confirmReturn,
+                onPressed: (_isReturning || _selectedSerialNumbers.isEmpty)
+                    ? null
+                    : _confirmReturn,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.green,
                   foregroundColor: Colors.white,
+                  disabledBackgroundColor: Colors.grey[300],
+                  disabledForegroundColor: Colors.grey[600],
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -406,7 +505,13 @@ class _DemoDetailScreenState extends State<DemoDetailScreen> {
                       )
                     : const Icon(Icons.assignment_return),
                 label: Text(
-                  _isReturning ? 'Processing Return...' : 'Return Demo',
+                  _isReturning
+                      ? 'Processing Return...'
+                      : _selectedSerialNumbers.isEmpty
+                      ? 'Select Items to Return'
+                      : _selectedSerialNumbers.length == _demoItems.length
+                      ? 'Return All Items (${_demoItems.length})'
+                      : 'Return Selected Items (${_selectedSerialNumbers.length} of ${_demoItems.length})',
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -449,37 +554,73 @@ class _DemoDetailScreenState extends State<DemoDetailScreen> {
     final category = item['category'] ?? 'Unknown';
     final model = item['model'] ?? 'Unknown';
     final size = item['size'] ?? '';
+    final isReturned = item['is_returned'] == true;
+    final isSelected = _selectedSerialNumbers.contains(serialNumber);
 
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      leading: CircleAvatar(
-        backgroundColor: Colors.green.withOpacity(0.1),
-        child: const Icon(Icons.inventory_2, color: Colors.green, size: 20),
+      enabled: !isReturned, // Disable interaction for returned items
+      leading: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Checkbox(
+            value: isReturned ? false : isSelected, // Uncheck returned items
+            onChanged: isReturned
+                ? null
+                : (bool? value) {
+                    _toggleItemSelection(serialNumber);
+                  },
+            activeColor: Colors.green,
+          ),
+          CircleAvatar(
+            backgroundColor: isReturned
+                ? Colors.grey.withOpacity(0.3)
+                : Colors.green.withOpacity(0.1),
+            child: Icon(
+              Icons.inventory_2,
+              color: isReturned ? Colors.grey : Colors.green,
+              size: 20,
+            ),
+          ),
+        ],
       ),
       title: Text(
         serialNumber,
-        style: const TextStyle(fontWeight: FontWeight.bold),
+        style: TextStyle(
+          fontWeight: FontWeight.bold,
+          color: isReturned ? Colors.grey : Colors.black,
+          decoration: isReturned ? TextDecoration.lineThrough : null,
+        ),
       ),
       subtitle: Text(
         '$category - $model${size.isNotEmpty ? ' ($size)' : ''}',
-        style: TextStyle(color: Colors.grey[600]),
+        style: TextStyle(
+          color: isReturned ? Colors.grey[400] : Colors.grey[600],
+        ),
       ),
       trailing: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color: Colors.amber.withOpacity(0.1),
+          color: isReturned
+              ? Colors.green.withOpacity(0.1)
+              : Colors.amber.withOpacity(0.1),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.amber),
+          border: Border.all(color: isReturned ? Colors.green : Colors.amber),
         ),
-        child: const Text(
-          'Demo',
+        child: Text(
+          isReturned ? 'Returned' : 'Demo',
           style: TextStyle(
-            color: Colors.amber,
+            color: isReturned ? Colors.green : Colors.amber,
             fontSize: 12,
             fontWeight: FontWeight.bold,
           ),
         ),
       ),
+      onTap: isReturned
+          ? null
+          : () {
+              _toggleItemSelection(serialNumber);
+            },
     );
   }
 }
