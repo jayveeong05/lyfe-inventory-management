@@ -348,13 +348,18 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
             });
           }
 
-          // Show success message with confidence
+          // Show success message with confidence and extraction method
           if (mounted) {
+            // Technical details hidden for user-friendliness
+            // final extractionMethod = result['extractionMethod'] == 'gemini_flash'
+            //     ? 'Gemini Flash AI'
+            //     : 'PDF Text';
+
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
-                  'PDF text extraction completed! Confidence: $confidencePercent%\n'
-                  'Please review and correct the extracted data if needed.',
+                  'Data extracted successfully!\n'
+                  'Please review and correct the information if needed.',
                 ),
                 backgroundColor: confidencePercent > 70
                     ? Colors.green

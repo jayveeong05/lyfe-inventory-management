@@ -16,6 +16,7 @@ A comprehensive Flutter-based inventory management application with Firebase bac
 - ✅ **Demo Program**: Create demos, track expected returns, and process partial or full demo returns
 - ✅ **Partial Demo Return**: Select specific items to return from demos, track remaining items, visual indicators for returned items
 - ✅ **Image Upload Support**: Accept PDF, JPG, JPEG, and PNG formats for invoice and delivery orders (mobile & web)
+- ✅ **AI-Powered OCR**: OpenRouter Gemini Flash integration for scanned PDFs and images with automatic data extraction
 - ✅ **Monthly Inventory Activity**: Comprehensive monthly reporting with size and category breakdowns
 - ✅ **Data Import**: Excel file processing for inventory and transaction data
 - ✅ **User Management**: Admin controls for user roles and permissions
@@ -65,9 +66,10 @@ A comprehensive Flutter-based inventory management application with Firebase bac
 
 ### Invoice Management (New)
 - **PDF and Image Upload**: Support for PDF, JPG, JPEG, and PNG file formats (mobile & web)
-- **OCR Text Extraction**: Automatic extraction of invoice number and date from text-based PDFs
-- **Smart Data Processing**: Confidence scoring and validation dialogs for OCR results
-- **Invoice Replacement**: Replace existing invoices with new PDF files and proper metadata updates
+- **AI-Powered OCR**: OpenRouter Gemini Flash integration for intelligent data extraction from scanned documents and images
+- **Smart Fallback System**: Tries fast text extraction first, automatically uses AI for scanned/image-based documents
+- **Confidence Scoring**: Built-in validation with user-friendly success messages
+- **Invoice Replacement**: Replace existing invoices with new files and proper metadata updates
 - **Firebase Storage Integration**: Secure cloud storage for files with file type differentiation
 - **Invoice Information Display**: Comprehensive invoice details and metadata
 - **Multi-platform Support**: Robust file viewing with fallback options
@@ -75,7 +77,8 @@ A comprehensive Flutter-based inventory management application with Firebase bac
 
 ### Delivery Order Management (New)
 - **PDF and Image Upload**: Support for PDF, JPG, JPEG, and PNG file formats (mobile & web)
-- **OCR Text Extraction**: Automatic extraction of delivery number and date from text-based PDFs
+- **AI-Powered OCR**: OpenRouter Gemini Flash integration for intelligent data extraction from scanned documents and images
+- **Smart Fallback System**: Tries fast text extraction first, automatically uses AI for scanned/image-based documents
 - **Dual File Workflow**: Support for normal delivery order and signed delivery order files
 - **Status Progression**: Normal file → "Issued" status, Signed file → "Delivered" status
 - **Separate Transaction Creation**: Creates new "Delivered" transactions while preserving "Reserved" audit trail
@@ -122,9 +125,13 @@ lib/
 │   ├── stock_service.dart      # Stock management operations
 │   ├── order_service.dart      # Order management with dual status system
 │   ├── file_service.dart       # File upload/management with Firebase Storage
+│   ├── invoice_ocr_service.dart # Invoice OCR with AI fallback
+│   ├── llm_ocr_service.dart    # OpenRouter Gemini Flash AI OCR
 │   ├── invoice_service.dart    # Invoice management with OCR support
 │   ├── delivery_service.dart   # Delivery order management
 │   └── monthly_inventory_service.dart # Monthly inventory activity reporting
+├── utils/
+│   └── image_utils.dart        # Image processing and compression utilities
 └── screens/
     ├── login_screen.dart       # User authentication
     ├── register_screen.dart    # User registration
@@ -140,10 +147,13 @@ lib/
 ### Technology Stack
 - **Frontend**: Flutter (Dart)
 - **Backend**: Firebase (Auth, Firestore, Storage)
+- **AI/ML**: OpenRouter API with Gemini Flash 2.0 for OCR
 - **State Management**: Provider pattern
 - **Data Processing**: spreadsheet_decoder for Excel files
 - **File Management**: file_picker for file selection
-- **PDF Handling**: url_launcher for PDF viewing
+- **PDF Handling**: url_launcher for PDF viewing, Syncfusion Flutter PDF for text extraction
+- **HTTP Client**: http package for API requests
+- **Environment**: flutter_dotenv for secure API key management
 - **Authentication**: Firebase Authentication
 - **Database**: Cloud Firestore
 - **File Storage**: Firebase Storage
@@ -241,7 +251,16 @@ lib/
 
 ### Environment Variables
 - Firebase configuration is handled through `firebase_options.dart`
-- No additional environment variables required
+- **OpenRouter API Setup** (Required for AI-powered OCR):
+  1. Get API key from [openrouter.ai](https://openrouter.ai/)
+  2. Create `.env` file in project root:
+     ```env
+     OPENROUTER_API_KEY=sk-or-v1-your-api-key-here
+     OPENROUTER_SITE_URL=https://yourdomain.com
+     OPENROUTER_SITE_NAME=InventoryPro
+     ```
+  3. **Important**: Never commit `.env` file to version control (already in `.gitignore`)
+  4. Use `.env.example` as template for required environment variables
 
 ## 📱 Usage
 
@@ -355,7 +374,16 @@ For support and questions:
 
 ## 🔄 Version History
 
-### v2.1.2 (Current - December 2025)
+### v2.1.3 (Current - December 2025)
+- ✅ **AI-Powered OCR Integration**: OpenRouter Gemini Flash 2.0 for intelligent document data extraction
+- ✅ **Enhanced Image Support**: Full JPG/PNG support for invoice and delivery order uploads
+- ✅ **Smart OCR Fallback**: Automatic detection of scanned PDFs with AI fallback for optimal cost efficiency
+- ✅ **Platform-Agnostic Design**: PDFs sent directly to AI on all platforms (web, mobile, desktop)
+- ✅ **User-Friendly Messages**: Simplified success messages without technical jargon
+- ✅ **Secure API Configuration**: Environment-based API key management with .gitignore protection
+- ✅ **Cost-Effective Processing**: ~$0.0002-$0.0005 per scanned document with free text extraction for digital PDFs
+
+### v2.1.2 (December 2025)
 - ✅ **Inventory Status Refactoring - Complete**: Unified all inventory reporting to use `inventory.status` as single source of truth
 - ✅ **Performance Optimization**: Monthly Inventory screen loading improved by 93% (60+ seconds → 2-5 seconds)
 - ✅ **Data Accuracy Fixes**: Resolved 35-item discrepancy in Monthly Inventory reports (244 → 209)

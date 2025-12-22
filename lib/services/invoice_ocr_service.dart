@@ -2,6 +2,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 import 'package:syncfusion_flutter_pdf/pdf.dart';
+import 'llm_ocr_service.dart';
+import '../utils/image_utils.dart';
 
 /// Service for extracting invoice data from PDF files using direct text extraction
 class InvoiceOcrService {
@@ -10,6 +12,7 @@ class InvoiceOcrService {
   InvoiceOcrService._internal();
 
   bool _isInitialized = false;
+  final LlmOcrService _llmOcrService = LlmOcrService();
 
   /// Initialize the service (simplified - no ML Kit needed)
   Future<void> initialize() async {
@@ -32,7 +35,7 @@ class InvoiceOcrService {
     }
   }
 
-  /// Extract invoice data from PDF files using direct text extraction
+  /// Extract invoice data from PDF or image files
   /// Returns a map with 'invoiceNumber', 'invoiceDate', 'confidence', and 'rawText'
   Future<Map<String, dynamic>> extractInvoiceData(File file) async {
     try {
@@ -40,22 +43,39 @@ class InvoiceOcrService {
         await initialize();
       }
 
-      debugPrint('🔍 Starting PDF text extraction for: ${file.path}');
+      debugPrint('🔍 Starting extraction for: ${file.path}');
 
-      // Check file type - only PDF supported now
+      // Check file type
       final fileExtension = path.extension(file.path).toLowerCase();
-
-      if (fileExtension != '.pdf') {
-        return _createErrorResult(
-          'Only PDF files are supported. Please select a PDF file.',
-        );
-      }
 
       // Read bytes
       final bytes = await file.readAsBytes();
-      return await extractInvoiceDataFromBytes(bytes);
+
+      // Handle images directly with LLM OCR
+      if (fileExtension == '.jpg' ||
+          fileExtension == '.jpeg' ||
+          fileExtension == '.png') {
+        debugPrint('🖼️ Image file detected, using Gemini Flash OCR...');
+
+        // Initialize LLM service if needed
+        if (!_llmOcrService.isAvailable) {
+          await _llmOcrService.initialize();
+        }
+
+        return await _llmOcrService.extractFromImage(bytes, 'invoice');
+      }
+
+      // Handle PDFs (existing logic with fallback)
+      if (fileExtension == '.pdf') {
+        return await extractInvoiceDataFromBytes(bytes);
+      }
+
+      // Unsupported file type
+      return _createErrorResult(
+        'Unsupported file type. Please select a PDF or image file (JPG, PNG).',
+      );
     } catch (e) {
-      debugPrint('❌ PDF text extraction failed: $e');
+      debugPrint('❌ Extraction failed: $e');
       return _createErrorResult('PDF text extraction failed: ${e.toString()}');
     }
   }
@@ -74,9 +94,19 @@ class InvoiceOcrService {
       final extractedText = await _extractTextFromBytes(bytes);
 
       if (extractedText.isEmpty) {
-        return _createErrorResult(
-          'Cannot extract text: PDF appears to be image-based (scanned). Please enter invoice details manually.',
+        // PDF appears to be scanned - try LLM OCR fallback
+        debugPrint(
+          '📄 PDF appears to be scanned, using Gemini Flash fallback...',
         );
+        return await _extractWithLlmOcr(bytes, 'invoice');
+      }
+
+      // Check if extracted text is too short (likely scanned)
+      if (ImageUtils.isPdfScanned(extractedText)) {
+        debugPrint(
+          '📄 PDF has very little text, using Gemini Flash fallback...',
+        );
+        return await _extractWithLlmOcr(bytes, 'invoice');
       }
 
       debugPrint(
@@ -255,11 +285,38 @@ class InvoiceOcrService {
       if (month < 1 || month > 12 || day < 1 || day > 31) {
         return null;
       }
-
       return DateTime(year, month, day);
     } catch (e) {
       debugPrint('❌ Date parsing failed for: $dateStr - $e');
       return null;
+    }
+  }
+
+  /// Extract data using LLM OCR (Gemini Flash) for scanned documents
+  Future<Map<String, dynamic>> _extractWithLlmOcr(
+    Uint8List bytes,
+    String documentType,
+  ) async {
+    try {
+      debugPrint('🤖 Using Gemini Flash for $documentType extraction...');
+
+      // Initialize LLM service if needed
+      if (!_llmOcrService.isAvailable) {
+        await _llmOcrService.initialize();
+      }
+
+      // Try to extract from PDF (will convert to image)
+      final result = await _llmOcrService.extractFromPdf(bytes, documentType);
+
+      // Add extraction method marker
+      result['extractionMethod'] = 'gemini_flash';
+
+      return result;
+    } catch (e) {
+      debugPrint('❌ LLM OCR extraction failed: $e');
+      return _createErrorResult(
+        'Failed to extract data from scanned document: ${e.toString()}',
+      );
     }
   }
 
@@ -275,7 +332,7 @@ class InvoiceOcrService {
     };
   }
 
-  /// Extract delivery order data from PDF files using direct text extraction
+  /// Extract delivery order data from PDF or image files
   /// Returns a map with 'deliveryNumber', 'deliveryDate', 'confidence', and 'rawText'
   Future<Map<String, dynamic>> extractDeliveryData(File file) async {
     try {
@@ -283,24 +340,39 @@ class InvoiceOcrService {
         await initialize();
       }
 
-      debugPrint(
-        '🔍 Starting PDF text extraction for delivery order: ${file.path}',
-      );
+      debugPrint('🔍 Starting extraction for delivery order: ${file.path}');
 
-      // Check file type - only PDF supported now
+      // Check file type
       final fileExtension = path.extension(file.path).toLowerCase();
 
-      if (fileExtension != '.pdf') {
-        return _createErrorResult(
-          'Only PDF files are supported. Please select a PDF file.',
-        );
+      // Read bytes
+      final bytes = await file.readAsBytes();
+
+      // Handle images directly with LLM OCR
+      if (fileExtension == '.jpg' ||
+          fileExtension == '.jpeg' ||
+          fileExtension == '.png') {
+        debugPrint('🖼️ Image file detected, using Gemini Flash OCR...');
+
+        // Initialize LLM service if needed
+        if (!_llmOcrService.isAvailable) {
+          await _llmOcrService.initialize();
+        }
+
+        return await _llmOcrService.extractFromImage(bytes, 'delivery');
       }
 
-      // Extract delivery data from bytes
-      final bytes = await file.readAsBytes();
-      return await extractDeliveryDataFromBytes(bytes);
+      // Handle PDFs (existing logic with fallback)
+      if (fileExtension == '.pdf') {
+        return await extractDeliveryDataFromBytes(bytes);
+      }
+
+      // Unsupported file type
+      return _createErrorResult(
+        'Unsupported file type. Please select a PDF or image file (JPG, PNG).',
+      );
     } catch (e) {
-      debugPrint('❌ Error extracting delivery data: $e');
+      debugPrint('❌ Delivery extraction failed: $e');
       return _createErrorResult('Failed to extract delivery data: $e');
     }
   }
@@ -318,9 +390,19 @@ class InvoiceOcrService {
       final extractedText = await _extractTextFromBytes(bytes);
 
       if (extractedText.isEmpty) {
-        return _createErrorResult(
-          'Cannot extract text: PDF appears to be image-based (scanned). Please enter delivery details manually.',
+        // PDF appears to be scanned - try LLM OCR fallback
+        debugPrint(
+          '📄 PDF appears to be scanned, using Gemini Flash fallback...',
         );
+        return await _extractWithLlmOcr(bytes, 'delivery');
+      }
+
+      // Check if extracted text is too short (likely scanned)
+      if (ImageUtils.isPdfScanned(extractedText)) {
+        debugPrint(
+          '📄 PDF has very little text, using Gemini Flash fallback...',
+        );
+        return await _extractWithLlmOcr(bytes, 'delivery');
       }
 
       debugPrint(
