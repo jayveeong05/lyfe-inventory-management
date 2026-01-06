@@ -114,7 +114,7 @@ class InventoryManagementService {
       final serialNumber = data['serial_number'] as String? ?? '';
 
       // Use stored status from inventory document as primary source of truth
-      final statusInfo = _determineItemStatus(
+      final statusInfo = await _determineItemStatus(
         data,
         transactionsBySerial[serialNumber.toLowerCase()] ?? [],
       );
@@ -175,17 +175,18 @@ class InventoryManagementService {
   }
 
   /// Determine item status using stored data as primary source
-  Map<String, dynamic> _determineItemStatus(
+  /// Queries orders collection to check invoice_status and delivery_status
+  Future<Map<String, dynamic>> _determineItemStatus(
     Map<String, dynamic> inventoryData,
     List<Map<String, dynamic>> transactions,
-  ) {
-    // 1. Try to get status from inventory document first (Primary)
-    String? status = inventoryData['status'] ?? inventoryData['current_status'];
+  ) async {
     String? location =
         inventoryData['location'] ?? inventoryData['current_location'];
 
-    // 2. Get last activity from transactions
+    // Get last activity from transactions
     DateTime? lastActivity;
+    String? status;
+
     if (transactions.isNotEmpty) {
       // Sort transactions by date (most recent first) to find last activity
       transactions.sort((a, b) {
@@ -208,33 +209,61 @@ class InventoryManagementService {
         lastActivity = DateTime.tryParse(dateValue);
       }
 
-      // Fallback: if status is missing in inventory, calculate from latest transaction
-      if (status == null || status == 'Unknown') {
-        final type = latestTransaction['type'] as String?;
-        final transactionStatus = latestTransaction['status'] as String?;
-        location ??= latestTransaction['location'] as String? ?? 'Unknown';
+      final type = latestTransaction['type'] as String?;
+      final transactionStatus = latestTransaction['status'] as String?;
+      final transactionId = latestTransaction['transaction_id'] as int?;
+      location ??= latestTransaction['location'] as String? ?? 'Unknown';
 
-        if (type == 'Stock_Out') {
-          status = (transactionStatus == 'Delivered')
-              ? 'Delivered'
-              : 'Reserved';
-        } else if (type == 'Stock_In') {
-          status = 'Active';
-        } else if (type == 'Demo') {
-          status = 'Demo'; // Correctly map Demo type to Demo status
-        } else if (type == 'Cancellation') {
-          status = 'Active';
-        } else if (type == 'Returned') {
-          status = 'Returned';
+      // For Stock_Out, ALWAYS check orders for current invoice/delivery status
+      if (type == 'Stock_Out' && transactionId != null) {
+        // Query orders to get invoice_status and delivery_status
+        final ordersQuery = await _firestore
+            .collection('orders')
+            .where('transaction_ids', arrayContains: transactionId)
+            .limit(1)
+            .get();
+
+        if (ordersQuery.docs.isNotEmpty) {
+          final orderData = ordersQuery.docs.first.data();
+          final invoiceStatus = orderData['invoice_status'] as String?;
+          final deliveryStatus = orderData['delivery_status'] as String?;
+
+          // Determine status based on order statuses (priority order)
+          if (deliveryStatus == 'Delivered') {
+            status = 'Delivered';
+          } else if (deliveryStatus == 'Issued') {
+            status = 'Issued';
+          } else if (invoiceStatus == 'Invoiced') {
+            status = 'Invoiced';
+          } else if (transactionStatus == 'Reserved') {
+            status = 'Reserved';
+          } else {
+            status = 'Reserved'; // Default for Stock_Out
+          }
         } else {
-          status = 'Active';
+          // No order found, use transaction status
+          status = transactionStatus ?? 'Reserved';
         }
+      } else if (type == 'Stock_In') {
+        status = 'Active';
+      } else if (type == 'Demo') {
+        status = 'Demo';
+      } else if (type == 'Cancellation') {
+        status = 'Active';
+      } else if (type == 'Returned') {
+        status = 'Returned';
+      } else {
+        status = 'Active';
       }
     }
 
+    // Fallback to stored status if no transactions
+    status ??=
+        inventoryData['status'] ?? inventoryData['current_status'] ?? 'Active';
+
     return {
-      'status': status ?? 'Active',
-      'location': location ?? 'HQ', // Default location
+      'status': status,
+      'location': location ?? 'HQ',
       'lastActivity': lastActivity,
     };
   }
@@ -286,8 +315,7 @@ class InventoryManagementService {
         final serialNumber = data['serial_number'] as String? ?? '';
 
         // Calculate current location for this item (case-insensitive)
-        // Calculate current location for this item (case-insensitive)
-        final statusInfo = _determineItemStatus(
+        final statusInfo = await _determineItemStatus(
           data,
           transactionsBySerial[serialNumber.toLowerCase()] ?? [],
         );
@@ -349,7 +377,7 @@ class InventoryManagementService {
         final data = doc.data();
         final serialNumber = data['serial_number'] as String? ?? '';
 
-        final statusInfo = _determineItemStatus(
+        final statusInfo = await _determineItemStatus(
           data,
           transactionsBySerial[serialNumber.toLowerCase()] ?? [],
         );
@@ -513,6 +541,158 @@ class InventoryManagementService {
     } catch (e) {
       print('Error getting inventory item: $e');
       return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  /// Get complete activity history for an item by serial number
+  /// Shows all transactions chronologically with customer details
+  /// Uses case-insensitive matching for serial numbers
+  Future<Map<String, dynamic>> getItemActivityHistory(
+    String serialNumber,
+  ) async {
+    try {
+      // Fetch all transactions and filter in-memory for case-insensitive match
+      // This approach is necessary because Firestore where clause is case-sensitive
+      final transactionsQuery = await _firestore
+          .collection('transactions')
+          .orderBy('date', descending: true)
+          .get();
+
+      if (transactionsQuery.docs.isEmpty) {
+        return {
+          'success': true,
+          'activities': <Map<String, dynamic>>[],
+          'serial_number': serialNumber,
+          'message': 'No activity history found',
+        };
+      }
+
+      // Normalize serial number for case-insensitive comparison
+      final normalizedSerial = serialNumber.toLowerCase();
+
+      // Filter transactions by serial number (case-insensitive)
+      final matchingDocs = transactionsQuery.docs.where((doc) {
+        final data = doc.data();
+        final docSerial = data['serial_number'] as String?;
+        return docSerial != null && docSerial.toLowerCase() == normalizedSerial;
+      }).toList();
+
+      if (matchingDocs.isEmpty) {
+        return {
+          'success': true,
+          'activities': <Map<String, dynamic>>[],
+          'serial_number': serialNumber,
+          'message': 'No activity history found',
+        };
+      }
+
+      final activities = <Map<String, dynamic>>[];
+
+      for (final doc in matchingDocs) {
+        final data = doc.data();
+
+        final type = data['type'] as String? ?? 'Unknown';
+        final status = data['status'] as String? ?? 'Unknown';
+        final dateValue = data['date'];
+        final customerDealer = data['customer_dealer'] as String? ?? '';
+        final customerClient = data['customer_client'] as String? ?? '';
+        final location = data['location'] as String? ?? '';
+        final invoiceNumber = data['invoice_number'] as String? ?? '';
+        final demoNumber = data['demo_number'] as String? ?? '';
+        final remarks = data['remarks'] as String? ?? '';
+        final uploadedByUid = data['uploaded_by_uid'] as String? ?? '';
+
+        // Parse date
+        DateTime? activityDate;
+        if (dateValue is Timestamp) {
+          activityDate = dateValue.toDate();
+        } else if (dateValue is String) {
+          activityDate = DateTime.tryParse(dateValue);
+        }
+
+        // Determine who has the item (customer info)
+        String customerInfo = '';
+        if (customerDealer.isNotEmpty) {
+          customerInfo = customerClient.isNotEmpty
+              ? '$customerDealer → $customerClient'
+              : customerDealer;
+        }
+
+        // Build activity description
+        String activityDescription = '';
+        if (type == 'Stock_In') {
+          activityDescription = 'Item received into inventory';
+          if (location.isNotEmpty) {
+            activityDescription += ' at $location';
+          }
+        } else if (type == 'Stock_Out') {
+          if (status == 'Reserved') {
+            activityDescription = 'Order reserved';
+          } else if (status == 'Invoiced' || status == 'Issued') {
+            activityDescription = 'Invoice generated';
+          } else if (status == 'Delivered') {
+            activityDescription = 'Delivered to customer';
+          } else {
+            activityDescription = 'Item ordered';
+          }
+          if (customerInfo.isNotEmpty) {
+            activityDescription += ' for $customerInfo';
+          }
+        } else if (type == 'Demo') {
+          if (status == 'Demo') {
+            activityDescription = 'Sent out for demo';
+          } else if (status == 'Returned') {
+            activityDescription = 'Demo returned';
+          } else {
+            activityDescription = 'Demo activity';
+          }
+          if (customerInfo.isNotEmpty) {
+            activityDescription += ' to $customerInfo';
+          }
+        } else if (type == 'Returned') {
+          activityDescription = 'Item returned from customer';
+          if (customerInfo.isNotEmpty) {
+            activityDescription += ' ($customerInfo)';
+          }
+        } else if (type == 'Cancellation') {
+          activityDescription = 'Order cancelled';
+          if (customerInfo.isNotEmpty) {
+            activityDescription += ' for $customerInfo';
+          }
+        } else {
+          activityDescription = '$type - $status';
+        }
+
+        activities.add({
+          'id': doc.id,
+          'type': type,
+          'status': status,
+          'date': activityDate,
+          'customer_dealer': customerDealer,
+          'customer_client': customerClient,
+          'customer_info': customerInfo,
+          'location': location,
+          'invoice_number': invoiceNumber,
+          'demo_number': demoNumber,
+          'remarks': remarks,
+          'description': activityDescription,
+          'uploaded_by_uid': uploadedByUid,
+        });
+      }
+
+      return {
+        'success': true,
+        'activities': activities,
+        'serial_number': serialNumber,
+        'total_activities': activities.length,
+      };
+    } catch (e) {
+      print('Error getting item activity history: $e');
+      return {
+        'success': false,
+        'error': e.toString(),
+        'activities': <Map<String, dynamic>>[],
+      };
     }
   }
 }

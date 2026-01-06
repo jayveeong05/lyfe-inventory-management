@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
@@ -1103,60 +1104,64 @@ class _DemoScreenState extends State<DemoScreen> {
                     const SizedBox(height: 24),
 
                     // Development Section - Delete Recent Demos
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.red[50],
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.red[200]!),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.warning,
-                                color: Colors.red[700],
-                                size: 20,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Development Tools',
-                                style: TextStyle(
+                    if (kDebugMode)
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.red[50],
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.red[200]!),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.warning,
                                   color: Colors.red[700],
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
+                                  size: 20,
                                 ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Delete recent demo records for testing purposes',
-                            style: TextStyle(
-                              color: Colors.red[600],
-                              fontSize: 12,
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Development Tools',
+                                  style: TextStyle(
+                                    color: Colors.red[700],
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                          const SizedBox(height: 12),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton.icon(
-                              onPressed: _isLoading
-                                  ? null
-                                  : _showDeleteDemoDialog,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.red[600],
-                                foregroundColor: Colors.white,
+                            const SizedBox(height: 8),
+                            Text(
+                              'Delete recent demo records for testing purposes',
+                              style: TextStyle(
+                                color: Colors.red[600],
+                                fontSize: 12,
                               ),
-                              icon: const Icon(Icons.delete_forever, size: 18),
-                              label: const Text('Delete Recent Demos'),
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: _isLoading
+                                    ? null
+                                    : _showDeleteDemoDialog,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red[600],
+                                  foregroundColor: Colors.white,
+                                ),
+                                icon: const Icon(
+                                  Icons.delete_forever,
+                                  size: 18,
+                                ),
+                                label: const Text('Delete Recent Demos'),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
                     const SizedBox(height: 24),
 
                     // Save Button

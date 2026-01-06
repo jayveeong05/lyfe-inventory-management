@@ -10,6 +10,7 @@ import '../services/monthly_inventory_service.dart';
 import 'sales_report_screen.dart';
 import 'inventory_report_screen.dart';
 import 'monthly_inventory_activity_screen.dart';
+import 'demo_report_screen.dart';
 import 'stock_in_screen.dart';
 import 'stock_out_screen.dart';
 import 'invoice_screen.dart';
@@ -815,6 +816,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
               ),
             ),
           ),
+          _buildMenuOption(
+            'Demo Tracking',
+            Icons.track_changes,
+            Colors.purple,
+            'Track active demo items',
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const DemoReportScreen()),
+            ),
+          ),
         ],
       );
     } else {
@@ -873,6 +884,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                           MaterialPageRoute(
                             builder: (context) =>
                                 const MonthlyInventoryActivityScreen(),
+                          ),
+                        ),
+                      ),
+                      _buildMenuOption(
+                        'Demo Tracking',
+                        Icons.track_changes,
+                        Colors.indigo,
+                        'Track active demo items',
+                        () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const DemoReportScreen(),
                           ),
                         ),
                       ),

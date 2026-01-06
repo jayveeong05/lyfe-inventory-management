@@ -104,6 +104,9 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
   }
 
   void _showExportSuccessDialog(String filePath) {
+    // If filePath is just "Downloads folder" or similar generic message (Web), show a simplified dialog
+    final isGenericPath = !filePath.contains('/') && !filePath.contains('\\');
+
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -114,55 +117,37 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Your sales report has been saved to:',
-                style: TextStyle(fontWeight: FontWeight.bold),
+              Text(
+                isGenericPath
+                    ? 'Your sales report has been downloaded.'
+                    : 'Your sales report has been saved to:',
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(4),
+              if (!isGenericPath)
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    filePath,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
                 ),
-                child: Text(
-                  filePath,
-                  style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
-                ),
-              ),
               const SizedBox(height: 16),
               const Text(
                 'How to open the CSV file:',
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
-              const Text('1. Go to Downloads folder in your file manager'),
-              const Text('2. Find the CSV file and tap on it'),
-              const Text('3. If it shows "Can\'t open file":'),
-              const Text('   • Tap "Open with" or "Share"'),
-              const Text('   • Choose Excel, Sheets, or WPS Office'),
-              const Text('   • Install a spreadsheet app if needed'),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: Colors.blue.shade200),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.info, color: Colors.blue, size: 16),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Recommended apps: Microsoft Excel, Google Sheets, WPS Office',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              const Text('1. Go to your Downloads folder'),
+              const Text('2. Find the CSV file and open it'),
+              const Text('3. Compatible with Excel, Sheets, etc.'),
             ],
           ),
           actions: [
@@ -232,6 +217,8 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
             _buildPeriodInfo(),
             const SizedBox(height: 20),
             _buildSummaryCards(),
+            const SizedBox(height: 20),
+            _buildCustomerPurchaseDetails(), // NEW: Customer purchase details
             const SizedBox(height: 20),
             _buildTopCustomers(),
             const SizedBox(height: 20),
@@ -381,6 +368,255 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
     );
   }
 
+  Widget _buildCustomerPurchaseDetails() {
+    final customerItems =
+        _reportData!['customer_items'] as Map<String, dynamic>? ?? {};
+
+    if (customerItems.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    // Convert to list and sort by item count
+    final customerList = customerItems.entries.toList()
+      ..sort(
+        (a, b) => (b.value as List).length.compareTo((a.value as List).length),
+      );
+
+    final totalCustomers = customerList.length;
+    final totalItemsDetailed = customerList.fold<int>(
+      0,
+      (sum, entry) => sum + (entry.value as List).length,
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Flexible(
+              child: Text(
+                'Customer Purchase Details',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade100,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '$totalCustomers customers • $totalItemsDetailed items',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.blue.shade700,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: Column(
+            children: customerList.take(20).map((entry) {
+              final customerName = entry.key;
+              final items = entry.value as List<dynamic>;
+
+              // Count items by category
+              final categoryCount = <String, int>{};
+              for (final item in items) {
+                final category = item['category'] as String? ?? 'Unknown';
+                categoryCount[category] = (categoryCount[category] ?? 0) + 1;
+              }
+
+              return ExpansionTile(
+                leading: CircleAvatar(
+                  backgroundColor: Colors.indigo.shade100,
+                  child: Text(
+                    customerName.substring(0, 1).toUpperCase(),
+                    style: TextStyle(
+                      color: Colors.indigo.shade700,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                title: Text(
+                  customerName,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: Text('${items.length} items purchased'),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Category breakdown
+                        if (categoryCount.isNotEmpty) ...[
+                          Text(
+                            'Categories:',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey.shade700,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: categoryCount.entries.map((cat) {
+                              return Chip(
+                                label: Text(
+                                  '${cat.key}: ${cat.value}',
+                                  style: const TextStyle(fontSize: 11),
+                                ),
+                                backgroundColor: Colors.blue.shade50,
+                                padding: EdgeInsets.zero,
+                                visualDensity: VisualDensity.compact,
+                              );
+                            }).toList(),
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+
+                        // Item details table
+                        Text(
+                          'Items Purchased:',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey.shade300),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Column(
+                            children: [
+                              // Header
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade100,
+                                  borderRadius: const BorderRadius.only(
+                                    topLeft: Radius.circular(8),
+                                    topRight: Radius.circular(8),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Expanded(
+                                      flex: 3,
+                                      child: Text(
+                                        'Serial Number',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                    const Expanded(
+                                      flex: 2,
+                                      child: Text(
+                                        'Category',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                    const Expanded(
+                                      flex: 2,
+                                      child: Text(
+                                        'Date',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                        textAlign: TextAlign.right,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              // Items
+                              ...items.take(10).map((item) {
+                                final date = item['date'] as DateTime?;
+                                return Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    border: Border(
+                                      top: BorderSide(
+                                        color: Colors.grey.shade200,
+                                      ),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        flex: 3,
+                                        child: Text(
+                                          item['serial_number'] ?? 'N/A',
+                                          style: const TextStyle(
+                                            fontSize: 10,
+                                            fontFamily: 'monospace',
+                                          ),
+                                        ),
+                                      ),
+                                      Expanded(
+                                        flex: 2,
+                                        child: Text(
+                                          item['category'] ?? 'Unknown',
+                                          style: const TextStyle(fontSize: 10),
+                                        ),
+                                      ),
+                                      Expanded(
+                                        flex: 2,
+                                        child: Text(
+                                          date != null
+                                              ? DateFormat('MMM d').format(date)
+                                              : 'N/A',
+                                          style: const TextStyle(fontSize: 10),
+                                          textAlign: TextAlign.right,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }),
+                              if (items.length > 10)
+                                Padding(
+                                  padding: const EdgeInsets.all(8),
+                                  child: Text(
+                                    '+ ${items.length - 10} more items',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.grey.shade600,
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            }).toList(),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildTopCustomers() {
     final topCustomers = _reportData!['top_customers'] as List<dynamic>? ?? [];
 
@@ -512,29 +748,31 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
   }
 
   Widget _buildRecentOrders() {
-    final purchaseOrders =
-        _reportData!['purchase_orders'] as List<dynamic>? ?? [];
+    final orders = _reportData!['orders'] as List<dynamic>? ?? [];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Recent Purchase Orders',
+          'Recent Orders',
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 12),
         Card(
           child: Column(
-            children: purchaseOrders.isEmpty
+            children: orders.isEmpty
                 ? [
                     const Padding(
                       padding: EdgeInsets.all(16),
-                      child: Text('No purchase orders found'),
+                      child: Text('No orders found'),
                     ),
                   ]
-                : purchaseOrders.take(10).map((po) {
-                    final status = po['status'] as String? ?? 'Unknown';
-                    final createdDate = po['created_date'] as Timestamp?;
+                : orders.take(10).map((order) {
+                    final status =
+                        order['invoice_status'] as String? ??
+                        order['status'] as String? ??
+                        'Pending';
+                    final createdDate = order['created_date'] as Timestamp?;
 
                     return ListTile(
                       leading: CircleAvatar(
@@ -548,11 +786,11 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
                               : Colors.orange.shade600,
                         ),
                       ),
-                      title: Text(po['po_number'] ?? 'Unknown PO'),
+                      title: Text(order['order_number'] ?? 'Unknown Order'),
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(po['customer_dealer'] ?? 'Unknown Customer'),
+                          Text(order['customer_dealer'] ?? 'Unknown Customer'),
                           if (createdDate != null)
                             Text(
                               DateFormat(
@@ -579,7 +817,7 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
                             ),
                           ),
                           Text(
-                            '${po['total_items'] ?? 0} items',
+                            '${order['total_items'] ?? 0} items',
                             style: TextStyle(
                               fontSize: 12,
                               color: Colors.grey.shade600,
@@ -598,133 +836,138 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
   void _showFilterDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Filter Sales Report'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Date range
-              ListTile(
-                title: const Text('Start Date'),
-                subtitle: Text(
-                  _startDate != null
-                      ? DateFormat('MMM dd, yyyy').format(_startDate!)
-                      : 'Not selected',
-                ),
-                trailing: const Icon(Icons.calendar_today),
-                onTap: () async {
-                  final date = await showDatePicker(
-                    context: context,
-                    initialDate:
-                        _startDate ??
-                        DateTime.now().subtract(const Duration(days: 30)),
-                    firstDate: DateTime(2020),
-                    lastDate: DateTime.now(),
-                  );
-                  if (date != null) {
-                    setState(() {
-                      _startDate = date;
-                    });
-                  }
-                },
-              ),
-              ListTile(
-                title: const Text('End Date'),
-                subtitle: Text(
-                  _endDate != null
-                      ? DateFormat('MMM dd, yyyy').format(_endDate!)
-                      : 'Not selected',
-                ),
-                trailing: const Icon(Icons.calendar_today),
-                onTap: () async {
-                  final date = await showDatePicker(
-                    context: context,
-                    initialDate: _endDate ?? DateTime.now(),
-                    firstDate: DateTime(2020),
-                    lastDate: DateTime.now(),
-                  );
-                  if (date != null) {
-                    setState(() {
-                      _endDate = date;
-                    });
-                  }
-                },
-              ),
-              // Customer filter
-              DropdownButtonFormField<String>(
-                initialValue: _selectedCustomer,
-                decoration: const InputDecoration(labelText: 'Customer'),
-                items: [
-                  const DropdownMenuItem(
-                    value: null,
-                    child: Text('All Customers'),
-                  ),
-                  ..._customers.map(
-                    (customer) => DropdownMenuItem(
-                      value: customer,
-                      child: Text(customer),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            title: const Text('Filter Sales Report'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Date range
+                  ListTile(
+                    title: const Text('Start Date'),
+                    subtitle: Text(
+                      _startDate != null
+                          ? DateFormat('MMM dd, yyyy').format(_startDate!)
+                          : 'Not selected',
                     ),
+                    trailing: const Icon(Icons.calendar_today),
+                    onTap: () async {
+                      final date = await showDatePicker(
+                        context: context,
+                        initialDate:
+                            _startDate ??
+                            DateTime.now().subtract(const Duration(days: 30)),
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime.now(),
+                      );
+                      if (date != null) {
+                        setState(() {
+                          _startDate = date;
+                        });
+                      }
+                    },
+                  ),
+                  ListTile(
+                    title: const Text('End Date'),
+                    subtitle: Text(
+                      _endDate != null
+                          ? DateFormat('MMM dd, yyyy').format(_endDate!)
+                          : 'Not selected',
+                    ),
+                    trailing: const Icon(Icons.calendar_today),
+                    onTap: () async {
+                      final date = await showDatePicker(
+                        context: context,
+                        initialDate: _endDate ?? DateTime.now(),
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime.now(),
+                      );
+                      if (date != null) {
+                        setState(() {
+                          _endDate = date;
+                        });
+                      }
+                    },
+                  ),
+                  // Customer filter
+                  DropdownButtonFormField<String>(
+                    value: _selectedCustomer,
+                    decoration: const InputDecoration(labelText: 'Customer'),
+                    items: [
+                      const DropdownMenuItem(
+                        value: null,
+                        child: Text('All Customers'),
+                      ),
+                      ..._customers.map(
+                        (customer) => DropdownMenuItem(
+                          value: customer,
+                          child: Text(customer),
+                        ),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedCustomer = value;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  // Location filter
+                  DropdownButtonFormField<String>(
+                    value: _selectedLocation,
+                    decoration: const InputDecoration(labelText: 'Location'),
+                    items: [
+                      const DropdownMenuItem(
+                        value: null,
+                        child: Text('All Locations'),
+                      ),
+                      ..._locations.map(
+                        (location) => DropdownMenuItem(
+                          value: location,
+                          child: Text(location),
+                        ),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedLocation = value;
+                      });
+                    },
                   ),
                 ],
-                onChanged: (value) {
-                  setState(() {
-                    _selectedCustomer = value;
-                  });
-                },
               ),
-              const SizedBox(height: 16),
-              // Location filter
-              DropdownButtonFormField<String>(
-                initialValue: _selectedLocation,
-                decoration: const InputDecoration(labelText: 'Location'),
-                items: [
-                  const DropdownMenuItem(
-                    value: null,
-                    child: Text('All Locations'),
-                  ),
-                  ..._locations.map(
-                    (location) => DropdownMenuItem(
-                      value: location,
-                      child: Text(location),
-                    ),
-                  ),
-                ],
-                onChanged: (value) {
-                  setState(() {
-                    _selectedLocation = value;
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  // Update parent state
+                  this.setState(() {
+                    _startDate = null;
+                    _endDate = null;
+                    _selectedCustomer = null;
+                    _selectedLocation = null;
                   });
+                  Navigator.pop(context);
+                  _loadReport();
                 },
+                child: const Text('Clear'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _loadReport();
+                },
+                child: const Text('Apply'),
               ),
             ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              setState(() {
-                _startDate = null;
-                _endDate = null;
-                _selectedCustomer = null;
-                _selectedLocation = null;
-              });
-              Navigator.pop(context);
-              _loadReport();
-            },
-            child: const Text('Clear'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _loadReport();
-            },
-            child: const Text('Apply'),
-          ),
-        ],
+          );
+        },
       ),
     );
   }

@@ -1,101 +1,14 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:csv/csv.dart';
-import 'dart:io';
-import 'dart:convert';
-import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart';
-import 'package:permission_handler/permission_handler.dart';
+import '../utils/file_saver/file_saver.dart';
 
 class ReportService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FileSaver _fileSaver = FileSaver();
 
-  /// Get appropriate directory for saving CSV files based on platform
-  ///
-  /// - Desktop: Uses application documents directory
-  /// - Mobile: Uses downloads directory (user accessible) with permission handling
-  Future<Directory> _getExportDirectory() async {
-    if (Platform.isAndroid || Platform.isIOS) {
-      // For mobile platforms, request storage permission first
-      try {
-        if (Platform.isAndroid) {
-          // For Android, try to access public Downloads directory
-          debugPrint('🤖 Android detected - trying public Downloads access...');
-
-          // Approach 1: Try public Downloads directory directly
-          try {
-            final publicDownloads = Directory('/storage/emulated/0/Download');
-            debugPrint('📁 Testing public Downloads: ${publicDownloads.path}');
-
-            // Test write access by creating a test file
-            final testFile = File('${publicDownloads.path}/.test_write_access');
-            await testFile.writeAsString('test');
-            await testFile.delete();
-
-            debugPrint('✅ Public Downloads directory is writable!');
-            return publicDownloads;
-          } catch (e) {
-            debugPrint('❌ Public Downloads not accessible: $e');
-          }
-
-          // Approach 2: Request storage permission and try again
-          debugPrint('🔍 Requesting storage permission...');
-          final permission = await Permission.storage.request();
-          debugPrint('📋 Permission status: ${permission.toString()}');
-
-          if (permission.isGranted) {
-            try {
-              final publicDownloads = Directory('/storage/emulated/0/Download');
-              final testFile = File(
-                '${publicDownloads.path}/.test_write_access',
-              );
-              await testFile.writeAsString('test');
-              await testFile.delete();
-
-              debugPrint('✅ Public Downloads accessible after permission!');
-              return publicDownloads;
-            } catch (e) {
-              debugPrint('❌ Still cannot access public Downloads: $e');
-            }
-          } else {
-            debugPrint('❌ Storage permission denied: ${permission.toString()}');
-          }
-
-          // Final fallback to external storage directory
-          debugPrint('🔄 Falling back to external storage directory...');
-          final directory = await getExternalStorageDirectory();
-          if (directory != null) {
-            // Create a subdirectory for our app
-            final appDirectory = Directory(
-              '${directory.path}/InventoryReports',
-            );
-            if (!await appDirectory.exists()) {
-              await appDirectory.create(recursive: true);
-            }
-            debugPrint(
-              '📂 Using external storage subdirectory: ${appDirectory.path}',
-            );
-            return appDirectory;
-          }
-        } else if (Platform.isIOS) {
-          // On iOS, use application documents directory (accessible via Files app)
-          final iosDirectory = await getApplicationDocumentsDirectory();
-          debugPrint('🍎 Using iOS documents directory: ${iosDirectory.path}');
-          return iosDirectory;
-        }
-      } catch (e) {
-        // If external storage fails, fall back to application documents
-        debugPrint('❌ External storage access failed: $e');
-      }
-    }
-
-    // Desktop platforms or fallback: use application documents directory
-    final fallbackDirectory = await getApplicationDocumentsDirectory();
-    debugPrint(
-      '💻 Using fallback documents directory: ${fallbackDirectory.path}',
-    );
-    return fallbackDirectory;
-  }
+  // Export path helper removed as it's now handled by FileSaver
 
   // Sales Report Methods
 
@@ -107,9 +20,9 @@ class ReportService {
     String? location,
   }) async {
     try {
-      // Set default date range if not provided (last 30 days)
+      // Set default date range if not provided (all time from 2020)
       endDate ??= DateTime.now();
-      startDate ??= endDate.subtract(const Duration(days: 30));
+      startDate ??= DateTime(2020, 1, 1); // All-time default
 
       // Build query for orders
       Query query = _firestore.collection('orders');
@@ -130,27 +43,47 @@ class ReportService {
 
       final poSnapshot = await query.get();
 
-      // Get all transactions for the same period
-      Query transactionQuery = _firestore
-          .collection('transactions')
-          .where('type', isEqualTo: 'Stock_Out');
+      // Collect all transaction IDs from the filtered orders
+      final allTransactionIds = <int>[];
+      for (final doc in poSnapshot.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        final transactionIds = List<dynamic>.from(
+          data['transaction_ids'] ?? [],
+        );
+        for (final id in transactionIds) {
+          if (id is int) {
+            allTransactionIds.add(id);
+          }
+        }
+      }
 
-      transactionQuery = transactionQuery
-          .where(
-            'uploaded_at',
-            isGreaterThanOrEqualTo: Timestamp.fromDate(startDate),
-          )
-          .where(
-            'uploaded_at',
-            isLessThanOrEqualTo: Timestamp.fromDate(endDate),
-          );
+      // Fetch transactions by transaction_id (batched due to Firestore whereIn limit of 30)
+      final List<DocumentSnapshot> allTransactionDocs = [];
 
-      final transactionSnapshot = await transactionQuery.get();
+      if (allTransactionIds.isNotEmpty) {
+        // Split into batches of 30
+        const batchSize = 30;
+        for (int i = 0; i < allTransactionIds.length; i += batchSize) {
+          final batch = allTransactionIds.skip(i).take(batchSize).toList();
+
+          final batchQuery = _firestore
+              .collection('transactions')
+              .where('type', isEqualTo: 'Stock_Out')
+              .where('transaction_id', whereIn: batch);
+
+          final batchSnapshot = await batchQuery.get();
+          allTransactionDocs.addAll(batchSnapshot.docs);
+        }
+      }
+
+      // Create a QuerySnapshot-like object from collected docs
+      final transactionSnapshot = _createQuerySnapshot(allTransactionDocs);
 
       // Process sales data
       final salesData = await _processSalesData(
         poSnapshot,
         transactionSnapshot,
+        locationFilter: location,
       );
 
       return {
@@ -167,10 +100,13 @@ class ReportService {
   /// Process sales data from orders and transactions
   Future<Map<String, dynamic>> _processSalesData(
     QuerySnapshot orderSnapshot,
-    QuerySnapshot transactionSnapshot,
-  ) async {
+    QuerySnapshot transactionSnapshot, {
+    String? locationFilter,
+  }) async {
     final orders = <Map<String, dynamic>>[];
     final customerStats = <String, Map<String, dynamic>>{};
+    final customerItems =
+        <String, List<Map<String, dynamic>>>{}; // NEW: Track items per customer
     final locationStats = <String, Map<String, dynamic>>{};
     final dailySales = <String, int>{};
     final categoryStats = <String, Map<String, dynamic>>{};
@@ -178,33 +114,74 @@ class ReportService {
     int totalOrders = 0;
     int invoicedOrders = 0;
     int pendingOrders = 0;
-    int totalItems = 0;
+    // Note: totalItems removed - now calculated from customerItems
+
+    // Create a map of transaction locations for quick lookup
+    final transactionLocations = <int, String>{};
+    for (final doc in transactionSnapshot.docs) {
+      final data = doc.data() as Map<String, dynamic>;
+      final transactionId = data['transaction_id'] as int?;
+      final location = data['location'] as String?;
+      if (transactionId != null && location != null) {
+        transactionLocations[transactionId] = location;
+      }
+    }
+
+    final validTransactionIds = <int>{};
 
     // Process orders
     for (final doc in orderSnapshot.docs) {
       final data = doc.data() as Map<String, dynamic>;
+
+      // Filter by location if requested
+      if (locationFilter != null && locationFilter.isNotEmpty) {
+        final transactionIds = List<dynamic>.from(
+          data['transaction_ids'] ?? [],
+        );
+        bool locationMatch = false;
+
+        // Check if any transaction in this order matches the location filter
+        for (final tId in transactionIds) {
+          if (tId is int && transactionLocations[tId] == locationFilter) {
+            locationMatch = true;
+            break;
+          }
+        }
+
+        if (!locationMatch) continue;
+      }
+
+      // Collect valid transaction IDs from this order
+      final tIds = List<dynamic>.from(data['transaction_ids'] ?? []);
+      for (final id in tIds) {
+        if (id is int) {
+          validTransactionIds.add(id);
+        }
+      }
+
       final orderData = {'id': doc.id, ...data};
       orders.add(orderData);
 
       totalOrders++;
-      final status = data['status'] as String? ?? 'Pending';
+      // Use invoice_status if available, fallback to status or Pending
+      final status =
+          data['invoice_status'] as String? ??
+          data['status'] as String? ??
+          'Pending';
+
       if (status == 'Invoiced') {
         invoicedOrders++;
       } else {
         pendingOrders++;
       }
 
-      final itemCount = data['total_items'] as int? ?? 0;
-      totalItems += itemCount;
-
-      // Customer statistics
+      // Customer statistics (order count only, items will be calculated from customerItems)
       final customer = data['customer_dealer'] as String? ?? 'Unknown';
       customerStats[customer] =
           customerStats[customer] ?? {'orders': 0, 'items': 0};
       customerStats[customer]!['orders'] =
           (customerStats[customer]!['orders'] as int) + 1;
-      customerStats[customer]!['items'] =
-          (customerStats[customer]!['items'] as int) + itemCount;
+      // Note: items count will be updated after processing all transactions
 
       // Daily sales tracking
       final createdDate = data['created_date'] as Timestamp?;
@@ -214,12 +191,65 @@ class ReportService {
       }
     }
 
+    // Gather all serial numbers from transactions to fetch inventory details in batch
+    final serialNumbers = <String>{};
+    for (final doc in transactionSnapshot.docs) {
+      final data = doc.data() as Map<String, dynamic>;
+      if (data['serial_number'] != null) {
+        serialNumbers.add(data['serial_number'] as String);
+      }
+    }
+
+    // Fetch inventory details for these serials to fill in missing info
+    final inventoryMap = <String, Map<String, dynamic>>{};
+    if (serialNumbers.isNotEmpty) {
+      // split into chunks of 10 if needed (firestore limit is 10 for some 'in' queries, but here we might just query all or iterate)
+      // For simplicity in this report service, let's fetch inventory items that match.
+      // Optimally we'd do a whereIn query, but with potentially large lists, let's just do a collection scan or assume we only need those missing data.
+      // Actually, let's just fetch ALL inventory for now as the dataset seems small enough, OR better, fetch by chunk.
+      // Given the constraints and likely size, let's iterate and fetch if category is missing? No that's N+1.
+      // Let's optimize: checking missing categories is only needed if data is missing.
+
+      // Let's just fetch all inventory. It's an "Expensive" report anyway.
+      // Or better:
+      final invSnapshot = await _firestore.collection('inventory').get();
+      for (final doc in invSnapshot.docs) {
+        final data = doc.data();
+        if (data['serial_number'] != null) {
+          inventoryMap[data['serial_number'] as String] = data;
+        }
+      }
+    }
+
     // Process transactions for additional insights
     for (final doc in transactionSnapshot.docs) {
       final data = doc.data() as Map<String, dynamic>;
+      final serial = data['serial_number'] as String?;
+      final transactionId = data['transaction_id'] as int?;
+
+      // Skip if transaction does not belong to any of the filtered orders
+      if (transactionId == null ||
+          !validTransactionIds.contains(transactionId)) {
+        continue;
+      }
 
       // Location statistics
-      final location = data['location'] as String? ?? 'Unknown';
+      // If location is missing in transaction, try to find it in inventory or fallback
+      String location = data['location'] as String? ?? '';
+      if ((location.isEmpty || location == 'Unknown') &&
+          serial != null &&
+          inventoryMap.containsKey(serial)) {
+        location = inventoryMap[serial]!['location'] as String? ?? '';
+      }
+      if (location.isEmpty) location = 'Unknown';
+
+      // Skip if location filter does not match
+      if (locationFilter != null &&
+          locationFilter.isNotEmpty &&
+          location != locationFilter) {
+        continue;
+      }
+
       locationStats[location] =
           locationStats[location] ?? {'transactions': 0, 'items': 0};
       locationStats[location]!['transactions'] =
@@ -228,13 +258,114 @@ class ReportService {
           (locationStats[location]!['items'] as int) + 1;
 
       // Category statistics
-      final category = data['equipment_category'] as String? ?? 'Unknown';
+      // If category is missing in transaction, try to find it in inventory
+      String category = data['equipment_category'] as String? ?? '';
+      if ((category.isEmpty || category == 'Unknown') &&
+          serial != null &&
+          inventoryMap.containsKey(serial)) {
+        category = inventoryMap[serial]!['equipment_category'] as String? ?? '';
+      }
+      if (category.isEmpty) category = 'Unknown';
+
       categoryStats[category] =
           categoryStats[category] ?? {'transactions': 0, 'items': 0};
       categoryStats[category]!['transactions'] =
           (categoryStats[category]!['transactions'] as int) + 1;
       categoryStats[category]!['items'] =
           (categoryStats[category]!['items'] as int) + 1;
+
+      // NEW: Collect customer item details
+      // Find the order that contains this transaction to get customer name
+      final orderContainingTransaction = orders.firstWhere((order) {
+        final tIds = List<dynamic>.from(order['transaction_ids'] ?? []);
+        return tIds.contains(transactionId);
+      }, orElse: () => <String, dynamic>{});
+
+      if (orderContainingTransaction.isNotEmpty) {
+        final customerName =
+            orderContainingTransaction['customer_dealer'] as String? ??
+            'Unknown';
+        final orderNumber =
+            orderContainingTransaction['order_number'] as String? ?? 'N/A';
+
+        // Handle uploaded_at - can be Timestamp or String (for backfilled data)
+        DateTime? uploadedAtDate;
+        final uploadedAtValue = data['uploaded_at'];
+        if (uploadedAtValue is Timestamp) {
+          uploadedAtDate = uploadedAtValue.toDate();
+        } else if (uploadedAtValue is String) {
+          uploadedAtDate = DateTime.tryParse(uploadedAtValue);
+        }
+
+        final model =
+            data['model'] as String? ??
+            (serial != null && inventoryMap.containsKey(serial)
+                ? inventoryMap[serial]!['model'] as String? ?? 'Unknown'
+                : 'Unknown');
+
+        // Initialize customer items list if not exists
+        customerItems[customerName] = customerItems[customerName] ?? [];
+
+        // Get order delivery status to determine priority
+        final orderDeliveryStatus =
+            orderContainingTransaction['delivery_status'] as String? ?? '';
+
+        // Check if this serial number already exists for this order (deduplication)
+        final existingItemIndex = customerItems[customerName]!.indexWhere(
+          (item) =>
+              item['serial_number'] == serial &&
+              item['order_number'] == orderNumber,
+        );
+
+        final itemDetail = {
+          'serial_number': serial ?? 'N/A',
+          'category': category,
+          'model': model,
+          'date': uploadedAtDate ?? DateTime.now(),
+          'order_number': orderNumber,
+          'transaction_id': transactionId,
+          'delivery_status': orderDeliveryStatus,
+        };
+
+        if (existingItemIndex != -1) {
+          // Serial already exists for this order
+          // Priority: Delivered > Reserved
+          final existingStatus =
+              customerItems[customerName]![existingItemIndex]['delivery_status']
+                  as String? ??
+              '';
+
+          // Replace if:
+          // 1. New status is "Delivered" and existing is not "Delivered"
+          // 2. Both have same status but new is more recent
+          final shouldReplace =
+              (orderDeliveryStatus == 'Delivered' &&
+                  existingStatus != 'Delivered') ||
+              (orderDeliveryStatus == existingStatus &&
+                  (uploadedAtDate?.isAfter(
+                        customerItems[customerName]![existingItemIndex]['date']
+                                as DateTime? ??
+                            DateTime(1970),
+                      ) ??
+                      false));
+
+          if (shouldReplace) {
+            customerItems[customerName]![existingItemIndex] = itemDetail;
+          }
+        } else {
+          // New item, add it
+          customerItems[customerName]!.add(itemDetail);
+        }
+      }
+    }
+
+    // Update customerStats items count from actual deduplicated transactions
+    for (final entry in customerItems.entries) {
+      final customerName = entry.key;
+      final items = entry.value as List;
+      if (customerStats.containsKey(customerName)) {
+        customerStats[customerName]!['items'] = items.length;
+      }
     }
 
     // Sort and limit top results
@@ -258,12 +389,19 @@ class ReportService {
         ),
       );
 
+    // Calculate actual items sold from deduplicated customer items
+    final actualItemsSold = customerItems.values.fold<int>(
+      0,
+      (sum, items) => sum + (items as List).length,
+    );
+
     return {
       'summary': {
         'total_orders': totalOrders,
         'invoiced_orders': invoicedOrders,
         'pending_orders': pendingOrders,
-        'total_items_sold': totalItems,
+        'total_items_sold':
+            actualItemsSold, // Use actual count from transactions
         'conversion_rate': totalOrders > 0
             ? (invoicedOrders / totalOrders * 100).toStringAsFixed(1)
             : '0.0',
@@ -300,6 +438,7 @@ class ReportService {
           )
           .toList(),
       'daily_sales': dailySales,
+      'customer_items': customerItems, // NEW: Customer item details
     };
   }
 
@@ -415,7 +554,18 @@ class ReportService {
       // Get last activity from most recent transaction
       if (itemTransactions.isNotEmpty) {
         final latestTransaction = itemTransactions.first;
-        currentLocation ??= latestTransaction['location'] as String?;
+
+        // If current location is missing or Unknown, try to get from last transaction
+        if (currentLocation == null ||
+            currentLocation.isEmpty ||
+            currentLocation == 'Unknown') {
+          final transactionLoc = latestTransaction['location'] as String?;
+          if (transactionLoc != null &&
+              transactionLoc.isNotEmpty &&
+              transactionLoc != 'Unknown') {
+            currentLocation = transactionLoc;
+          }
+        }
 
         // Handle date field for last activity
         final dateValue = latestTransaction['date'];
@@ -455,7 +605,17 @@ class ReportService {
       inventoryItems.add(itemData);
 
       // Update statistics
-      final category = data['equipment_category'] as String? ?? 'Unknown';
+      String category = data['equipment_category'] as String? ?? 'Unknown';
+      if (category == 'Unknown' && itemTransactions.isNotEmpty) {
+        final transactionCat =
+            itemTransactions.first['equipment_category'] as String?;
+        if (transactionCat != null &&
+            transactionCat.isNotEmpty &&
+            transactionCat != 'Unknown') {
+          category = transactionCat;
+        }
+      }
+
       categoryStats[category] =
           categoryStats[category] ??
           {'total': 0, 'active': 0, 'stocked_out': 0};
@@ -589,7 +749,8 @@ class ReportService {
           'Order Number',
           'Customer Dealer',
           'Customer Client',
-          'Status',
+          'Invoice Status',
+          'Delivery Status',
           'Total Items',
           'Created Date',
         ],
@@ -602,7 +763,8 @@ class ReportService {
           order['order_number'] ?? '',
           order['customer_dealer'] ?? '',
           order['customer_client'] ?? '',
-          order['status'] ?? '',
+          order['invoice_status'] ?? order['status'] ?? '',
+          order['delivery_status'] ?? '',
           order['total_items'] ?? 0,
           createdDate != null
               ? DateFormat('yyyy-MM-dd HH:mm:ss').format(createdDate.toDate())
@@ -610,32 +772,68 @@ class ReportService {
         ]);
       }
 
+      // NEW: Add customer purchase details section
+      final customerItems =
+          reportData['customer_items'] as Map<String, dynamic>? ?? {};
+      if (customerItems.isNotEmpty) {
+        // Add separator and header for customer details
+        csvData.add([]); // Empty row
+        csvData.add(['Customer Purchase Details']);
+        csvData.add([]); // Empty row
+        csvData.add([
+          'Customer Name',
+          'Order Number',
+          'Serial Number',
+          'Category',
+          'Model',
+          'Date',
+          'Transaction ID',
+        ]);
+
+        // Sort customers by name
+        final sortedCustomers = customerItems.entries.toList()
+          ..sort((a, b) => a.key.compareTo(b.key));
+
+        // Add items for each customer
+        for (final entry in sortedCustomers) {
+          final customerName = entry.key;
+          final items = entry.value as List<dynamic>;
+
+          // Sort items by date (newest first)
+          final sortedItems = List<Map<String, dynamic>>.from(items)
+            ..sort((a, b) {
+              final dateA = a['date'] as DateTime?;
+              final dateB = b['date'] as DateTime?;
+              if (dateA == null && dateB == null) return 0;
+              if (dateA == null) return 1;
+              if (dateB == null) return -1;
+              return dateB.compareTo(dateA);
+            });
+
+          for (final item in sortedItems) {
+            final date = item['date'] as DateTime?;
+            csvData.add([
+              customerName,
+              item['order_number'] ?? '',
+              item['serial_number'] ?? '',
+              item['category'] ?? '',
+              item['model'] ?? '',
+              date != null ? DateFormat('yyyy-MM-dd').format(date) : '',
+              item['transaction_id']?.toString() ?? '',
+            ]);
+          }
+        }
+      }
+
       // Convert to CSV string
       String csvString = const ListToCsvConverter().convert(csvData);
 
-      // Debug: Check CSV content
-      debugPrint('📊 CSV Data Rows: ${csvData.length}');
-      debugPrint('📝 CSV Content Length: ${csvString.length} characters');
-      debugPrint(
-        '🔍 CSV Preview (first 200 chars): ${csvString.length > 200 ? "${csvString.substring(0, 200)}..." : csvString}',
-      );
-
-      // Save to file using platform-appropriate directory
-      final directory = await _getExportDirectory();
+      // Save to file
       final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
-      final file = File('${directory.path}/sales_report_$timestamp.csv');
-
-      // Write with explicit UTF-8 encoding
-      await file.writeAsString(csvString, encoding: utf8);
-
-      // Debug: Verify file was created
-      final fileExists = await file.exists();
-      final fileSize = fileExists ? await file.length() : 0;
-      debugPrint('✅ File created: $fileExists');
-      debugPrint('📏 File size: $fileSize bytes');
-      debugPrint('📂 File path: ${file.path}');
-
-      return file.path;
+      return await _fileSaver.saveFile(
+        'sales_report_$timestamp.csv',
+        csvString,
+      );
     } catch (e) {
       print('Error exporting sales report to CSV: $e');
       return null;
@@ -685,31 +883,12 @@ class ReportService {
       // Convert to CSV string
       String csvString = const ListToCsvConverter().convert(csvData);
 
-      // Debug: Check CSV content
-      debugPrint('📊 Inventory CSV Data Rows: ${csvData.length}');
-      debugPrint(
-        '📝 Inventory CSV Content Length: ${csvString.length} characters',
-      );
-      debugPrint(
-        '🔍 Inventory CSV Preview (first 200 chars): ${csvString.length > 200 ? "${csvString.substring(0, 200)}..." : csvString}',
-      );
-
-      // Save to file using platform-appropriate directory
-      final directory = await _getExportDirectory();
+      // Save to file
       final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
-      final file = File('${directory.path}/inventory_report_$timestamp.csv');
-
-      // Write with explicit UTF-8 encoding
-      await file.writeAsString(csvString, encoding: utf8);
-
-      // Debug: Verify file was created
-      final fileExists = await file.exists();
-      final fileSize = fileExists ? await file.length() : 0;
-      debugPrint('✅ Inventory file created: $fileExists');
-      debugPrint('📏 Inventory file size: $fileSize bytes');
-      debugPrint('📂 Inventory file path: ${file.path}');
-
-      return file.path;
+      return await _fileSaver.saveFile(
+        'inventory_report_$timestamp.csv',
+        csvString,
+      );
     } catch (e) {
       print('Error exporting inventory report to CSV: $e');
       return null;
@@ -863,35 +1042,15 @@ class ReportService {
       // Convert to CSV string
       String csvString = const ListToCsvConverter().convert(csvData);
 
-      // Debug: Check CSV content
-      debugPrint('📊 Monthly Activity CSV Data Rows: ${csvData.length}');
-      debugPrint(
-        '📝 Monthly Activity CSV Content Length: ${csvString.length} characters',
-      );
-      debugPrint(
-        '🔍 Monthly Activity CSV Preview (first 200 chars): ${csvString.length > 200 ? "${csvString.substring(0, 200)}..." : csvString}',
-      );
-
-      // Save to file using platform-appropriate directory
-      final directory = await _getExportDirectory();
+      // Save to file
       final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
       final monthLabel =
           selectedMonth['label']?.toString().replaceAll(' ', '_') ?? 'unknown';
-      final file = File(
-        '${directory.path}/monthly_activity_${monthLabel}_$timestamp.csv',
+
+      return await _fileSaver.saveFile(
+        'monthly_activity_${monthLabel}_$timestamp.csv',
+        csvString,
       );
-
-      // Write with explicit UTF-8 encoding
-      await file.writeAsString(csvString, encoding: utf8);
-
-      // Debug: Verify file was created
-      final fileExists = await file.exists();
-      final fileSize = fileExists ? await file.length() : 0;
-      debugPrint('✅ Monthly Activity file created: $fileExists');
-      debugPrint('📏 Monthly Activity file size: $fileSize bytes');
-      debugPrint('📂 Monthly Activity file path: ${file.path}');
-
-      return file.path;
     } catch (e) {
       debugPrint('Error exporting monthly activity report to CSV: $e');
       return null;
@@ -951,4 +1110,314 @@ class ReportService {
       return 'Active'; // In stock or default
     }
   }
+
+  // Demo Tracking Report Methods
+
+  /// Get comprehensive demo tracking report (grouped by client/dealer)
+  /// Uses demos collection for accurate demo_number and status tracking
+  Future<Map<String, dynamic>> getDemoTrackingReport({
+    String? customerFilter,
+    String? categoryFilter,
+    bool overdueOnly = false,
+    int overdueThresholdDays = 30,
+  }) async {
+    try {
+      // Query active demos from demos collection
+      Query demosQuery = _firestore
+          .collection('demos')
+          .where('status', whereIn: ['active', 'Active']);
+      final demosSnapshot = await demosQuery.get();
+      // Group by client or dealer
+      final groupedDemos = <String, Map<String, dynamic>>{};
+      final categoryStats = <String, Map<String, dynamic>>{};
+      int totalItemsOut = 0;
+      int overdueCount = 0;
+      int totalDaysOut = 0;
+      // Fetch inventory details for enrichment
+      final inventoryMap = <String, Map<String, dynamic>>{};
+      // Process each active demo
+      for (final demoDoc in demosSnapshot.docs) {
+        final demoData = demoDoc.data() as Map<String, dynamic>;
+        final demoNumber = demoData['demo_number'] as String? ?? '';
+        final customerDealer =
+            demoData['customer_dealer'] as String? ?? 'Unknown';
+        final customerClient = demoData['customer_client'] as String? ?? '';
+        final transactionIds = demoData['transaction_ids'] as List? ?? [];
+        final demoDateValue = demoData['created_at'];
+        // Calculate demo age
+        DateTime demoDate;
+        if (demoDateValue is Timestamp) {
+          demoDate = demoDateValue.toDate();
+        } else {
+          demoDate = DateTime.now();
+        }
+        // Determine grouping key: client if available, otherwise dealer
+        final groupKey = customerClient.isNotEmpty
+            ? '$customerDealer → $customerClient'
+            : customerDealer;
+        // Apply customer filter
+        if (customerFilter != null &&
+            customerFilter.isNotEmpty &&
+            customerDealer != customerFilter) {
+          continue;
+        }
+        // Get transaction details for this demo
+        final demoItems = <Map<String, dynamic>>[];
+        int demoOverdueCount = 0;
+        int oldestDays = 0;
+        for (final transId in transactionIds) {
+          // Query transaction by transaction_id
+          final transQuery = await _firestore
+              .collection('transactions')
+              .where('transaction_id', isEqualTo: transId)
+              .limit(1)
+              .get();
+          if (transQuery.docs.isEmpty) continue;
+          final transData = transQuery.docs.first.data();
+          // Only include items still in Demo status
+          if (transData['status'] != 'Demo') continue;
+          final serialNumber =
+              transData['serial_number'] as String? ?? 'Unknown';
+          String category = transData['equipment_category'] as String? ?? '';
+          String model = transData['model'] as String? ?? '';
+          final location = transData['location'] as String? ?? 'Demo';
+          final transDateValue = transData['date'];
+          // Get item sent date (use transaction date if available)
+          DateTime itemDate;
+          if (transDateValue is Timestamp) {
+            itemDate = transDateValue.toDate();
+          } else if (transDateValue is String) {
+            itemDate = DateTime.tryParse(transDateValue) ?? demoDate;
+          } else {
+            itemDate = demoDate;
+          }
+          // Enrich from inventory if needed
+          if (category.isEmpty || model.isEmpty) {
+            if (!inventoryMap.containsKey(serialNumber)) {
+              final invQuery = await _firestore
+                  .collection('inventory')
+                  .where('serial_number', isEqualTo: serialNumber)
+                  .limit(1)
+                  .get();
+              if (invQuery.docs.isNotEmpty) {
+                inventoryMap[serialNumber] = invQuery.docs.first.data();
+              }
+            }
+            if (inventoryMap.containsKey(serialNumber)) {
+              final invData = inventoryMap[serialNumber]!;
+              category = category.isEmpty
+                  ? (invData['equipment_category'] as String? ?? 'Unknown')
+                  : category;
+              model = model.isEmpty
+                  ? (invData['model'] as String? ?? 'Unknown')
+                  : model;
+            }
+          }
+          if (category.isEmpty) category = 'Unknown';
+          if (model.isEmpty) model = 'Unknown';
+          // Apply category filter
+          if (categoryFilter != null &&
+              categoryFilter.isNotEmpty &&
+              category != categoryFilter) {
+            continue;
+          }
+          final daysOut = DateTime.now().difference(itemDate).inDays;
+          final isOverdue = daysOut > overdueThresholdDays;
+          // Apply overdue filter
+          if (overdueOnly && !isOverdue) {
+            continue;
+          }
+          // Track statistics
+          if (daysOut > oldestDays) oldestDays = daysOut;
+          if (isOverdue) demoOverdueCount++;
+          totalItemsOut++;
+          totalDaysOut += daysOut;
+          if (isOverdue) overdueCount++;
+          // Category stats
+          categoryStats[category] =
+              categoryStats[category] ?? {'items': 0, 'overdue': 0};
+          categoryStats[category]!['items'] =
+              (categoryStats[category]!['items'] as int) + 1;
+          if (isOverdue) {
+            categoryStats[category]!['overdue'] =
+                (categoryStats[category]!['overdue'] as int) + 1;
+          }
+          demoItems.add({
+            'serial_number': serialNumber,
+            'equipment_category': category,
+            'model': model,
+            'demo_number': demoNumber,
+            'date_sent': itemDate,
+            'days_out': daysOut,
+            'is_overdue': isOverdue,
+            'location': location,
+          });
+        }
+        // Skip if no items passed filters
+        if (demoItems.isEmpty) continue;
+        // Initialize or update group
+        if (!groupedDemos.containsKey(groupKey)) {
+          groupedDemos[groupKey] = {
+            'group_key': groupKey,
+            'customer_dealer': customerDealer,
+            'customer_client': customerClient,
+            'items': <Map<String, dynamic>>[],
+            'total_items': 0,
+            'overdue_items': 0,
+            'oldest_days': 0,
+            'demo_numbers': <String>{},
+          };
+        }
+        // Add items to group
+        groupedDemos[groupKey]!['items'].addAll(demoItems);
+        groupedDemos[groupKey]!['total_items'] =
+            (groupedDemos[groupKey]!['total_items'] as int) + demoItems.length;
+        groupedDemos[groupKey]!['overdue_items'] =
+            (groupedDemos[groupKey]!['overdue_items'] as int) +
+            demoOverdueCount;
+        if (oldestDays > (groupedDemos[groupKey]!['oldest_days'] as int)) {
+          groupedDemos[groupKey]!['oldest_days'] = oldestDays;
+        }
+        if (demoNumber.isNotEmpty) {
+          (groupedDemos[groupKey]!['demo_numbers'] as Set<String>).add(
+            demoNumber,
+          );
+        }
+      }
+      // Convert grouped demos to list and sort
+      final groupedDemosList = groupedDemos.values.toList();
+      groupedDemosList.sort(
+        (a, b) => (b['oldest_days'] as int).compareTo(a['oldest_days'] as int),
+      );
+      final averageDaysOut = totalItemsOut > 0
+          ? (totalDaysOut / totalItemsOut).round()
+          : 0;
+      return {
+        'success': true,
+        'summary': {
+          'total_items_out': totalItemsOut,
+          'total_customers': groupedDemos.length,
+          'overdue_count': overdueCount,
+          'average_days_out': averageDaysOut,
+          'overdue_threshold': overdueThresholdDays,
+        },
+        'grouped_demos': groupedDemosList,
+        'category_breakdown':
+            categoryStats.entries
+                .map(
+                  (e) => {
+                    'category': e.key,
+                    'items': e.value['items'],
+                    'overdue': e.value['overdue'],
+                  },
+                )
+                .toList()
+              ..sort(
+                (a, b) => (b['items'] as int).compareTo(a['items'] as int),
+              ),
+      };
+    } catch (e) {
+      print('Error generating demo tracking report: $e');
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  /// Export demo tracking report to CSV
+  Future<String?> exportDemoTrackingReportToCSV(
+    Map<String, dynamic> reportData,
+  ) async {
+    try {
+      final activeDemos = reportData['active_demos'] as List<dynamic>? ?? [];
+
+      // Prepare CSV data
+      List<List<dynamic>> csvData = [
+        // Header row
+        [
+          'Serial Number',
+          'Equipment Category',
+          'Model',
+          'Customer (Dealer)',
+          'Customer (Client)',
+          'Demo Number',
+          'Date Sent Out',
+          'Days Out',
+          'Status',
+          'Location',
+        ],
+      ];
+
+      // Data rows
+      for (final demo in activeDemos) {
+        final dateSent = demo['date_sent'] as DateTime?;
+        final isOverdue = demo['is_overdue'] as bool? ?? false;
+
+        csvData.add([
+          demo['serial_number'] ?? '',
+          demo['equipment_category'] ?? '',
+          demo['model'] ?? '',
+          demo['customer_dealer'] ?? '',
+          demo['customer_client'] ?? '',
+          demo['demo_number'] ?? '',
+          dateSent != null ? DateFormat('yyyy-MM-dd').format(dateSent) : '',
+          demo['days_out'] ?? 0,
+          isOverdue ? 'OVERDUE' : 'Active',
+          demo['location'] ?? '',
+        ]);
+      }
+
+      // Convert to CSV string
+      String csvString = const ListToCsvConverter().convert(csvData);
+
+      // Save to file
+      final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+      return await _fileSaver.saveFile(
+        'demo_tracking_report_$timestamp.csv',
+        csvString,
+      );
+    } catch (e) {
+      print('Error exporting demo tracking report to CSV: $e');
+      return null;
+    }
+  }
+
+  /// Helper to create a QuerySnapshot-like object from a list of documents
+  QuerySnapshot _createQuerySnapshot(List<DocumentSnapshot> docs) {
+    return _MockQuerySnapshot(docs);
+  }
+}
+
+/// Mock QuerySnapshot class to wrap batched document results
+class _MockQuerySnapshot implements QuerySnapshot {
+  final List<DocumentSnapshot> _docs;
+
+  _MockQuerySnapshot(this._docs);
+
+  @override
+  List<QueryDocumentSnapshot> get docs => _docs.cast<QueryDocumentSnapshot>();
+
+  @override
+  List<DocumentChange> get docChanges => [];
+
+  @override
+  SnapshotMetadata get metadata => const _MockSnapshotMetadata();
+
+  @override
+  int get size => _docs.length;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// Mock SnapshotMetadata
+class _MockSnapshotMetadata implements SnapshotMetadata {
+  const _MockSnapshotMetadata();
+
+  @override
+  bool get hasPendingWrites => false;
+
+  @override
+  bool get isFromCache => false;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

@@ -218,6 +218,9 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
   }
 
   void _showExportSuccessDialog(String filePath) {
+    // If filePath is just "Downloads folder" or similar generic message (Web), show a simplified dialog
+    final isGenericPath = !filePath.contains('/') && !filePath.contains('\\');
+
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -228,55 +231,37 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Your inventory report has been saved to:',
-                style: TextStyle(fontWeight: FontWeight.bold),
+              Text(
+                isGenericPath
+                    ? 'Your inventory report has been downloaded.'
+                    : 'Your inventory report has been saved to:',
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(4),
+              if (!isGenericPath)
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    filePath,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
                 ),
-                child: Text(
-                  filePath,
-                  style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
-                ),
-              ),
               const SizedBox(height: 16),
               const Text(
                 'How to open the CSV file:',
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
-              const Text('1. Go to Downloads folder in your file manager'),
-              const Text('2. Find the CSV file and tap on it'),
-              const Text('3. If it shows "Can\'t open file":'),
-              const Text('   • Tap "Open with" or "Share"'),
-              const Text('   • Choose Excel, Sheets, or WPS Office'),
-              const Text('   • Install a spreadsheet app if needed'),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: Colors.green.shade200),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.info, color: Colors.green, size: 16),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Recommended apps: Microsoft Excel, Google Sheets, WPS Office',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              const Text('1. Go to your Downloads folder'),
+              const Text('2. Find the CSV file and open it'),
+              const Text('3. Compatible with Excel, Sheets, etc.'),
             ],
           ),
           actions: [
@@ -983,106 +968,113 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
   void _showFilterDialog() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Filter Inventory Report'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Category filter
-              DropdownButtonFormField<String>(
-                initialValue: _selectedCategory,
-                decoration: const InputDecoration(labelText: 'Category'),
-                items: [
-                  const DropdownMenuItem(
-                    value: null,
-                    child: Text('All Categories'),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            title: const Text('Filter Inventory Report'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Category filter
+                  DropdownButtonFormField<String>(
+                    value: _selectedCategory,
+                    decoration: const InputDecoration(labelText: 'Category'),
+                    items: [
+                      const DropdownMenuItem(
+                        value: null,
+                        child: Text('All Categories'),
+                      ),
+                      ..._categories.map(
+                        (category) => DropdownMenuItem(
+                          value: category,
+                          child: Text(category),
+                        ),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedCategory = value;
+                      });
+                    },
                   ),
-                  ..._categories.map(
-                    (category) => DropdownMenuItem(
-                      value: category,
-                      child: Text(category),
-                    ),
+                  const SizedBox(height: 16),
+                  // Status filter
+                  DropdownButtonFormField<String>(
+                    value: _selectedStatus,
+                    decoration: const InputDecoration(labelText: 'Status'),
+                    items: [
+                      const DropdownMenuItem(
+                        value: null,
+                        child: Text('All Statuses'),
+                      ),
+                      ..._statusOptions.map(
+                        (status) => DropdownMenuItem(
+                          value: status,
+                          child: Text(status),
+                        ),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedStatus = value;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  // Location filter
+                  DropdownButtonFormField<String>(
+                    value: _selectedLocation,
+                    decoration: const InputDecoration(labelText: 'Location'),
+                    items: [
+                      const DropdownMenuItem(
+                        value: null,
+                        child: Text('All Locations'),
+                      ),
+                      ..._locations.map(
+                        (location) => DropdownMenuItem(
+                          value: location,
+                          child: Text(location),
+                        ),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedLocation = value;
+                      });
+                    },
                   ),
                 ],
-                onChanged: (value) {
-                  setState(() {
-                    _selectedCategory = value;
-                  });
-                },
               ),
-              const SizedBox(height: 16),
-              // Status filter
-              DropdownButtonFormField<String>(
-                initialValue: _selectedStatus,
-                decoration: const InputDecoration(labelText: 'Status'),
-                items: [
-                  const DropdownMenuItem(
-                    value: null,
-                    child: Text('All Statuses'),
-                  ),
-                  ..._statusOptions.map(
-                    (status) =>
-                        DropdownMenuItem(value: status, child: Text(status)),
-                  ),
-                ],
-                onChanged: (value) {
-                  setState(() {
-                    _selectedStatus = value;
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  // Update parent state
+                  this.setState(() {
+                    _selectedCategory = null;
+                    _selectedStatus = null;
+                    _selectedLocation = null;
                   });
+                  Navigator.pop(context);
+                  _loadReport();
                 },
+                child: const Text('Clear'),
               ),
-              const SizedBox(height: 16),
-              // Location filter
-              DropdownButtonFormField<String>(
-                initialValue: _selectedLocation,
-                decoration: const InputDecoration(labelText: 'Location'),
-                items: [
-                  const DropdownMenuItem(
-                    value: null,
-                    child: Text('All Locations'),
-                  ),
-                  ..._locations.map(
-                    (location) => DropdownMenuItem(
-                      value: location,
-                      child: Text(location),
-                    ),
-                  ),
-                ],
-                onChanged: (value) {
-                  setState(() {
-                    _selectedLocation = value;
-                  });
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _loadReport();
                 },
+                child: const Text('Apply'),
               ),
             ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              setState(() {
-                _selectedCategory = null;
-                _selectedStatus = null;
-                _selectedLocation = null;
-              });
-              Navigator.pop(context);
-              _loadReport();
-            },
-            child: const Text('Clear'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _loadReport();
-            },
-            child: const Text('Apply'),
-          ),
-        ],
+          );
+        },
       ),
     );
   }

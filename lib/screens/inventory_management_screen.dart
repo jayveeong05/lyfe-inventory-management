@@ -6,6 +6,7 @@ import '../services/inventory_management_service.dart';
 import '../providers/auth_provider.dart';
 import 'stock_in_screen.dart';
 import 'stock_out_screen.dart';
+import 'item_activity_screen.dart';
 
 class InventoryManagementScreen extends StatefulWidget {
   const InventoryManagementScreen({super.key});
@@ -587,6 +588,10 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
                   value: 'details',
                   child: Text('View Details'),
                 ),
+                const PopupMenuItem(
+                  value: 'history',
+                  child: Text('View History'),
+                ),
                 if (status == 'Active')
                   const PopupMenuItem(
                     value: 'stock_out',
@@ -657,6 +662,10 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
         return Colors.green;
       case 'reserved':
         return Colors.orange;
+      case 'invoiced':
+        return Colors.indigo;
+      case 'issued':
+        return Colors.blue;
       case 'delivered':
         return Colors.purple;
       case 'demo':
@@ -698,6 +707,9 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
     switch (action) {
       case 'details':
         _showItemDetails(item);
+        break;
+      case 'history':
+        _navigateToItemHistory(item);
         break;
       case 'stock_out':
         _navigateToStockOutWithItem(item);
@@ -774,6 +786,26 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
       _loadItems(refresh: true);
       _loadSummary();
     }
+  }
+
+  void _navigateToItemHistory(Map<String, dynamic> item) {
+    final serialNumber = item['serial_number'] as String?;
+    if (serialNumber == null || serialNumber.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Serial number not found'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ItemActivityScreen(serialNumber: serialNumber),
+      ),
+    );
   }
 
   void _showEditItemDialog(Map<String, dynamic> item) {

@@ -219,12 +219,28 @@ class OrderService {
       String customerDealer = dealerName;
       String customerClient = 'N/A';
       int? originalEntryNo;
+      String? invoiceNumber;
+      String? equipmentCategory;
+      String? model;
+      String? location;
+      double? unitPrice;
+      String? warrantyType;
+      int? warrantyPeriod;
+      Timestamp? deliveryDate;
 
       if (originalTransactionQuery.docs.isNotEmpty) {
         final originalData = originalTransactionQuery.docs.first.data();
         customerDealer = originalData['customer_dealer'] ?? dealerName;
         customerClient = originalData['customer_client'] ?? 'N/A';
         originalEntryNo = originalData['entry_no'];
+        invoiceNumber = originalData['invoice_number'] as String?;
+        equipmentCategory = originalData['equipment_category'] as String?;
+        model = originalData['model'] as String?;
+        location = originalData['location'] as String?;
+        unitPrice = (originalData['unit_price'] as num?)?.toDouble();
+        warrantyType = originalData['warranty_type'] as String?;
+        warrantyPeriod = originalData['warranty_period'] as int?;
+        deliveryDate = originalData['delivery_date'] as Timestamp?;
       }
 
       // 1. Create 'Returned' transaction for the old item
@@ -270,6 +286,15 @@ class OrderService {
         'uploaded_at': FieldValue.serverTimestamp(),
         'uploaded_by_uid': userUid,
         'source': 'item_replacement',
+        // Copy fields from original transaction
+        if (invoiceNumber != null) 'invoice_number': invoiceNumber,
+        if (equipmentCategory != null) 'equipment_category': equipmentCategory,
+        if (model != null) 'model': model,
+        if (location != null) 'location': location,
+        if (unitPrice != null) 'unit_price': unitPrice,
+        if (warrantyType != null) 'warranty_type': warrantyType,
+        if (warrantyPeriod != null) 'warranty_period': warrantyPeriod,
+        if (deliveryDate != null) 'delivery_date': deliveryDate,
       };
 
       batch.set(replacementTransactionRef, replacementData);
@@ -439,6 +464,7 @@ class OrderService {
     int? limit,
   }) async {
     try {
+      print('🔍 getAllOrders: Starting query...');
       Query query = _firestore
           .collection('orders')
           .orderBy('created_date', descending: true);
@@ -463,9 +489,9 @@ class OrderService {
       if (limit != null) {
         query = query.limit(limit);
       }
-
+      print('🔍 getAllOrders: Executing query...');
       final querySnapshot = await query.get();
-
+      print('🔍 getAllOrders: Got ${querySnapshot.docs.length} docs');
       final orders = <Map<String, dynamic>>[];
 
       for (final doc in querySnapshot.docs) {
@@ -485,9 +511,10 @@ class OrderService {
 
         orders.add(orderData);
       }
-
+      print('🔍 getAllOrders: Returning ${orders.length} orders');
       return orders;
     } catch (e) {
+      print('🔍 getAllOrders: Error: $e');
       return [];
     }
   }
@@ -495,10 +522,11 @@ class OrderService {
   /// Get orders for invoice operations (Reserved and Invoiced invoice status)
   Future<List<Map<String, dynamic>>> getOrdersForInvoicing() async {
     try {
+      print('🔍 getOrdersForInvoicing: Starting...');
       // Get all orders and filter for invoice operations
       // This handles both new dual status and legacy single status systems
       final allOrders = await getAllOrders();
-
+      print('🔍 getOrdersForInvoicing: Got ${allOrders.length} orders');
       final invoiceOrders = allOrders.where((order) {
         // First check if order is cancelled - exclude cancelled orders
         final orderStatus = order['order_status'] as String?;
@@ -533,9 +561,10 @@ class OrderService {
         if (aDate == null || bDate == null) return 0;
         return bDate.compareTo(aDate);
       });
-
+      print('🔍 getOrdersForInvoicing: Final count = ${invoiceOrders.length}');
       return invoiceOrders;
     } catch (e) {
+      print('🔍 getOrdersForInvoicing: Error: $e');
       return [];
     }
   }
