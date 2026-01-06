@@ -111,6 +111,16 @@ class ReportService {
     final dailySales = <String, int>{};
     final categoryStats = <String, Map<String, dynamic>>{};
 
+    // Phase 2: Enhanced analytics tracking
+    final dailySalesDetailed =
+        <
+          String,
+          Map<String, dynamic>
+        >{}; // Track orders, items, customers per day
+    final customerOrderDates =
+        <String, List<DateTime>>{}; // Track order dates per customer
+    final modelStats = <String, int>{}; // Track sales by model
+
     int totalOrders = 0;
     int invoicedOrders = 0;
     int pendingOrders = 0;
@@ -183,11 +193,28 @@ class ReportService {
           (customerStats[customer]!['orders'] as int) + 1;
       // Note: items count will be updated after processing all transactions
 
-      // Daily sales tracking
+      // Daily sales tracking (basic)
       final createdDate = data['created_date'] as Timestamp?;
       if (createdDate != null) {
         final dateKey = DateFormat('yyyy-MM-dd').format(createdDate.toDate());
         dailySales[dateKey] = (dailySales[dateKey] ?? 0) + 1;
+
+        // Phase 2: Enhanced daily sales tracking
+        final itemCount = data['total_items'] as int? ?? 0;
+        dailySalesDetailed[dateKey] =
+            dailySalesDetailed[dateKey] ??
+            {'orders': 0, 'items': 0, 'customers': <String>{}};
+        dailySalesDetailed[dateKey]!['orders'] =
+            (dailySalesDetailed[dateKey]!['orders'] as int) + 1;
+        dailySalesDetailed[dateKey]!['items'] =
+            (dailySalesDetailed[dateKey]!['items'] as int) + itemCount;
+        (dailySalesDetailed[dateKey]!['customers'] as Set<String>).add(
+          customer,
+        );
+
+        // Track customer order dates for segmentation
+        customerOrderDates[customer] = customerOrderDates[customer] ?? [];
+        customerOrderDates[customer]!.add(createdDate.toDate());
       }
     }
 
@@ -267,6 +294,9 @@ class ReportService {
       }
       if (category.isEmpty) category = 'Unknown';
 
+      // Normalize category name (handle spaces, underscores, case inconsistencies)
+      category = _normalizeCategory(category);
+
       categoryStats[category] =
           categoryStats[category] ?? {'transactions': 0, 'items': 0};
       categoryStats[category]!['transactions'] =
@@ -302,6 +332,11 @@ class ReportService {
             (serial != null && inventoryMap.containsKey(serial)
                 ? inventoryMap[serial]!['model'] as String? ?? 'Unknown'
                 : 'Unknown');
+
+        // Track model sales for product performance
+        if (model != 'Unknown') {
+          modelStats[model] = (modelStats[model] ?? 0) + 1;
+        }
 
         // Initialize customer items list if not exists
         customerItems[customerName] = customerItems[customerName] ?? [];
@@ -439,7 +474,121 @@ class ReportService {
           .toList(),
       'daily_sales': dailySales,
       'customer_items': customerItems, // NEW: Customer item details
+      'trends': {
+        'daily_sales': dailySalesDetailed.map(
+          (key, value) => MapEntry(key, {
+            'orders': value['orders'],
+            'items': value['items'],
+            'customers': (value['customers'] as Set).length,
+          }),
+        ),
+        'peak_day': _findPeakDay(dailySalesDetailed),
+        'avg_daily_orders': dailySalesDetailed.isNotEmpty
+            ? (dailySalesDetailed.values.fold<int>(
+                        0,
+                        (sum, day) => sum + (day['orders'] as int),
+                      ) /
+                      dailySalesDetailed.length)
+                  .toStringAsFixed(1)
+            : '0.0',
+      },
+      'customer_intelligence': _calculateCustomerIntelligence(
+        customerOrderDates,
+        customerStats,
+      ),
+      'product_performance': {
+        'best_selling_models':
+            modelStats.entries
+                .map((e) => {'model': e.key, 'count': e.value})
+                .toList()
+              ..sort(
+                (a, b) => (b['count'] as int).compareTo(a['count'] as int),
+              ),
+        'category_breakdown': categoryStats,
+      },
     };
+  }
+
+  Map<String, dynamic> _calculateCustomerIntelligence(
+    Map<String, List<DateTime>> customerOrderDates,
+    Map<String, Map<String, dynamic>> customerStats,
+  ) {
+    int newCustomers = 0;
+    int repeatCustomers = 0;
+    final newCustomersList = <Map<String, dynamic>>[];
+    final repeatCustomersList = <Map<String, dynamic>>[];
+
+    customerOrderDates.forEach((customer, dates) {
+      final orderCount = dates.length;
+      final items = customerStats[customer]?['items'] ?? 0;
+
+      if (orderCount == 1) {
+        newCustomers++;
+        newCustomersList.add({'customer': customer, 'items': items});
+      } else {
+        repeatCustomers++;
+        repeatCustomersList.add({
+          'customer': customer,
+          'orders': orderCount,
+          'items': items,
+        });
+      }
+    });
+
+    // Sort repeat customers by order count (descending)
+    repeatCustomersList.sort(
+      (a, b) => (b['orders'] as int).compareTo(a['orders'] as int),
+    );
+
+    final totalCustomers = newCustomers + repeatCustomers;
+    final loyaltyRate = totalCustomers > 0
+        ? (repeatCustomers / totalCustomers * 100).toStringAsFixed(1)
+        : '0.0';
+
+    return {
+      'new_customers': newCustomers,
+      'repeat_customers': repeatCustomers,
+      'loyalty_rate': loyaltyRate,
+      'new_customers_list': newCustomersList,
+      'repeat_customers_list': repeatCustomersList,
+    };
+  }
+
+  String _normalizeCategory(String category) {
+    if (category == 'Unknown') return category;
+
+    // Convert to lowercase, replace underscores and hyphens with spaces
+    String normalized = category
+        .toLowerCase()
+        .replaceAll('_', ' ')
+        .replaceAll('-', ' ')
+        .trim();
+
+    // Convert to title case
+    return normalized
+        .split(' ')
+        .map((word) {
+          if (word.isEmpty) return '';
+          return word[0].toUpperCase() + word.substring(1);
+        })
+        .join(' ');
+  }
+
+  String _findPeakDay(Map<String, Map<String, dynamic>> dailySales) {
+    if (dailySales.isEmpty) return '';
+
+    String peakDay = '';
+    int maxOrders = 0;
+
+    dailySales.forEach((date, data) {
+      final orders = data['orders'] as int;
+      if (orders > maxOrders) {
+        maxOrders = orders;
+        peakDay = date;
+      }
+    });
+
+    return peakDay;
   }
 
   // Inventory Report Methods
@@ -820,6 +969,125 @@ class ReportService {
               item['model'] ?? '',
               date != null ? DateFormat('yyyy-MM-dd').format(date) : '',
               item['transaction_id']?.toString() ?? '',
+            ]);
+          }
+        }
+      }
+
+      // Add Summary Section
+      final summary = reportData['summary'] as Map<String, dynamic>? ?? {};
+      if (summary.isNotEmpty) {
+        csvData.add([]); // Empty row
+        csvData.add(['Summary Metrics']);
+        csvData.add([]); // Empty row
+        csvData.add(['Metric', 'Value']);
+        csvData.add(['Total Orders', summary['total_orders'] ?? 0]);
+        csvData.add(['Items Sold', summary['total_items_sold'] ?? 0]);
+        csvData.add(['Conversion Rate', '${summary['conversion_rate'] ?? 0}%']);
+        csvData.add(['Average Order Size', summary['avg_order_size'] ?? '0.0']);
+      }
+
+      // Add Sales Trends Section
+      final trends = reportData['trends'] as Map<String, dynamic>? ?? {};
+      if (trends.isNotEmpty) {
+        csvData.add([]); // Empty row
+        csvData.add(['Sales Trends']);
+        csvData.add([]); // Empty row
+        csvData.add(['Date', 'Orders', 'Items', 'Customers']);
+
+        final dailySales = trends['daily_sales'] as Map<String, dynamic>? ?? {};
+        final sortedDates = dailySales.keys.toList()..sort();
+
+        for (final date in sortedDates) {
+          final data = dailySales[date] as Map<String, dynamic>;
+          csvData.add([
+            date,
+            data['orders'] ?? 0,
+            data['items'] ?? 0,
+            data['customers'] ?? 0,
+          ]);
+        }
+
+        csvData.add([]); // Empty row
+        csvData.add(['Peak Day', trends['peak_day'] ?? 'N/A']);
+        csvData.add([
+          'Average Daily Orders',
+          trends['avg_daily_orders'] ?? '0.0',
+        ]);
+      }
+
+      // Add Customer Intelligence Section
+      final intelligence =
+          reportData['customer_intelligence'] as Map<String, dynamic>? ?? {};
+      if (intelligence.isNotEmpty) {
+        csvData.add([]); // Empty row
+        csvData.add(['Customer Intelligence']);
+        csvData.add([]); // Empty row
+        csvData.add(['Metric', 'Value']);
+        csvData.add(['First-Time Buyers', intelligence['new_customers'] ?? 0]);
+        csvData.add([
+          'Returning Customers',
+          intelligence['repeat_customers'] ?? 0,
+        ]);
+        csvData.add(['Loyalty Rate', '${intelligence['loyalty_rate'] ?? 0}%']);
+
+        final newCustomersList =
+            intelligence['new_customers_list'] as List? ?? [];
+        final repeatCustomersList =
+            intelligence['repeat_customers_list'] as List? ?? [];
+
+        if (newCustomersList.isNotEmpty) {
+          csvData.add([]); // Empty row
+          csvData.add(['First-Time Buyers List']);
+          csvData.add(['Customer Name', 'Items']);
+          for (final customer in newCustomersList) {
+            csvData.add([customer['customer'] ?? '', customer['items'] ?? 0]);
+          }
+        }
+
+        if (repeatCustomersList.isNotEmpty) {
+          csvData.add([]); // Empty row
+          csvData.add(['Returning Customers List']);
+          csvData.add(['Customer Name', 'Orders', 'Items']);
+          for (final customer in repeatCustomersList) {
+            csvData.add([
+              customer['customer'] ?? '',
+              customer['orders'] ?? 0,
+              customer['items'] ?? 0,
+            ]);
+          }
+        }
+      }
+
+      // Add Product Performance Section
+      final performance =
+          reportData['product_performance'] as Map<String, dynamic>? ?? {};
+      if (performance.isNotEmpty) {
+        csvData.add([]); // Empty row
+        csvData.add(['Product Performance']);
+        csvData.add([]); // Empty row
+
+        final bestSelling = performance['best_selling_models'] as List? ?? [];
+        if (bestSelling.isNotEmpty) {
+          csvData.add(['Best-Selling Models']);
+          csvData.add(['Model', 'Units Sold']);
+          for (final product in bestSelling) {
+            csvData.add([product['model'] ?? '', product['count'] ?? 0]);
+          }
+        }
+
+        final categoryBreakdown =
+            performance['category_breakdown'] as Map<String, dynamic>? ?? {};
+        if (categoryBreakdown.isNotEmpty) {
+          csvData.add([]); // Empty row
+          csvData.add(['Category Mix']);
+          csvData.add(['Category', 'Items', 'Sales']);
+          for (final entry in categoryBreakdown.entries) {
+            final data = entry.value as Map<String, dynamic>;
+            csvData.add([
+              entry.key,
+              data['items'] ?? 0,
+              data['transactions'] ?? 0,
             ]);
           }
         }

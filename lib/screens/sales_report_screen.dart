@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/report_service.dart';
+import 'customer_details_screen.dart';
 
 class SalesReportScreen extends StatefulWidget {
   const SalesReportScreen({super.key});
@@ -216,17 +218,29 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
           children: [
             _buildPeriodInfo(),
             const SizedBox(height: 20),
+            // 1. Sales Over Time (Chart) - MOVED TO TOP
+            _buildSalesTrends(),
+            const SizedBox(height: 20),
+            // 2. Summary Cards
             _buildSummaryCards(),
             const SizedBox(height: 20),
-            _buildCustomerPurchaseDetails(), // NEW: Customer purchase details
+            // 3. Who to Focus On (Customer Intelligence)
+            _buildCustomerIntelligence(),
             const SizedBox(height: 20),
+            // 4. Customer Purchase Details
+            _buildCustomerPurchaseDetails(),
+            const SizedBox(height: 20),
+            // 5. Top Customers
             _buildTopCustomers(),
             const SizedBox(height: 20),
+            // 6. What's Selling (Product Performance)
+            _buildProductPerformance(),
+            const SizedBox(height: 20),
+            // 7. Sales by State (Top Locations)
             _buildTopLocations(),
             const SizedBox(height: 20),
+            // 8. Equipment Types (Top Categories)
             _buildTopCategories(),
-            const SizedBox(height: 20),
-            _buildRecentOrders(),
           ],
         ),
       ),
@@ -260,6 +274,15 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
   Widget _buildSummaryCards() {
     final summary = _reportData!['summary'] as Map<String, dynamic>? ?? {};
 
+    final totalOrders = summary['total_orders'] ?? 0;
+    final itemsSold = summary['total_items_sold'] ?? 0;
+    final conversionRate = summary['conversion_rate'] ?? '0.0';
+
+    // Calculate avg order size
+    final avgOrderSize = totalOrders > 0
+        ? (itemsSold / totalOrders).toStringAsFixed(1)
+        : '0.0';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -267,65 +290,120 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
           'Sales Summary',
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
         ),
-        const SizedBox(height: 12),
-        GridView.count(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 2,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-          childAspectRatio: 1.2,
-          children: [
-            _buildSummaryCard(
-              'Total Orders',
-              '${summary['total_purchase_orders'] ?? 0}',
-              Icons.shopping_cart,
-              Colors.blue,
-            ),
-            _buildSummaryCard(
-              'Invoiced Orders',
-              '${summary['invoiced_orders'] ?? 0}',
-              Icons.receipt,
-              Colors.green,
-            ),
-            _buildSummaryCard(
-              'Pending Orders',
-              '${summary['pending_orders'] ?? 0}',
-              Icons.pending,
-              Colors.orange,
-            ),
-            _buildSummaryCard(
-              'Items Sold',
-              '${summary['total_items_sold'] ?? 0}',
-              Icons.inventory,
-              Colors.purple,
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Conversion Rate',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-                ),
-                Text(
-                  '${summary['conversion_rate'] ?? '0.0'}%',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.green.shade600,
-                  ),
-                ),
-              ],
-            ),
+        const SizedBox(height: 16),
+        // Horizontal scrollable cards
+        SizedBox(
+          height: 120,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: [
+              _buildModernSummaryCard(
+                title: 'Total Orders',
+                value: totalOrders.toString(),
+                icon: Icons.shopping_cart_outlined,
+                accentColor: Colors.blue,
+              ),
+              const SizedBox(width: 12),
+              _buildModernSummaryCard(
+                title: 'Items Sold',
+                value: itemsSold.toString(),
+                icon: Icons.inventory_2_outlined,
+                accentColor: Colors.purple,
+              ),
+              const SizedBox(width: 12),
+              _buildModernSummaryCard(
+                title: 'Conversion Rate',
+                value: '$conversionRate%',
+                icon: Icons.check_circle_outline,
+                accentColor: Colors.green,
+              ),
+              const SizedBox(width: 12),
+              _buildModernSummaryCard(
+                title: 'Avg Order Size',
+                value: avgOrderSize,
+                subtitle: 'items/order',
+                icon: Icons.analytics_outlined,
+                accentColor: Colors.orange,
+              ),
+            ],
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildModernSummaryCard({
+    required String title,
+    required String value,
+    String? subtitle,
+    required IconData icon,
+    required Color accentColor,
+  }) {
+    return Container(
+      width: 160,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+        border: Border(left: BorderSide(color: accentColor, width: 4)),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Flexible(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: accentColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, size: 18, color: accentColor),
+              ),
+            ],
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: accentColor,
+                ),
+              ),
+              if (subtitle != null)
+                Text(
+                  subtitle,
+                  style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+                ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -482,127 +560,23 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
                           const SizedBox(height: 16),
                         ],
 
-                        // Item details table
-                        Text(
-                          'Items Purchased:',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.grey.shade700,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Container(
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.grey.shade300),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Column(
-                            children: [
-                              // Header
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: Colors.grey.shade100,
-                                  borderRadius: const BorderRadius.only(
-                                    topLeft: Radius.circular(8),
-                                    topRight: Radius.circular(8),
+                        // View Details Button
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => CustomerDetailsScreen(
+                                    customerName: customerName,
+                                    items: items,
                                   ),
                                 ),
-                                child: Row(
-                                  children: [
-                                    const Expanded(
-                                      flex: 3,
-                                      child: Text(
-                                        'Serial Number',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ),
-                                    const Expanded(
-                                      flex: 2,
-                                      child: Text(
-                                        'Category',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ),
-                                    const Expanded(
-                                      flex: 2,
-                                      child: Text(
-                                        'Date',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                        textAlign: TextAlign.right,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              // Items
-                              ...items.take(10).map((item) {
-                                final date = item['date'] as DateTime?;
-                                return Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    border: Border(
-                                      top: BorderSide(
-                                        color: Colors.grey.shade200,
-                                      ),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        flex: 3,
-                                        child: Text(
-                                          item['serial_number'] ?? 'N/A',
-                                          style: const TextStyle(
-                                            fontSize: 10,
-                                            fontFamily: 'monospace',
-                                          ),
-                                        ),
-                                      ),
-                                      Expanded(
-                                        flex: 2,
-                                        child: Text(
-                                          item['category'] ?? 'Unknown',
-                                          style: const TextStyle(fontSize: 10),
-                                        ),
-                                      ),
-                                      Expanded(
-                                        flex: 2,
-                                        child: Text(
-                                          date != null
-                                              ? DateFormat('MMM d').format(date)
-                                              : 'N/A',
-                                          style: const TextStyle(fontSize: 10),
-                                          textAlign: TextAlign.right,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              }),
-                              if (items.length > 10)
-                                Padding(
-                                  padding: const EdgeInsets.all(8),
-                                  child: Text(
-                                    '+ ${items.length - 10} more items',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.grey.shade600,
-                                      fontStyle: FontStyle.italic,
-                                    ),
-                                  ),
-                                ),
-                            ],
+                              );
+                            },
+                            icon: const Icon(Icons.history, size: 18),
+                            label: const Text('View Full History'),
                           ),
                         ),
                       ],
@@ -629,34 +603,141 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
         ),
         const SizedBox(height: 12),
         Card(
-          child: Column(
-            children: topCustomers.isEmpty
-                ? [
-                    const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Text('No customer data available'),
-                    ),
-                  ]
-                : topCustomers.take(5).map((customer) {
-                    return ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: Colors.blue.shade100,
-                        child: Icon(
-                          Icons.business,
-                          color: Colors.blue.shade600,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: topCustomers.isEmpty
+                  ? [const Text('No customer data available')]
+                  : [
+                      ...topCustomers.take(5).map((customer) {
+                        final name = customer['customer'] ?? 'Unknown';
+                        final orders = customer['orders'] as int;
+                        final items = customer['items'] as int;
+
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  name,
+                                  style: const TextStyle(fontSize: 14),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  '$orders orders',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.blue.shade700,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade100,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  '$items items',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey.shade700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                      if (topCustomers.length > 5)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: InkWell(
+                            onTap: () {
+                              // Show all customers dialog
+                              _showAllCustomersDialog(topCustomers);
+                            },
+                            child: Text(
+                              'Show all ${topCustomers.length} customers',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.blue.shade700,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
-                      title: Text(customer['customer'] ?? 'Unknown'),
-                      subtitle: Text('${customer['items']} items'),
-                      trailing: Text(
-                        '${customer['orders']} orders',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    );
-                  }).toList(),
+                    ],
+            ),
           ),
         ),
       ],
+    );
+  }
+
+  void _showAllCustomersDialog(List<dynamic> customers) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('All Customers'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: customers.length,
+            itemBuilder: (context, index) {
+              final customer = customers[index];
+              final name = customer['customer'] ?? 'Unknown';
+              final orders = customer['orders'] as int;
+              final items = customer['items'] as int;
+
+              return ListTile(
+                title: Text(name),
+                trailing: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      '$orders orders',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    Text(
+                      '$items items',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -667,7 +748,7 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Top Locations',
+          'Sales by State',
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 12),
@@ -680,7 +761,7 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
                       child: Text('No location data available'),
                     ),
                   ]
-                : topLocations.take(5).map((location) {
+                : topLocations.map((location) {
                     return ListTile(
                       leading: CircleAvatar(
                         backgroundColor: Colors.green.shade100,
@@ -692,7 +773,7 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
                       title: Text(location['location'] ?? 'Unknown'),
                       subtitle: Text('${location['items']} items'),
                       trailing: Text(
-                        '${location['transactions']} transactions',
+                        '${location['transactions']} sales',
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                     );
@@ -711,7 +792,7 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Top Categories',
+          'Equipment Types',
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 12),
@@ -724,7 +805,7 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
                       child: Text('No category data available'),
                     ),
                   ]
-                : topCategories.take(5).map((category) {
+                : topCategories.map((category) {
                     return ListTile(
                       leading: CircleAvatar(
                         backgroundColor: Colors.purple.shade100,
@@ -736,7 +817,7 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
                       title: Text(category['category'] ?? 'Unknown'),
                       subtitle: Text('${category['items']} items'),
                       trailing: Text(
-                        '${category['transactions']} transactions',
+                        '${category['transactions']} sales',
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                     );
@@ -969,6 +1050,750 @@ class _SalesReportScreenState extends State<SalesReportScreen> {
           );
         },
       ),
+    );
+  }
+
+  String _selectedGranularity = 'Day'; // Add state variable for granularity
+
+  Widget _buildSalesTrends() {
+    final trends = _reportData!['trends'] as Map<String, dynamic>? ?? {};
+    final dailySales = trends['daily_sales'] as Map<String, dynamic>? ?? {};
+
+    if (dailySales.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final peakDay = trends['peak_day'] as String? ?? '';
+    final avgOrders = trends['avg_daily_orders'] as String? ?? '0.0';
+
+    // Aggregate data based on granularity
+    final aggregatedData = _aggregateSalesData(
+      dailySales,
+      _selectedGranularity,
+    );
+    final sortedDates = aggregatedData.keys.toList()..sort();
+    final spots = <FlSpot>[];
+
+    for (int i = 0; i < sortedDates.length; i++) {
+      final orders = aggregatedData[sortedDates[i]] as double;
+      spots.add(FlSpot(i.toDouble(), orders));
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Sales Over Time',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            // Granularity Toggle
+            Container(
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: ['Day', 'Week', 'Month'].map((granularity) {
+                  final isSelected = _selectedGranularity == granularity;
+                  return InkWell(
+                    onTap: () {
+                      setState(() {
+                        _selectedGranularity = granularity;
+                      });
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isSelected ? Colors.blue : Colors.transparent,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        granularity,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: isSelected
+                              ? Colors.white
+                              : Colors.grey.shade700,
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Chart
+                SizedBox(
+                  height: 200,
+                  child: LineChart(
+                    LineChartData(
+                      gridData: FlGridData(show: true, drawVerticalLine: false),
+                      titlesData: FlTitlesData(
+                        leftTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: 40,
+                            interval: 1, // Force integer intervals
+                            getTitlesWidget: (value, meta) {
+                              return Text(
+                                value.toInt().toString(), // Integer only
+                                style: const TextStyle(fontSize: 10),
+                              );
+                            },
+                          ),
+                        ),
+                        bottomTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: 30,
+                            interval: sortedDates.length > 10
+                                ? (sortedDates.length / 5).ceilToDouble()
+                                : 1,
+                            getTitlesWidget: (value, meta) {
+                              if (value.toInt() >= sortedDates.length)
+                                return const Text('');
+                              final dateStr = sortedDates[value.toInt()];
+                              return Text(
+                                _formatDateLabel(dateStr, _selectedGranularity),
+                                style: const TextStyle(fontSize: 10),
+                              );
+                            },
+                          ),
+                        ),
+                        rightTitles: AxisTitles(
+                          sideTitles: SideTitles(showTitles: false),
+                        ),
+                        topTitles: AxisTitles(
+                          sideTitles: SideTitles(showTitles: false),
+                        ),
+                      ),
+                      borderData: FlBorderData(show: false),
+                      minY: 0,
+                      // Add touch/hover tooltips
+                      lineTouchData: LineTouchData(
+                        enabled: true,
+                        touchTooltipData: LineTouchTooltipData(
+                          getTooltipColor: (touchedSpot) =>
+                              Colors.blue.shade700,
+                          tooltipRoundedRadius: 8,
+                          tooltipPadding: const EdgeInsets.all(8),
+                          getTooltipItems: (List<LineBarSpot> touchedSpots) {
+                            return touchedSpots.map((spot) {
+                              final dateStr = sortedDates[spot.x.toInt()];
+                              final date = DateTime.parse(dateStr);
+                              final orders = spot.y.toInt();
+
+                              String dateDisplay;
+                              if (_selectedGranularity == 'Day') {
+                                dateDisplay = DateFormat(
+                                  'MMM dd, yyyy',
+                                ).format(date);
+                              } else if (_selectedGranularity == 'Week') {
+                                // Show date range for week
+                                final weekEnd = date.add(
+                                  const Duration(days: 6),
+                                );
+                                dateDisplay =
+                                    '${DateFormat('MMM dd').format(date)}-${DateFormat('dd, yyyy').format(weekEnd)}';
+                              } else {
+                                dateDisplay = DateFormat(
+                                  'MMMM yyyy',
+                                ).format(date);
+                              }
+
+                              return LineTooltipItem(
+                                '$dateDisplay\n$orders orders',
+                                const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              );
+                            }).toList();
+                          },
+                        ),
+                      ),
+                      lineBarsData: [
+                        LineChartBarData(
+                          spots: spots,
+                          isCurved: true,
+                          color: Colors.blue,
+                          barWidth: 3,
+                          dotData: FlDotData(show: spots.length <= 31),
+                          belowBarData: BarAreaData(
+                            show: true,
+                            color: Colors.blue.withOpacity(0.1),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Metrics
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _buildTrendMetric(
+                      'Best Day',
+                      peakDay.isNotEmpty
+                          ? DateFormat('MMM dd').format(DateTime.parse(peakDay))
+                          : 'N/A',
+                      Icons.trending_up,
+                      Colors.green,
+                    ),
+                    _buildTrendMetric(
+                      'Daily Avg',
+                      avgOrders,
+                      Icons.show_chart,
+                      Colors.blue,
+                    ),
+                    _buildTrendMetric(
+                      'Total Days',
+                      dailySales.length.toString(),
+                      Icons.calendar_today,
+                      Colors.orange,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Map<String, double> _aggregateSalesData(
+    Map<String, dynamic> dailySales,
+    String granularity,
+  ) {
+    if (granularity == 'Day') {
+      // Return daily data as-is
+      return dailySales.map((key, value) {
+        final data = value as Map<String, dynamic>;
+        return MapEntry(key, (data['orders'] as int).toDouble());
+      });
+    }
+
+    final aggregated = <String, double>{};
+
+    dailySales.forEach((dateStr, value) {
+      final date = DateTime.parse(dateStr);
+      final data = value as Map<String, dynamic>;
+      final orders = (data['orders'] as int).toDouble();
+
+      String key;
+      if (granularity == 'Week') {
+        // Get Monday of the week
+        final monday = date.subtract(Duration(days: date.weekday - 1));
+        key = DateFormat('yyyy-MM-dd').format(monday);
+      } else {
+        // Month
+        key = '${date.year}-${date.month.toString().padLeft(2, '0')}-01';
+      }
+
+      aggregated[key] = (aggregated[key] ?? 0) + orders;
+    });
+
+    return aggregated;
+  }
+
+  String _formatDateLabel(String dateStr, String granularity) {
+    final date = DateTime.parse(dateStr);
+    if (granularity == 'Day') {
+      return DateFormat('MMM dd').format(date);
+    } else if (granularity == 'Week') {
+      // Show start date of week instead of week number
+      return DateFormat('MMM dd').format(date);
+    } else {
+      return DateFormat('MMM').format(date);
+    }
+  }
+
+  int _getWeekNumber(DateTime date) {
+    final firstDayOfYear = DateTime(date.year, 1, 1);
+    final daysSinceFirstDay = date.difference(firstDayOfYear).inDays;
+    return (daysSinceFirstDay / 7).ceil() + 1;
+  }
+
+  Widget _buildTrendMetric(
+    String label,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
+    return Column(
+      children: [
+        Icon(icon, color: color, size: 20),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCustomerIntelligence() {
+    final intelligence =
+        _reportData!['customer_intelligence'] as Map<String, dynamic>? ?? {};
+
+    if (intelligence.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final newCustomers = intelligence['new_customers'] ?? 0;
+    final repeatCustomers = intelligence['repeat_customers'] ?? 0;
+    final loyaltyRate = intelligence['loyalty_rate'] ?? '0.0';
+    final newCustomersList = intelligence['new_customers_list'] as List? ?? [];
+    final repeatCustomersList =
+        intelligence['repeat_customers_list'] as List? ?? [];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Who to Focus On',
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 12),
+        // Metrics Cards
+        Row(
+          children: [
+            Expanded(
+              child: _buildIntelligenceCard(
+                'New Customers',
+                newCustomers.toString(),
+                Icons.person_add,
+                Colors.blue,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildIntelligenceCard(
+                'Repeat Customers',
+                repeatCustomers.toString(),
+                Icons.repeat,
+                Colors.green,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildIntelligenceCard(
+                'Loyalty Rate',
+                '$loyaltyRate%',
+                Icons.favorite,
+                Colors.purple,
+              ),
+            ),
+          ],
+        ),
+        // Customer Lists in Separate Rows
+        if (newCustomersList.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          _buildCustomerSegmentCard(
+            'First-Time Buyers',
+            newCustomersList,
+            Colors.blue,
+            Icons.person_add_outlined,
+            showOrders: false,
+          ),
+        ],
+        if (repeatCustomersList.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          _buildCustomerSegmentCard(
+            'Returning Customers',
+            repeatCustomersList,
+            Colors.green,
+            Icons.repeat,
+            showOrders: true,
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildCustomerSegmentCard(
+    String title,
+    List customers,
+    Color color,
+    IconData icon, {
+    required bool showOrders,
+  }) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, color: color, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ...customers.take(5).map((customer) {
+              final name = customer['customer'] as String;
+              final items = customer['items'] as int;
+              final orders = showOrders ? customer['orders'] as int : 1;
+
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        name,
+                        style: const TextStyle(fontSize: 14),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (showOrders) ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: color.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '$orders orders',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: color,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                    ],
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '$items items',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+            if (customers.length > 5)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: InkWell(
+                  onTap: () {
+                    // Show dialog with all customers
+                    showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: Text(title),
+                        content: SizedBox(
+                          width: double.maxFinite,
+                          child: ListView.builder(
+                            shrinkWrap: true,
+                            itemCount: customers.length,
+                            itemBuilder: (context, index) {
+                              final customer = customers[index];
+                              final name = customer['customer'] as String;
+                              final orders = showOrders
+                                  ? customer['orders'] as int
+                                  : 1;
+                              final items = customer['items'] as int;
+
+                              return ListTile(
+                                title: Text(name),
+                                trailing: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    if (showOrders)
+                                      Text(
+                                        '$orders orders',
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                    Text(
+                                      '$items items',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Close'),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                  child: Text(
+                    'Show all ${customers.length} customers',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: color,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIntelligenceCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Icon(icon, color: color, size: 32),
+            const SizedBox(height: 8),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+            Text(
+              title,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProductPerformance() {
+    final performance =
+        _reportData!['product_performance'] as Map<String, dynamic>? ?? {};
+
+    if (performance.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final bestSelling = performance['best_selling_models'] as List? ?? [];
+    final categoryBreakdown =
+        performance['category_breakdown'] as Map<String, dynamic>? ?? {};
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'What\'s Selling',
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Best-Selling Models
+            if (bestSelling.isNotEmpty)
+              Expanded(
+                child: Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.star,
+                              color: Colors.orange.shade700,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            const Text(
+                              'Best-Selling Models',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        ...bestSelling.take(5).map((product) {
+                          final model = product['model'] as String;
+                          final count = product['count'] as int;
+
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    model,
+                                    style: const TextStyle(fontSize: 14),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange.shade50,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    '$count sold',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.orange.shade700,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            if (bestSelling.isNotEmpty && categoryBreakdown.isNotEmpty)
+              const SizedBox(width: 16),
+            // Category Breakdown
+            if (categoryBreakdown.isNotEmpty)
+              Expanded(
+                child: Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.category,
+                              color: Colors.blue.shade700,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            const Text(
+                              'Category Mix',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        ...categoryBreakdown.entries.take(5).map((entry) {
+                          final category = entry.key;
+                          final data = entry.value as Map<String, dynamic>;
+                          final items = data['items'] as int;
+
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    category,
+                                    style: const TextStyle(fontSize: 14),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.shade50,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    '$items items',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.blue.shade700,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
     );
   }
 }
