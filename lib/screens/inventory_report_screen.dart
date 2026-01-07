@@ -330,7 +330,7 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
           children: [
             _buildSummaryCards(),
             const SizedBox(height: 20),
-            _buildStatusBreakdown(),
+            // _buildStatusBreakdown(),
             const SizedBox(height: 20),
             _buildCategoryBreakdown(),
             const SizedBox(height: 20),
@@ -354,89 +354,66 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 12),
-        GridView.count(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 2,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-          childAspectRatio: 1.2,
-          children: [
-            _buildSummaryCard(
-              'Total Items',
-              '${summary['total_items'] ?? 0}',
-              Icons.inventory,
-              Colors.blue,
-            ),
-            _buildSummaryCard(
-              'Active Items',
-              '${summary['active_items'] ?? 0}',
-              Icons.check_circle,
-              Colors.green,
-            ),
-            _buildSummaryCard(
-              'Reserved Items',
-              '${summary['reserved_items'] ?? 0}',
-              Icons.pending,
-              Colors.orange,
-            ),
-            _buildSummaryCard(
-              'Delivered Items',
-              '${summary['delivered_items'] ?? 0}',
-              Icons.local_shipping,
-              Colors.purple,
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    children: [
-                      Icon(Icons.category, color: Colors.indigo.shade600),
-                      const SizedBox(height: 8),
-                      Text(
-                        '${summary['categories_count'] ?? 0}',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.indigo.shade600,
-                        ),
-                      ),
-                      const Text('Categories', style: TextStyle(fontSize: 12)),
-                    ],
-                  ),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            int crossAxisCount = 2; // Mobile default
+            double childAspectRatio = 1.3;
+
+            if (constraints.maxWidth > 1100) {
+              crossAxisCount = 6; // Desktop: all in one row
+              childAspectRatio = 1.2;
+            } else if (constraints.maxWidth > 700) {
+              crossAxisCount = 3; // Tablet: 2 rows of 3
+              childAspectRatio = 1.4;
+            }
+
+            return GridView.count(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisCount: crossAxisCount,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              childAspectRatio: childAspectRatio,
+              children: [
+                _buildSummaryCard(
+                  'Total Items',
+                  '${summary['total_items'] ?? 0}',
+                  Icons.inventory,
+                  Colors.blue,
                 ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    children: [
-                      Icon(Icons.location_on, color: Colors.teal.shade600),
-                      const SizedBox(height: 8),
-                      Text(
-                        '${summary['locations_count'] ?? 0}',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.teal.shade600,
-                        ),
-                      ),
-                      const Text('Locations', style: TextStyle(fontSize: 12)),
-                    ],
-                  ),
+                _buildSummaryCard(
+                  'Active Items',
+                  '${summary['active_items'] ?? 0}',
+                  Icons.check_circle,
+                  Colors.green,
                 ),
-              ),
-            ),
-          ],
+                _buildSummaryCard(
+                  'Reserved Items',
+                  '${summary['reserved_items'] ?? 0}',
+                  Icons.pending,
+                  Colors.orange,
+                ),
+                _buildSummaryCard(
+                  'Delivered Items',
+                  '${summary['delivered_items'] ?? 0}',
+                  Icons.local_shipping,
+                  Colors.purple,
+                ),
+                _buildSummaryCard(
+                  'Demo Items',
+                  '${summary['demo_items'] ?? 0}',
+                  Icons.play_circle_outline,
+                  Colors.indigo,
+                ),
+                _buildSummaryCard(
+                  'Returned Items',
+                  '${summary['returned_items'] ?? 0}',
+                  Icons.keyboard_return,
+                  Colors.teal,
+                ),
+              ],
+            );
+          },
         ),
       ],
     );
@@ -481,69 +458,69 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
     );
   }
 
-  Widget _buildStatusBreakdown() {
-    final statusBreakdown =
-        _reportData!['status_breakdown'] as List<dynamic>? ?? [];
+  // Widget _buildStatusBreakdown() {
+  //   final statusBreakdown =
+  //       _reportData!['status_breakdown'] as List<dynamic>? ?? [];
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Status Breakdown',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 12),
-        Card(
-          child: Column(
-            children: statusBreakdown.isEmpty
-                ? [
-                    const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Text('No status data available'),
-                    ),
-                  ]
-                : statusBreakdown.map((status) {
-                    final statusName = status['status'] as String? ?? 'Unknown';
-                    final count = status['count'] as int? ?? 0;
+  //   return Column(
+  //     crossAxisAlignment: CrossAxisAlignment.start,
+  //     children: [
+  //       const Text(
+  //         'Status Breakdown',
+  //         style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+  //       ),
+  //       const SizedBox(height: 12),
+  //       Card(
+  //         child: Column(
+  //           children: statusBreakdown.isEmpty
+  //               ? [
+  //                   const Padding(
+  //                     padding: EdgeInsets.all(16),
+  //                     child: Text('No status data available'),
+  //                   ),
+  //                 ]
+  //               : statusBreakdown.map((status) {
+  //                   final statusName = status['status'] as String? ?? 'Unknown';
+  //                   final count = status['count'] as int? ?? 0;
 
-                    MaterialColor statusColor;
-                    IconData statusIcon;
+  //                   MaterialColor statusColor;
+  //                   IconData statusIcon;
 
-                    switch (statusName) {
-                      case 'Active':
-                        statusColor = Colors.green;
-                        statusIcon = Icons.check_circle;
-                        break;
-                      case 'Reserved':
-                        statusColor = Colors.orange;
-                        statusIcon = Icons.pending;
-                        break;
-                      case 'Delivered':
-                        statusColor = Colors.purple;
-                        statusIcon = Icons.local_shipping;
-                        break;
-                      default:
-                        statusColor = Colors.grey;
-                        statusIcon = Icons.help;
-                    }
+  //                   switch (statusName) {
+  //                     case 'Active':
+  //                       statusColor = Colors.green;
+  //                       statusIcon = Icons.check_circle;
+  //                       break;
+  //                     case 'Reserved':
+  //                       statusColor = Colors.orange;
+  //                       statusIcon = Icons.pending;
+  //                       break;
+  //                     case 'Delivered':
+  //                       statusColor = Colors.purple;
+  //                       statusIcon = Icons.local_shipping;
+  //                       break;
+  //                     default:
+  //                       statusColor = Colors.grey;
+  //                       statusIcon = Icons.help;
+  //                   }
 
-                    return ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: statusColor.shade100,
-                        child: Icon(statusIcon, color: statusColor.shade600),
-                      ),
-                      title: Text(statusName),
-                      trailing: Text(
-                        '$count items',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    );
-                  }).toList(),
-          ),
-        ),
-      ],
-    );
-  }
+  //                   return ListTile(
+  //                     leading: CircleAvatar(
+  //                       backgroundColor: statusColor.shade100,
+  //                       child: Icon(statusIcon, color: statusColor.shade600),
+  //                     ),
+  //                     title: Text(statusName),
+  //                     trailing: Text(
+  //                       '$count items',
+  //                       style: const TextStyle(fontWeight: FontWeight.bold),
+  //                     ),
+  //                   );
+  //                 }).toList(),
+  //         ),
+  //       ),
+  //     ],
+  //   );
+  // }
 
   Widget _buildCategoryBreakdown() {
     final categoryBreakdown =

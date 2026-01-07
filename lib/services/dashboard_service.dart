@@ -10,7 +10,9 @@ class DashboardService {
       Map<String, dynamic> analytics = {
         'totalInventoryItems': 0,
         'activeStock': 0,
-        'stockedOutItems': 0,
+        'stockedOutItems': 0, // This is technically "Sold/Delivered"
+        'inventoryTurnover': 0.0, // New Metric
+        'lowStockCount': 0, // New Metric
         'totalOrders': 0,
         'invoicedOrders': 0,
         'pendingOrders': 0,
@@ -31,17 +33,29 @@ class DashboardService {
         _getRecentTransactions(),
         _getTopCategories(),
         _getMonthlyStats(),
+        _getLowStockCount(),
       ]);
 
       // Combine all results
-      analytics.addAll(futures[0] as Map<String, dynamic>); // Inventory stats
-      analytics.addAll(futures[1] as Map<String, dynamic>); // Transaction stats
-      analytics.addAll(
-        futures[2] as Map<String, dynamic>,
-      ); // Purchase order stats
-      analytics['recentTransactions'] = futures[3]; // Recent transactions
-      analytics['topCategories'] = futures[4]; // Top categories
-      analytics['monthlyStats'] = futures[5]; // Monthly stats
+      final inventoryStats = futures[0] as Map<String, dynamic>;
+      analytics.addAll(inventoryStats);
+      analytics.addAll(futures[1] as Map<String, dynamic>);
+      analytics.addAll(futures[2] as Map<String, dynamic>);
+      analytics['recentTransactions'] = futures[3];
+      analytics['topCategories'] = futures[4];
+      analytics['monthlyStats'] = futures[5];
+      analytics['lowStockCount'] = futures[6];
+
+      // Calculate Inventory Turnover: Sold / (Active + Sold)
+      final soldCount =
+          inventoryStats['deliveredItems'] as int? ??
+          0; // "Stocked Out" matches Delivered
+      final activeCount = inventoryStats['activeStock'] as int? ?? 0;
+      final totalStock = soldCount + activeCount;
+
+      analytics['inventoryTurnover'] = totalStock > 0
+          ? (soldCount / totalStock) * 100
+          : 0.0;
 
       // Add data integrity check
       final integrityCheck = await _getDataIntegrityReport();
@@ -720,6 +734,34 @@ class DashboardService {
       return 'Reserved'; // More orders than received
     } else {
       return 'Active'; // In stock or default
+    }
+  }
+
+  // Get count of categories with low stock (< 5 items)
+  Future<int> _getLowStockCount() async {
+    try {
+      final inventorySnapshot = await _firestore.collection('inventory').get();
+      final categoryCounts = <String, int>{};
+
+      for (final doc in inventorySnapshot.docs) {
+        final data = doc.data();
+        final status = data['status'] as String? ?? 'Active';
+        if (status == 'Active') {
+          final category = data['equipment_category'] as String? ?? 'Unknown';
+          categoryCounts[category] = (categoryCounts[category] ?? 0) + 1;
+        }
+      }
+
+      int lowStockCategories = 0;
+      for (final count in categoryCounts.values) {
+        if (count < 5) {
+          lowStockCategories++;
+        }
+      }
+      return lowStockCategories;
+    } catch (e) {
+      print('Error calculating low stock count: $e');
+      return 0;
     }
   }
 }

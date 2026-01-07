@@ -749,6 +749,25 @@ class OrderService {
               }
 
               batch.update(transactionDoc.reference, transactionUpdateData);
+
+              // [PATCH] Update Inventory Status to 'Delivered' as well
+              // This fixes the "Reserved" vs "Delivered" sync issue
+              final serialNumber =
+                  transactionDoc.data()['serial_number'] as String?;
+              if (serialNumber != null) {
+                final inventoryQuery = await _firestore
+                    .collection('inventory')
+                    .where('serial_number', isEqualTo: serialNumber)
+                    .limit(1)
+                    .get();
+
+                if (inventoryQuery.docs.isNotEmpty) {
+                  batch.update(inventoryQuery.docs.first.reference, {
+                    'status': 'Delivered',
+                    'updated_at': FieldValue.serverTimestamp(),
+                  });
+                }
+              }
             }
           }
         }
@@ -1609,6 +1628,81 @@ class OrderService {
     } catch (e) {
       debugPrint('❌ Error deleting delivery data: $e');
       return {'success': false, 'error': 'Failed to delete delivery data: $e'};
+    }
+  }
+
+  /// Update order number
+  /// This updates the order number in the orders collection and all associated files
+  Future<Map<String, dynamic>> updateOrderNumber({
+    required String oldOrderNumber,
+    required String newOrderNumber,
+  }) async {
+    try {
+      final currentUser = _authService.currentUser;
+      if (currentUser == null) {
+        return {'success': false, 'error': 'User not authenticated.'};
+      }
+
+      // 1. Check if new order number already exists
+      if (newOrderNumber != oldOrderNumber) {
+        final existing = await _firestore
+            .collection('orders')
+            .where('order_number', isEqualTo: newOrderNumber)
+            .get();
+
+        if (existing.docs.isNotEmpty) {
+          return {
+            'success': false,
+            'error': 'Order number $newOrderNumber already exists.',
+          };
+        }
+      }
+
+      // 2. Find the order by old order number
+      final orderQuery = await _firestore
+          .collection('orders')
+          .where('order_number', isEqualTo: oldOrderNumber)
+          .get();
+
+      if (orderQuery.docs.isEmpty) {
+        return {'success': false, 'error': 'Order $oldOrderNumber not found.'};
+      }
+
+      final orderDoc = orderQuery.docs.first;
+      final batch = _firestore.batch();
+
+      // 3. Update order document
+      batch.update(orderDoc.reference, {
+        'order_number': newOrderNumber,
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      // 4. Update associated files in 'files' collection
+      final filesQuery = await _firestore
+          .collection('files')
+          .where('order_number', isEqualTo: oldOrderNumber)
+          .get();
+
+      for (final fileDoc in filesQuery.docs) {
+        batch.update(fileDoc.reference, {
+          'order_number': newOrderNumber,
+          'updated_at': FieldValue.serverTimestamp(),
+        });
+      }
+
+      await batch.commit();
+
+      return {
+        'success': true,
+        'message':
+            'Order number updated from $oldOrderNumber to $newOrderNumber',
+        'files_updated': filesQuery.docs.length,
+      };
+    } catch (e) {
+      return {
+        'success': false,
+        'error': 'Failed to update order number: ${e.toString()}',
+      };
     }
   }
 }

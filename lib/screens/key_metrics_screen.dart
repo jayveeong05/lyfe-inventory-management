@@ -81,6 +81,10 @@ class _KeyMetricsScreenState extends State<KeyMetricsScreen> {
                     _buildKeyMetricsSection(),
                     const SizedBox(height: 24),
 
+                    // Action Center (New)
+                    _buildActionCenter(),
+                    const SizedBox(height: 24),
+
                     // Inventory overview
                     _buildInventoryOverview(),
                     const SizedBox(height: 24),
@@ -93,8 +97,8 @@ class _KeyMetricsScreenState extends State<KeyMetricsScreen> {
                     _buildMonthlyStats(),
                     const SizedBox(height: 24),
 
-                    // Data Integrity section
-                    _buildDataIntegritySection(),
+                    // System Health Check (Collapsed)
+                    _buildSystemHealthCheck(),
                   ],
                 ),
               ),
@@ -102,12 +106,94 @@ class _KeyMetricsScreenState extends State<KeyMetricsScreen> {
     );
   }
 
+  Widget _buildActionCenter() {
+    final lowStockCount = _analytics!['lowStockCount'] as int? ?? 0;
+    final pendingOrders = _analytics!['pendingOrders'] as int? ?? 0;
+
+    if (lowStockCount == 0 && pendingOrders == 0) {
+      return const SizedBox.shrink();
+    }
+
+    return Card(
+      elevation: 4,
+      color: Colors.orange.shade50,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.notifications_active, color: Colors.orange.shade800),
+                const SizedBox(width: 8),
+                Text(
+                  'Action Needed',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.orange.shade900,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (lowStockCount > 0)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.warning_amber,
+                      size: 20,
+                      color: Colors.red,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '$lowStockCount categories running low on stock',
+                      style: const TextStyle(fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
+              ),
+            if (pendingOrders > 0)
+              Row(
+                children: [
+                  const Icon(
+                    Icons.receipt_long,
+                    size: 20,
+                    color: Colors.orange,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '$pendingOrders orders waiting for invoice',
+                    style: const TextStyle(fontWeight: FontWeight.w500),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildKeyMetricsSection() {
+    final activeStock = _analytics!['activeStock'] as int? ?? 0;
+    final totalItems = _analytics!['totalInventoryItems'] as int? ?? 1;
+    final utilRate = totalItems > 0 ? (activeStock / totalItems * 100) : 0.0;
+
+    final totalOrders = _analytics!['totalOrders'] as int? ?? 1;
+    final invoicedOrders = _analytics!['invoicedOrders'] as int? ?? 0;
+    final completionRate = totalOrders > 0
+        ? (invoicedOrders / totalOrders * 100)
+        : 0.0;
+
+    final turnoverRate = _analytics!['inventoryTurnover'] as double? ?? 0.0;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Key Metrics',
+          'Business Health Monitor',
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 12),
@@ -115,19 +201,21 @@ class _KeyMetricsScreenState extends State<KeyMetricsScreen> {
           children: [
             Expanded(
               child: _buildMetricCard(
-                'Total Items',
-                _analytics!['totalInventoryItems'].toString(),
-                Icons.inventory,
+                'Inventory Utilization',
+                '${utilRate.toStringAsFixed(1)}%',
+                Icons.pie_chart,
                 Colors.blue,
+                subtitle: '$activeStock active items',
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: _buildMetricCard(
-                'Active Stock',
-                _analytics!['activeStock'].toString(),
-                Icons.check_circle,
+                'Completion Rate',
+                '${completionRate.toStringAsFixed(1)}%',
+                Icons.done_all,
                 Colors.green,
+                subtitle: '$invoicedOrders / $totalOrders orders',
               ),
             ),
           ],
@@ -137,19 +225,21 @@ class _KeyMetricsScreenState extends State<KeyMetricsScreen> {
           children: [
             Expanded(
               child: _buildMetricCard(
-                'Total Orders',
-                _analytics!['totalOrders'].toString(),
-                Icons.receipt_long,
-                Colors.orange,
+                'Inventory Turnover',
+                '${turnoverRate.toStringAsFixed(1)}%',
+                Icons.sync,
+                Colors.purple,
+                subtitle: 'Sales vs Stock',
               ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: _buildMetricCard(
-                'Transactions',
-                _analytics!['totalTransactions'].toString(),
-                Icons.swap_horiz,
-                Colors.purple,
+                'Pending Orders',
+                (_analytics!['pendingOrders'] as int? ?? 0).toString(),
+                Icons.pending_actions,
+                Colors.orange,
+                subtitle: 'Orders waiting invoice',
               ),
             ),
           ],
@@ -162,8 +252,9 @@ class _KeyMetricsScreenState extends State<KeyMetricsScreen> {
     String title,
     String value,
     IconData icon,
-    Color color,
-  ) {
+    Color color, {
+    String? subtitle,
+  }) {
     return Card(
       elevation: 2,
       child: Container(
@@ -190,6 +281,14 @@ class _KeyMetricsScreenState extends State<KeyMetricsScreen> {
               style: TextStyle(fontSize: 12, color: Colors.grey[600]),
               textAlign: TextAlign.center,
             ),
+            if (subtitle != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                style: TextStyle(fontSize: 10, color: Colors.grey[500]),
+                textAlign: TextAlign.center,
+              ),
+            ],
           ],
         ),
       ),
@@ -280,7 +379,7 @@ class _KeyMetricsScreenState extends State<KeyMetricsScreen> {
                                 ),
                               ),
                               const Text(
-                                'Stocked Out',
+                                'Sold / Delivered',
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: Colors.red,
@@ -317,7 +416,7 @@ class _KeyMetricsScreenState extends State<KeyMetricsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Orders & Sales',
+              'Orders',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
@@ -479,86 +578,81 @@ class _KeyMetricsScreenState extends State<KeyMetricsScreen> {
     );
   }
 
-  Widget _buildDataIntegritySection() {
+  Widget _buildSystemHealthCheck() {
     final dataIntegrity = _analytics!['dataIntegrity'] as Map<String, dynamic>;
     final totalIssues = dataIntegrity['totalIssues'] as int;
     final lastChecked = dataIntegrity['lastChecked'] as DateTime;
-    final summary = dataIntegrity['summary'] as Map<String, dynamic>;
 
     return Card(
-      elevation: 4,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      elevation: 2,
+      child: ExpansionTile(
+        title: Row(
           children: [
-            Row(
-              children: [
-                Icon(
-                  totalIssues > 0 ? Icons.warning : Icons.check_circle,
-                  color: totalIssues > 0 ? Colors.orange : Colors.green,
-                  size: 24,
-                ),
-                const SizedBox(width: 8),
-                const Expanded(
-                  child: Text(
-                    'Data Integrity Report',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                ),
-                Flexible(
-                  child: Text(
-                    'Last checked: ${_formatTimeAgo(lastChecked)}',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
+            Icon(
+              totalIssues > 0 ? Icons.warning : Icons.check_circle,
+              color: totalIssues > 0 ? Colors.orange : Colors.green,
+              size: 24,
             ),
-            const SizedBox(height: 16),
-
-            // Summary status
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: totalIssues > 0
-                    ? Colors.orange.withValues(alpha: 0.1)
-                    : Colors.green.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: totalIssues > 0
-                      ? Colors.orange.withValues(alpha: 0.3)
-                      : Colors.green.withValues(alpha: 0.3),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    totalIssues > 0 ? Icons.error_outline : Icons.check,
-                    color: totalIssues > 0 ? Colors.orange : Colors.green,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    totalIssues > 0
-                        ? '$totalIssues data integrity issues found'
-                        : 'All data integrity checks passed',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w500,
-                      color: totalIssues > 0
-                          ? Colors.orange.shade700
-                          : Colors.green.shade700,
-                    ),
-                  ),
-                ],
-              ),
+            const SizedBox(width: 8),
+            const Text(
+              'System Health Check',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
             ),
-
-            if (totalIssues > 0) ...[
-              const SizedBox(height: 16),
-              _buildIntegrityDetails(dataIntegrity),
-            ],
           ],
         ),
+        subtitle: Text(
+          'Last checked: ${_formatTimeAgo(lastChecked)}',
+          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+        ),
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Summary status
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: totalIssues > 0
+                        ? Colors.orange.withValues(alpha: 0.1)
+                        : Colors.green.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: totalIssues > 0
+                          ? Colors.orange.withValues(alpha: 0.3)
+                          : Colors.green.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        totalIssues > 0 ? Icons.error_outline : Icons.check,
+                        color: totalIssues > 0 ? Colors.orange : Colors.green,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        totalIssues > 0
+                            ? '$totalIssues data integrity issues found'
+                            : 'All systems operational',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w500,
+                          color: totalIssues > 0
+                              ? Colors.orange.shade700
+                              : Colors.green.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (totalIssues > 0) ...[
+                  const SizedBox(height: 16),
+                  _buildIntegrityDetails(dataIntegrity),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

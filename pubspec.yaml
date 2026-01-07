@@ -87,6 +87,9 @@ dependencies:
   # OpenRouter LLM OCR integration
   http: ^1.2.0  # HTTP client for API requests
   flutter_dotenv: ^5.1.0  # Environment variable loading
+  
+  # Charts for analytics visualization
+  fl_chart: ^0.69.0
 
 
 dev_dependencies:

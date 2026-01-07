@@ -63,5 +63,11 @@ android/local.properties
 # Firebase configuration (contains sensitive API keys)
 lib/firebase_options.dart
 
+# Environment variables and API keys
+.env
+.env.local
+.env.*.local
+**/*.env
+
 # IDE files (additional)
 *.iml

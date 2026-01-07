@@ -790,6 +790,8 @@ class ReportService {
         'active_items': statusStats['Active'] ?? 0,
         'reserved_items': statusStats['Reserved'] ?? 0,
         'delivered_items': statusStats['Delivered'] ?? 0,
+        'demo_items': statusStats['Demo'] ?? 0,
+        'returned_items': statusStats['Returned'] ?? 0,
         'categories_count': categoryStats.length,
         'locations_count': locationStats.length,
       },

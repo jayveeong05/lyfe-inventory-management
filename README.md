@@ -6,6 +6,13 @@ A comprehensive Flutter-based inventory management application with Firebase bac
 
 **✅ PRODUCTION READY** - All core features implemented and tested
 
+### Version 2.2.0 - Latest Updates (January 2026)
+- ✅ **Update Reference Numbers**: Admin utility to edit Order and Demo numbers with duplicate validation
+- ✅ **Advanced Reference Search**: Instant, case-insensitive, partial keyword search for orders and demos
+- ✅ **Inventory Report Enhancements**: Added Demo and Returned items to summary, implemented responsive layout for web/mobile
+- ✅ **Debug Mode Protection**: Restricted critical reference update tools to debug environment for safety
+- ✅ **UI/UX Improvements**: Consistent card layouts and responsive grids in reporting screens
+
 ### Version 2.1.0 - Latest Updates (December 2025)
 - ✅ **Authentication System**: Login, registration, role-based access control
 - ✅ **Stock-In Operations**: Add inventory with QR scanning and batch processing
@@ -373,6 +380,17 @@ For support and questions:
 - Check Firestore security rules
 
 ## 🔄 Version History
+
+### v2.2.0 (January 2026)
+- ✅ **Update Reference Screen**: New admin tool to correct Order and Demo numbers (e.g., from TEMP-001 to OFFICIAL-001)
+- ✅ **Smart Search Logic**: Implemented client-side fuzzy search for reference updates (instant, case-insensitive)
+- ✅ **Inventory Report Upgrade**:
+  - Added "Demo Items" and "Returned Items" to summary cards
+  - Consolidated summary cards into a unified, responsive grid (2-col mobile, 6-col web)
+  - Aligned card heights for consistent UI
+- ✅ **Safety Controls**: Restricted "Update References" navigation option to Debug Mode only to prevent accidental changes in production
+- ✅ **Data Integrity**: Service-level validation to ensure new reference numbers are unique before updating
+- ✅ **Performance**: Optimized report generation to include demo/return counts in single pass
 
 ### v2.1.3 (Current - December 2025)
 - ✅ **AI-Powered OCR Integration**: OpenRouter Gemini Flash 2.0 for intelligent document data extraction

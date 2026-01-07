@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -25,6 +26,7 @@ import 'key_metrics_screen.dart';
 import 'category_details_screen.dart';
 import 'item_returned_screen.dart';
 import 'profile_screen.dart';
+import 'update_reference_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -658,6 +660,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
               ),
             ),
           ),
+          if (kDebugMode)
+            _buildMenuOption(
+              'Update References',
+              Icons.edit_note,
+              Colors.purple,
+              'Update order/demo numbers',
+              () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const UpdateReferenceScreen(),
+                ),
+              ),
+            ),
         ],
       );
     } else {
@@ -743,6 +758,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                           ),
                         ),
                       ),
+                      if (kDebugMode)
+                        _buildMenuOption(
+                          'Update References',
+                          Icons.edit_note,
+                          Colors.purple,
+                          'Update order/demo numbers',
+                          () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  const UpdateReferenceScreen(),
+                            ),
+                          ),
+                        ),
                       const SizedBox(height: 16),
                       // Back button at the bottom
                       Container(

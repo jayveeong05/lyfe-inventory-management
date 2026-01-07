@@ -113,12 +113,6 @@ class InventoryManagementService {
       final data = doc.data() as Map<String, dynamic>;
       final serialNumber = data['serial_number'] as String? ?? '';
 
-      // Use stored status from inventory document as primary source of truth
-      final statusInfo = await _determineItemStatus(
-        data,
-        transactionsBySerial[serialNumber.toLowerCase()] ?? [],
-      );
-
       final item = {
         'id': doc.id,
         'serial_number': serialNumber,
@@ -128,9 +122,12 @@ class InventoryManagementService {
         'batch': data['batch'] ?? '',
         'remark': data['remark'] ?? '',
         'date': data['date'],
-        'current_status': statusInfo['status'],
-        'current_location': statusInfo['location'],
-        'last_activity': statusInfo['lastActivity'],
+        'current_status': data['status'] ?? data['current_status'] ?? 'Active',
+        'current_location':
+            data['location'] ?? data['current_location'] ?? 'HQ',
+        'last_activity': data['updated_at'] is Timestamp
+            ? (data['updated_at'] as Timestamp).toDate()
+            : null,
         'transaction_count':
             (transactionsBySerial[serialNumber.toLowerCase()] ?? []).length,
       };
@@ -172,100 +169,6 @@ class InventoryManagementService {
     }
 
     return {'items': items, 'totalFiltered': totalFiltered};
-  }
-
-  /// Determine item status using stored data as primary source
-  /// Queries orders collection to check invoice_status and delivery_status
-  Future<Map<String, dynamic>> _determineItemStatus(
-    Map<String, dynamic> inventoryData,
-    List<Map<String, dynamic>> transactions,
-  ) async {
-    String? location =
-        inventoryData['location'] ?? inventoryData['current_location'];
-
-    // Get last activity from transactions
-    DateTime? lastActivity;
-    String? status;
-
-    if (transactions.isNotEmpty) {
-      // Sort transactions by date (most recent first) to find last activity
-      transactions.sort((a, b) {
-        final aTime = a['date'];
-        final bTime = b['date'];
-        DateTime aDate = (aTime is Timestamp)
-            ? aTime.toDate()
-            : DateTime.tryParse(aTime.toString()) ?? DateTime.now();
-        DateTime bDate = (bTime is Timestamp)
-            ? bTime.toDate()
-            : DateTime.tryParse(bTime.toString()) ?? DateTime.now();
-        return bDate.compareTo(aDate);
-      });
-
-      final latestTransaction = transactions.first;
-      final dateValue = latestTransaction['date'];
-      if (dateValue is Timestamp) {
-        lastActivity = dateValue.toDate();
-      } else if (dateValue is String) {
-        lastActivity = DateTime.tryParse(dateValue);
-      }
-
-      final type = latestTransaction['type'] as String?;
-      final transactionStatus = latestTransaction['status'] as String?;
-      final transactionId = latestTransaction['transaction_id'] as int?;
-      location ??= latestTransaction['location'] as String? ?? 'Unknown';
-
-      // For Stock_Out, ALWAYS check orders for current invoice/delivery status
-      if (type == 'Stock_Out' && transactionId != null) {
-        // Query orders to get invoice_status and delivery_status
-        final ordersQuery = await _firestore
-            .collection('orders')
-            .where('transaction_ids', arrayContains: transactionId)
-            .limit(1)
-            .get();
-
-        if (ordersQuery.docs.isNotEmpty) {
-          final orderData = ordersQuery.docs.first.data();
-          final invoiceStatus = orderData['invoice_status'] as String?;
-          final deliveryStatus = orderData['delivery_status'] as String?;
-
-          // Determine status based on order statuses (priority order)
-          if (deliveryStatus == 'Delivered') {
-            status = 'Delivered';
-          } else if (deliveryStatus == 'Issued') {
-            status = 'Issued';
-          } else if (invoiceStatus == 'Invoiced') {
-            status = 'Invoiced';
-          } else if (transactionStatus == 'Reserved') {
-            status = 'Reserved';
-          } else {
-            status = 'Reserved'; // Default for Stock_Out
-          }
-        } else {
-          // No order found, use transaction status
-          status = transactionStatus ?? 'Reserved';
-        }
-      } else if (type == 'Stock_In') {
-        status = 'Active';
-      } else if (type == 'Demo') {
-        status = 'Demo';
-      } else if (type == 'Cancellation') {
-        status = 'Active';
-      } else if (type == 'Returned') {
-        status = 'Returned';
-      } else {
-        status = 'Active';
-      }
-    }
-
-    // Fallback to stored status if no transactions
-    status ??=
-        inventoryData['status'] ?? inventoryData['current_status'] ?? 'Active';
-
-    return {
-      'status': status,
-      'location': location ?? 'HQ',
-      'lastActivity': lastActivity,
-    };
   }
 
   /// Get filter options for dropdowns
@@ -312,15 +215,9 @@ class InventoryManagementService {
       final currentLocations = <String>{};
       for (final doc in inventorySnapshot.docs) {
         final data = doc.data();
-        final serialNumber = data['serial_number'] as String? ?? '';
 
-        // Calculate current location for this item (case-insensitive)
-        final statusInfo = await _determineItemStatus(
-          data,
-          transactionsBySerial[serialNumber.toLowerCase()] ?? [],
-        );
-
-        final location = statusInfo['location'] as String?;
+        final location =
+            data['location'] ?? data['current_location'] as String?;
         if (location != null && location.isNotEmpty) {
           currentLocations.add(location);
         }
@@ -375,15 +272,12 @@ class InventoryManagementService {
 
       for (final doc in inventorySnapshot.docs) {
         final data = doc.data();
-        final serialNumber = data['serial_number'] as String? ?? '';
-
-        final statusInfo = await _determineItemStatus(
-          data,
-          transactionsBySerial[serialNumber.toLowerCase()] ?? [],
-        );
 
         totalItems++;
-        switch (statusInfo['status']) {
+        // Use direct status field
+        final status = data['status'] ?? data['current_status'] ?? 'Active';
+
+        switch (status) {
           case 'Active':
             activeItems++;
             break;

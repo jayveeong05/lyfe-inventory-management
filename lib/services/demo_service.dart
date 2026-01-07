@@ -681,4 +681,78 @@ class DemoService {
       };
     }
   }
+
+  /// Update demo number
+  /// This updates the demo number in the demos collection and all associated return transactions
+  Future<Map<String, dynamic>> updateDemoNumber({
+    required String oldDemoNumber,
+    required String newDemoNumber,
+  }) async {
+    try {
+      final currentUser = _authService.currentUser;
+      if (currentUser == null) {
+        return {'success': false, 'error': 'User not authenticated.'};
+      }
+
+      // 1. Check if new demo number already exists
+      if (newDemoNumber != oldDemoNumber) {
+        final existing = await _firestore
+            .collection('demos')
+            .where('demo_number', isEqualTo: newDemoNumber)
+            .get();
+
+        if (existing.docs.isNotEmpty) {
+          return {
+            'success': false,
+            'error': 'Demo number $newDemoNumber already exists.',
+          };
+        }
+      }
+
+      // 2. Find the demo by old demo number
+      final demoQuery = await _firestore
+          .collection('demos')
+          .where('demo_number', isEqualTo: oldDemoNumber)
+          .get();
+
+      if (demoQuery.docs.isEmpty) {
+        return {'success': false, 'error': 'Demo $oldDemoNumber not found.'};
+      }
+
+      final demoDoc = demoQuery.docs.first;
+      final batch = _firestore.batch();
+
+      // 3. Update demo document
+      batch.update(demoDoc.reference, {
+        'demo_number': newDemoNumber,
+        'updated_at': FieldValue.serverTimestamp(),
+      });
+
+      // 4. Update associated return transactions
+      final returnTransactionsQuery = await _firestore
+          .collection('transactions')
+          .where('returned_from_demo', isEqualTo: oldDemoNumber)
+          .get();
+
+      for (final transactionDoc in returnTransactionsQuery.docs) {
+        batch.update(transactionDoc.reference, {
+          'returned_from_demo': newDemoNumber,
+          'updated_at': FieldValue.serverTimestamp(),
+        });
+      }
+
+      await batch.commit();
+
+      return {
+        'success': true,
+        'message': 'Demo number updated from $oldDemoNumber to $newDemoNumber',
+        'transactions_updated': returnTransactionsQuery.docs.length,
+      };
+    } catch (e) {
+      return {
+        'success': false,
+        'error': 'Failed to update demo number: ${e.toString()}',
+      };
+    }
+  }
 }
