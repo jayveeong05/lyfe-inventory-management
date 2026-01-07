@@ -239,7 +239,17 @@ class OrderService {
         location = originalData['location'] as String?;
         unitPrice = (originalData['unit_price'] as num?)?.toDouble();
         warrantyType = originalData['warranty_type'] as String?;
-        warrantyPeriod = originalData['warranty_period'] as int?;
+        // Robust handling for warranty_period which might be stored as String ("5 years")
+        final rawPeriod = originalData['warranty_period'];
+        if (rawPeriod is int) {
+          warrantyPeriod = rawPeriod;
+        } else if (rawPeriod is String) {
+          // Try to extract number from string like "5 years"
+          final match = RegExp(r'(\d+)').firstMatch(rawPeriod);
+          if (match != null) {
+            warrantyPeriod = int.tryParse(match.group(1)!);
+          }
+        }
         deliveryDate = originalData['delivery_date'] as Timestamp?;
       }
 
@@ -322,7 +332,7 @@ class OrderService {
 
       if (replacementInventoryQuery.docs.isNotEmpty) {
         batch.update(replacementInventoryQuery.docs.first.reference, {
-          'status': 'Reserved',
+          'status': 'Delivered', // Synced with transaction status
         });
       }
 
