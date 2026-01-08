@@ -1187,7 +1187,15 @@ class ReportService {
         '',
         '',
       ]);
-      csvData.add(['Month: ${selectedMonth['label']}', '', '', '', '', '', '']);
+      csvData.add([
+        'Month: ${selectedMonth['displayName']}',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+      ]);
       csvData.add([
         'Generated: ${DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now())}',
         '',
@@ -1212,21 +1220,19 @@ class ReportService {
       ]);
 
       // Add summary data by category
-      final summaryData =
-          reportData['summaryData'] as Map<String, dynamic>? ?? {};
-      summaryData.forEach((category, data) {
-        if (data is Map<String, dynamic>) {
-          csvData.add([
-            category,
-            data['stockIn'] ?? 0,
-            data['stockOut'] ?? 0,
-            data['remaining'] ?? 0,
-            '',
-            '',
-            '',
-          ]);
-        }
-      });
+      final categoryBreakdown =
+          reportData['categoryBreakdown'] as List<dynamic>? ?? [];
+      for (final item in categoryBreakdown) {
+        csvData.add([
+          item['category'] ?? '',
+          item['stockIn'] ?? 0,
+          item['stockOut'] ?? 0,
+          item['remaining'] ?? 0,
+          '',
+          '',
+          '',
+        ]);
+      }
 
       csvData.add(['', '', '', '', '', '', '']); // Empty row
       csvData.add(['', '', '', '', '', '', '']); // Empty row
@@ -1245,15 +1251,15 @@ class ReportService {
 
       for (var item in stockInItems) {
         csvData.add([
-          item['serialNumber'] ?? '',
-          item['equipmentCategory'] ?? '',
+          item['serial_number'] ?? '',
+          item['equipment_category'] ?? '',
           item['model'] ?? '',
           item['size'] ?? '',
           item['location'] ?? '',
-          item['createdAt'] != null
+          item['date'] != null
               ? DateFormat(
                   'yyyy-MM-dd',
-                ).format((item['createdAt'] as Timestamp).toDate())
+                ).format((item['date'] as Timestamp).toDate())
               : '',
           item['remark'] ?? '',
         ]);
@@ -1276,15 +1282,15 @@ class ReportService {
 
       for (var item in stockOutItems) {
         csvData.add([
-          item['serialNumber'] ?? '',
-          item['equipmentCategory'] ?? '',
+          item['serial_number'] ?? '',
+          item['equipment_category'] ?? '',
           item['model'] ?? '',
           item['size'] ?? '',
-          item['customerDealer'] ?? '',
-          item['createdAt'] != null
+          item['customer_dealer'] ?? '',
+          item['date'] != null
               ? DateFormat(
                   'yyyy-MM-dd',
-                ).format((item['createdAt'] as Timestamp).toDate())
+                ).format((item['date'] as Timestamp).toDate())
               : '',
           item['remark'] ?? '',
         ]);
@@ -1297,11 +1303,27 @@ class ReportService {
       csvData.add(['REMAINING INVENTORY', '', '', '', '', '', '']);
       csvData.add(['Equipment Category', 'Size', 'Count', '', '', '', '']);
 
+      // Group remaining items by category and size
+      final Map<String, Map<String, int>> groupedRemaining = {};
       for (var item in remainingItems) {
+        final category = item['equipment_category'] ?? 'Unknown';
+        final size = item['size'] ?? 'Unknown';
+        final key = '$category|$size';
+        groupedRemaining[key] = groupedRemaining[key] ?? {'count': 0};
+        groupedRemaining[key]!['count'] =
+            (groupedRemaining[key]!['count'] ?? 0) + 1;
+      }
+
+      // Sort and add to CSV
+      final sortedKeys = groupedRemaining.keys.toList()..sort();
+      for (final key in sortedKeys) {
+        final parts = key.split('|');
+        final category = parts[0];
+        final size = parts.length > 1 ? parts[1] : 'Unknown';
         csvData.add([
-          item['category'] ?? '',
-          item['size'] ?? '',
-          item['count'] ?? 0,
+          category,
+          size,
+          groupedRemaining[key]!['count'] ?? 0,
           '',
           '',
           '',
@@ -1315,7 +1337,8 @@ class ReportService {
       // Save to file
       final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
       final monthLabel =
-          selectedMonth['label']?.toString().replaceAll(' ', '_') ?? 'unknown';
+          selectedMonth['displayName']?.toString().replaceAll(' ', '_') ??
+          'unknown';
 
       return await _fileSaver.saveFile(
         'monthly_activity_${monthLabel}_$timestamp.csv',

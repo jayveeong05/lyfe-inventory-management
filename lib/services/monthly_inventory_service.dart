@@ -39,17 +39,19 @@ class MonthlyInventoryService {
     return category.toLowerCase().replaceAll('_', ' ');
   }
 
-  /// Get the delivery transaction (Stock_Out) from a list of transactions
+  /// Get the delivery transaction (Stock_Out with 'Delivered' status) from a list of transactions
   Map<String, dynamic>? _getDeliveryTransaction(
     List<Map<String, dynamic>> transactions,
   ) {
-    // Find the most recent Stock_Out transaction
+    // Find the most recent Stock_Out transaction with 'Delivered' status
     Map<String, dynamic>? deliveryTransaction;
     DateTime? latestDate;
 
     for (final transaction in transactions) {
       final type = transaction['type'] as String?;
-      if (type == 'Stock_Out') {
+      final status = transaction['status'] as String?;
+      // Only consider Stock_Out transactions with Delivered status
+      if (type == 'Stock_Out' && status == 'Delivered') {
         final date = _normalizeDate(transaction['date']);
         if (date != null) {
           if (latestDate == null || date.isAfter(latestDate)) {
