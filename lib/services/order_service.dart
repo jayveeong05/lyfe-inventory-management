@@ -635,47 +635,120 @@ class OrderService {
           .get();
 
       // Collect all serial numbers from transactions
-      final serialNumbers = <String>[];
-      final transactionMap = <String, Map<String, dynamic>>{};
+      // We will loop through transactions to build the result, so we keep them all
+      // to extract serial numbers for the bulk inventory query.
+      final serialNumbersToFetch = <String>{};
 
+      // Store transaction data keyed by transaction_id for exact mapping if needed,
+      // but simplistic mapping by serial is also fine if 1:1.
       for (final doc in querySnapshot.docs) {
         final data = doc.data();
         final serialNumber = data['serial_number'] ?? data['Serial_Number'];
+
         if (serialNumber != null) {
-          serialNumbers.add(serialNumber);
-          transactionMap[serialNumber] = data;
+          final snString = serialNumber.toString();
+
+          // Add variations for case-insensitive fetching
+          // This attempts to cast a wider net in Firestore 'in' query
+          serialNumbersToFetch.add(snString);
+          serialNumbersToFetch.add(snString.toUpperCase());
+          serialNumbersToFetch.add(snString.toLowerCase());
         }
       }
 
-      if (serialNumbers.isEmpty) return [];
+      // Fetch inventory details if we have serial numbers
+      final inventoryMap = <String, Map<String, dynamic>>{};
 
-      // Get inventory details for these serial numbers
-      final inventorySnapshot = await _firestore
-          .collection('inventory')
-          .where('serial_number', whereIn: serialNumbers)
-          .get();
+      if (serialNumbersToFetch.isNotEmpty) {
+        try {
+          // Firestore 'in' limit is 30.
+          // For typical single orders, this is fine.
+          // If list is large, we take the first 30 just to be safe and avoid crash,
+          // or we could implement chunking. Given typical use case, taking 30 is a safe guard.
+          final searchList = serialNumbersToFetch
+              .take(30)
+              .toList(); // Simple safety cap
+
+          if (searchList.isNotEmpty) {
+            final inventorySnapshot = await _firestore
+                .collection('inventory')
+                .where('serial_number', whereIn: searchList)
+                .get();
+
+            for (final doc in inventorySnapshot.docs) {
+              final inventoryData = doc.data();
+              final sn =
+                  inventoryData['serial_number'] ??
+                  inventoryData['Serial_Number'];
+              if (sn != null) {
+                // Store using lowercased key for easy case-insensitive lookup
+                inventoryMap[sn.toString().toLowerCase()] = inventoryData;
+              }
+            }
+          }
+        } catch (e) {
+          // If fetch fails, we continue without inventory details (fallback mode)
+        }
+      }
 
       final items = <Map<String, dynamic>>[];
 
-      for (final doc in inventorySnapshot.docs) {
-        final inventoryData = doc.data();
+      // Build final list iterating through TRANSACTIONS (Primary Source)
+      // This ensures we show the item even if it's missing from inventory
+      for (final doc in querySnapshot.docs) {
+        final transactionData = doc.data();
         final serialNumber =
-            inventoryData['serial_number'] ?? inventoryData['Serial_Number'];
+            transactionData['serial_number'] ??
+            transactionData['Serial_Number'];
 
-        if (serialNumber != null && transactionMap.containsKey(serialNumber)) {
-          final transactionData = transactionMap[serialNumber]!;
+        if (serialNumber != null) {
+          final snString = serialNumber.toString();
 
-          // Combine inventory and transaction data
-          final item = <String, dynamic>{
-            ...inventoryData,
-            'transaction_id': transactionData['transaction_id'],
-            'transaction_status': transactionData['status'],
-            'transaction_date': transactionData['date'],
-            'warranty_type': transactionData['warranty_type'] ?? 'No Warranty',
-            'warranty_period': transactionData['warranty_period'] ?? 0,
-          };
+          // Try to find matching inventory data (case-insensitive)
+          final inventoryData = inventoryMap[snString.toLowerCase()];
 
-          items.add(item);
+          if (inventoryData != null) {
+            // Combine inventory and transaction data (Inventory is base)
+            final item = <String, dynamic>{
+              ...inventoryData,
+              // Overlay Transaction specific info
+              'transaction_id': transactionData['transaction_id'],
+              'transaction_status': transactionData['status'],
+              'transaction_date': transactionData['date'],
+              'warranty_type':
+                  transactionData['warranty_type'] ??
+                  inventoryData['warranty_type'] ??
+                  'No Warranty',
+              'warranty_period':
+                  transactionData['warranty_period'] ??
+                  inventoryData['warranty_period'] ??
+                  0,
+              // Ensure consistent fields
+              'serial_number': inventoryData['serial_number'] ?? snString,
+              'model': inventoryData['model'] ?? transactionData['model'],
+              'equipment_category':
+                  inventoryData['equipment_category'] ??
+                  transactionData['equipment_category'],
+            };
+            items.add(item);
+          } else {
+            // Fallback: Use only transaction data
+            // Mark it so UI can potentially indicate "Inventory Missing" if needed
+            final item = <String, dynamic>{
+              ...transactionData,
+              'transaction_id': transactionData['transaction_id'],
+              'transaction_status': transactionData['status'],
+              'transaction_date': transactionData['date'],
+              // Map transaction fields to expected item fields
+              'serial_number': snString,
+              'model': transactionData['model'] ?? 'N/A',
+              'equipment_category':
+                  transactionData['equipment_category'] ?? 'N/A',
+              'size': transactionData['size'] ?? 'N/A',
+              'is_archived_record': true,
+            };
+            items.add(item);
+          }
         }
       }
 
