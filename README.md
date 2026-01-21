@@ -6,7 +6,19 @@ A comprehensive Flutter-based inventory management application with Firebase bac
 
 **✅ PRODUCTION READY** - All core features implemented and tested
 
-### Version 2.2.0 - Latest Updates (January 2026)
+### Version 2.2.1 - Latest Updates (January 2026)
+- ✅ **Inventory Report Overhaul**:
+  - **Smart Location Resolution**: Eliminates "Unknown" locations by intelligently scanning full transaction history
+  - **Data Normalization**: Automatically merges inconsistent category names (e.g., "Smart_Pen" → "Smart Pen") for accurate reporting
+  - **User-Friendly CSV**: New export format with Executive Summary, Category Breakdown, and simplified headers
+- ✅ **Invoice & Delivery UX**: Replaced standard dropdowns with **Searchable Dropdowns** for instant filtering by Order #, Dealer, or Client
+- ✅ **Performance Boost**: Implemented lazy loading for order items, significantly reducing initial load time for Invoice and Delivery screens
+- ✅ **Sales Report Responsive Design**: Optimized "Product Performance" layout to prevent overflow on smaller screens
+- ✅ **Category Details Upgrade**:
+  - Added "Demo Items" and "Returned Items" to status summary
+  - Refined iconography: Cyan/Play for Demo, Red/Error for Returned to match system standards
+
+### Version 2.2.0 - Updates (January 2026)
 - ✅ **Update Reference Numbers**: Admin utility to edit Order and Demo numbers with duplicate validation
 - ✅ **Advanced Reference Search**: Instant, case-insensitive, partial keyword search for orders and demos
 - ✅ **Inventory Report Enhancements**: Added Demo and Returned items to summary, implemented responsive layout for web/mobile
@@ -380,6 +392,15 @@ For support and questions:
 - Check Firestore security rules
 
 ## 🔄 Version History
+
+### v2.2.1 (January 2026)
+- ✅ **Inventory Report Smart Logic**: Implemented intelligent fallback logic that scans entire transaction history to resolve "Unknown" locations when current location is missing
+- ✅ **Data Normalization Engine**: Added automatic normalization in ReportService to group inconsistent category names (case/underscore variations) into single unified entries
+- ✅ **Executive CSV Reports**: Completely redesigned Inventory CSV export to include dashboard-style Executive Summary and Category Breakdown tables before the detailed list
+- ✅ **Searchable Order Selection**: Integrated `dropdown_search` to enable real-time filtering of orders by ID, Client, or Dealer in Invoice and Delivery screens
+- ✅ **Optimized Data Loading**: Switched to lazy-loading pattern for order item details, preventing UI threads from locking up when loading large order lists
+- ✅ **Responsive Sales Report**: Fixed RenderFlex overflow issues in Sales Report by implementing responsive layout builder that stacks widgets on narrow screens
+- ✅ **Enhanced Category Analytics**: Updated Category Details screen to explicitly track and display "Demo" and "Returned" items with distinct color coding (Cyan/Red) to match global design system
 
 ### v2.2.0 (January 2026)
 - ✅ **Update Reference Screen**: New admin tool to correct Order and Demo numbers (e.g., from TEMP-001 to OFFICIAL-001)

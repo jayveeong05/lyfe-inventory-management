@@ -3,6 +3,29 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class DashboardService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
+  /// Normalize category name to handle spaces and underscores consistently
+  String _normalizeCategory(String? category) {
+    if (category == null || category.isEmpty) {
+      return 'unknown';
+    }
+
+    // Convert to lowercase and replace underscores with spaces for consistency
+    return category.toLowerCase().replaceAll('_', ' ');
+  }
+
+  /// Convert normalized category to title case for display
+  String _toTitleCase(String text) {
+    if (text.isEmpty) return text;
+
+    return text
+        .split(' ')
+        .map((word) {
+          if (word.isEmpty) return word;
+          return word[0].toUpperCase() + word.substring(1);
+        })
+        .join(' ');
+  }
+
   // Get dashboard analytics data
   Future<Map<String, dynamic>> getDashboardAnalytics() async {
     try {
@@ -302,19 +325,25 @@ class DashboardService {
 
       for (final doc in inventorySnapshot.docs) {
         final data = doc.data();
-        final category = data['equipment_category'] as String? ?? 'Unknown';
+        final rawCategory = data['equipment_category'] as String?;
+        final normalizedCategory = _normalizeCategory(rawCategory);
         final status = data['status'] as String? ?? 'Active';
 
         // Only count Active status items
         if (status == 'Active') {
-          categoryActiveCount[category] =
-              (categoryActiveCount[category] ?? 0) + 1;
+          categoryActiveCount[normalizedCategory] =
+              (categoryActiveCount[normalizedCategory] ?? 0) + 1;
         }
       }
 
-      // Convert to list and sort by count
+      // Convert to list with title case display names and sort by count
       final topCategories = categoryActiveCount.entries
-          .map((entry) => {'category': entry.key, 'active_count': entry.value})
+          .map(
+            (entry) => {
+              'category': _toTitleCase(entry.key),
+              'active_count': entry.value,
+            },
+          )
           .toList();
 
       topCategories.sort(
@@ -322,8 +351,8 @@ class DashboardService {
             (b['active_count'] as int).compareTo(a['active_count'] as int),
       );
 
-      // Return top 5 categories
-      return topCategories.take(5).toList();
+      // Return all categories
+      return topCategories;
     } catch (e) {
       print('Error fetching top categories: $e');
       return [];
@@ -747,8 +776,10 @@ class DashboardService {
         final data = doc.data();
         final status = data['status'] as String? ?? 'Active';
         if (status == 'Active') {
-          final category = data['equipment_category'] as String? ?? 'Unknown';
-          categoryCounts[category] = (categoryCounts[category] ?? 0) + 1;
+          final rawCategory = data['equipment_category'] as String?;
+          final normalizedCategory = _normalizeCategory(rawCategory);
+          categoryCounts[normalizedCategory] =
+              (categoryCounts[normalizedCategory] ?? 0) + 1;
         }
       }
 

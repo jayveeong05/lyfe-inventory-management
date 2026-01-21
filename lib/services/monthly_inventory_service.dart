@@ -264,6 +264,7 @@ class MonthlyInventoryService {
         'id': doc.id,
         'serial_number': data['serial_number'] ?? 'N/A',
         'equipment_category': data['equipment_category'] ?? 'N/A',
+        'model': data['model'] ?? 'N/A',
         'size': data['size'] ?? 'Unknown',
         'batch': data['batch'] ?? 'N/A',
         'date': data['date'],

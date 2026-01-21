@@ -11,6 +11,7 @@ import '../services/order_service.dart';
 import '../services/invoice_ocr_service.dart';
 import '../providers/auth_provider.dart';
 import '../utils/platform_features.dart';
+import 'package:dropdown_search/dropdown_search.dart';
 
 class DeliveryOrderScreen extends StatefulWidget {
   const DeliveryOrderScreen({super.key});
@@ -95,7 +96,10 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
 
       // Load orders for delivery operations using new dual status system:
       // Only orders with Invoiced invoice status can proceed to delivery operations
-      final ordersForDelivery = await orderService.getOrdersForDelivery();
+      // Optimize: Don't fetch items initially
+      final ordersForDelivery = await orderService.getOrdersForDelivery(
+        fetchItems: false,
+      );
 
       final orders = ordersForDelivery;
 
@@ -112,6 +116,7 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
           );
           if (orderExists) {
             _loadDeliveryOrderForOrder(_selectedOrderId!);
+            _loadSelectedOrderDetails(_selectedOrderId!); // Load full details
           } else {
             // If no matching order found in _allOrders, don't set _selectedOrderId
             // This prevents dropdown assertion errors
@@ -222,6 +227,24 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
           _isLoadingDeliveryOrder = false;
         });
       }
+    }
+  }
+
+  Future<void> _loadSelectedOrderDetails(String orderId) async {
+    try {
+      final fullOrder = await _orderService.getOrderById(orderId);
+      if (fullOrder != null && mounted) {
+        setState(() {
+          final index = _allOrders.indexWhere(
+            (order) => order['id'] == orderId,
+          );
+          if (index != -1) {
+            _allOrders[index] = fullOrder;
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading order details: $e');
     }
   }
 
@@ -1135,120 +1158,32 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
               ],
             ),
             const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              initialValue: _selectedOrderId,
-              decoration: const InputDecoration(
-                labelText: 'Select Invoiced Order *',
-                border: OutlineInputBorder(),
-                hintText: 'Choose an order to deliver',
-              ),
-              isExpanded: true,
-              menuMaxHeight: 300,
-              items: _allOrders.isEmpty
-                  ? [
-                      const DropdownMenuItem<String>(
-                        value: null,
-                        child: Text(
-                          'No orders available',
-                          style: TextStyle(color: Colors.grey),
-                        ),
-                      ),
-                    ]
-                  : _allOrders.map((order) {
-                      final orderNumber = order['order_number'] ?? 'Unknown';
-                      final dealer = order['customer_dealer'] ?? 'Unknown';
-                      final client = order['customer_client'] ?? 'Unknown';
-                      // Support both old single status and new dual status system
-                      final status = order['status'] as String? ?? 'Unknown';
-                      final invoiceStatus =
-                          order['invoice_status'] as String? ?? status;
-                      final deliveryStatus =
-                          order['delivery_status'] as String? ?? 'Pending';
-
-                      // Define status colors based on delivery status
-                      final isReserved = invoiceStatus == 'Reserved';
-                      final isInvoiced =
-                          invoiceStatus == 'Invoiced' &&
-                          deliveryStatus == 'Pending';
-                      final isIssued = deliveryStatus == 'Issued';
-                      final isDelivered = deliveryStatus == 'Delivered';
-
-                      return DropdownMenuItem<String>(
-                        value: order['id'],
-                        child: Row(
-                          children: [
-                            // Status color indicator
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: isReserved
-                                    ? Colors.orange
-                                    : isInvoiced
-                                    ? Colors.green
-                                    : isIssued
-                                    ? Colors.blue
-                                    : isDelivered
-                                    ? Colors.purple
-                                    : Colors.grey,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            // Order details
-                            Expanded(
-                              child: Text(
-                                '$orderNumber - $dealer → $client',
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                                maxLines: 1,
-                              ),
-                            ),
-                            // Status label
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: isReserved
-                                    ? Colors.orange.shade100
-                                    : isInvoiced
-                                    ? Colors.green.shade100
-                                    : isIssued
-                                    ? Colors.blue.shade100
-                                    : isDelivered
-                                    ? Colors.purple.shade100
-                                    : Colors.grey.shade100,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                isInvoiced ? 'Invoiced' : deliveryStatus,
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w500,
-                                  color: isReserved
-                                      ? Colors.orange.shade800
-                                      : isInvoiced
-                                      ? Colors.green.shade800
-                                      : isIssued
-                                      ? Colors.blue.shade800
-                                      : isDelivered
-                                      ? Colors.purple.shade800
-                                      : Colors.grey.shade800,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }).toList(),
-              onChanged: (String? newValue) {
+            DropdownSearch<Map<String, dynamic>>(
+              items: (filter, loadProps) {
+                if (filter.isEmpty) {
+                  return _allOrders;
+                }
+                return _allOrders.where((order) {
+                  final orderNumber = (order['order_number'] ?? '')
+                      .toString()
+                      .toLowerCase();
+                  final dealer = (order['customer_dealer'] ?? '')
+                      .toString()
+                      .toLowerCase();
+                  final client = (order['customer_client'] ?? '')
+                      .toString()
+                      .toLowerCase();
+                  final search = filter.toLowerCase();
+                  return orderNumber.contains(search) ||
+                      dealer.contains(search) ||
+                      client.contains(search);
+                }).toList();
+              },
+              compareFn: (item1, item2) => item1['id'] == item2['id'],
+              selectedItem: _selectedOrder,
+              onChanged: (value) {
                 setState(() {
-                  _selectedOrderId = newValue;
+                  _selectedOrderId = value?['id'];
                   _currentDeliveryOrder = null;
                   // Reset upload form states when order changes
                   _showNormalUploadForm = false;
@@ -1261,15 +1196,183 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
                   _signedDeliveryPlatformFile = null;
                   _signedDeliveryFileName = null;
                 });
-                if (newValue != null) {
-                  _loadDeliveryOrderForOrder(newValue);
+                if (value != null) {
+                  final orderId = value['id'] as String;
+                  _loadDeliveryOrderForOrder(orderId);
+                  _loadSelectedOrderDetails(
+                    orderId,
+                  ); // Load full details including items
                 }
               },
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Please select an order';
+              decoratorProps: const DropDownDecoratorProps(
+                decoration: InputDecoration(
+                  labelText: 'Select Invoiced Order *',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              popupProps: PopupProps.menu(
+                showSearchBox: true,
+                searchFieldProps: const TextFieldProps(
+                  decoration: InputDecoration(
+                    labelText: "Search Order",
+                    hintText: "Search by Number, Dealer, etc.",
+                    prefixIcon: Icon(Icons.search),
+                  ),
+                ),
+                itemBuilder: (context, order, isSelected, isDisabled) {
+                  final orderNumber = order['order_number'] ?? 'Unknown';
+                  final dealer = order['customer_dealer'] ?? 'Unknown';
+                  final client = order['customer_client'] ?? 'Unknown';
+                  // Support both old single status and new dual status system
+                  final status = order['status'] as String? ?? 'Unknown';
+                  final invoiceStatus =
+                      order['invoice_status'] as String? ?? status;
+                  final deliveryStatus =
+                      order['delivery_status'] as String? ?? 'Pending';
+
+                  // Define status colors based on delivery status
+                  final isReserved = invoiceStatus == 'Reserved';
+                  final isInvoiced =
+                      invoiceStatus == 'Invoiced' &&
+                      deliveryStatus == 'Pending';
+                  final isIssued = deliveryStatus == 'Issued';
+                  final isDelivered = deliveryStatus == 'Delivered';
+
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isSelected ? Colors.blue.withOpacity(0.1) : null,
+                    ),
+                    child: Row(
+                      children: [
+                        // Status color indicator
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: isReserved
+                                ? Colors.orange
+                                : isInvoiced
+                                ? Colors.green
+                                : isIssued
+                                ? Colors.blue
+                                : isDelivered
+                                ? Colors.purple
+                                : Colors.grey,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        // Order details
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '$orderNumber - $dealer → $client',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                              ),
+                            ],
+                          ),
+                        ),
+                        // Status label
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isReserved
+                                ? Colors.orange.shade100
+                                : isInvoiced
+                                ? Colors.green.shade100
+                                : isIssued
+                                ? Colors.blue.shade100
+                                : isDelivered
+                                ? Colors.purple.shade100
+                                : Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            isInvoiced ? 'Invoiced' : deliveryStatus,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                              color: isReserved
+                                  ? Colors.orange.shade800
+                                  : isInvoiced
+                                  ? Colors.green.shade800
+                                  : isIssued
+                                  ? Colors.blue.shade800
+                                  : isDelivered
+                                  ? Colors.purple.shade800
+                                  : Colors.grey.shade800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+              dropdownBuilder: (context, order) {
+                if (order == null) {
+                  return const SizedBox.shrink();
                 }
-                return null;
+                final orderNumber = order['order_number'] ?? 'Unknown';
+                final dealer = order['customer_dealer'] ?? 'Unknown';
+                final client = order['customer_client'] ?? 'Unknown';
+                final status = order['status'] as String? ?? 'Unknown';
+                final invoiceStatus =
+                    order['invoice_status'] as String? ?? status;
+                final deliveryStatus =
+                    order['delivery_status'] as String? ?? 'Pending';
+
+                final isReserved = invoiceStatus == 'Reserved';
+                final isInvoiced =
+                    invoiceStatus == 'Invoiced' && deliveryStatus == 'Pending';
+                final isIssued = deliveryStatus == 'Issued';
+                final isDelivered = deliveryStatus == 'Delivered';
+
+                return Row(
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: isReserved
+                            ? Colors.orange
+                            : isInvoiced
+                            ? Colors.green
+                            : isIssued
+                            ? Colors.blue
+                            : isDelivered
+                            ? Colors.purple
+                            : Colors.grey,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        '$orderNumber - $dealer → $client',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                );
               },
             ),
           ],

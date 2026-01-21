@@ -100,6 +100,8 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
     final activeItems = _categoryData!['active_items'] as int;
     final reservedItems = _categoryData!['reserved_items'] as int;
     final deliveredItems = _categoryData!['delivered_items'] as int;
+    final demoItems = _categoryData!['demo_items'] as int? ?? 0;
+    final returnedItems = _categoryData!['returned_items'] as int? ?? 0;
     final models = _categoryData!['models'] as List<dynamic>;
     final sizeBreakdown =
         _categoryData!['size_breakdown'] as List<dynamic>? ?? [];
@@ -117,6 +119,8 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
               activeItems,
               reservedItems,
               deliveredItems,
+              demoItems,
+              returnedItems,
             ),
             const SizedBox(height: 24),
             // Show size breakdown for Interactive Flat Panel
@@ -139,6 +143,8 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
     int active,
     int reserved,
     int delivered,
+    int demo,
+    int returned,
   ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -179,6 +185,18 @@ class _CategoryDetailsScreenState extends State<CategoryDetailsScreen> {
               delivered.toString(),
               Icons.local_shipping,
               Colors.purple,
+            ),
+            _buildSummaryCard(
+              'Demo Items',
+              demo.toString(),
+              Icons.play_circle_outline,
+              Colors.cyan.shade700,
+            ),
+            _buildSummaryCard(
+              'Returned Items',
+              returned.toString(),
+              Icons.error_outline,
+              Colors.red.shade400,
             ),
           ],
         ),

@@ -7,10 +7,18 @@ class CategoryService {
   Future<Map<String, dynamic>> getCategoryDetails(String categoryName) async {
     try {
       // Get inventory items for this category
-      final inventorySnapshot = await _firestore
-          .collection('inventory')
-          .where('equipment_category', isEqualTo: categoryName)
-          .get();
+      // Get all inventory items to filter by normalized category name
+      // This matches DashboardService logic to handle "Smart_Pen" vs "Smart Pen"
+      final inventorySnapshot = await _firestore.collection('inventory').get();
+
+      final normalizedTargetCategory = _normalizeCategory(categoryName);
+
+      // Filter items matching the normalized category
+      final categoryDocs = inventorySnapshot.docs.where((doc) {
+        final data = doc.data();
+        final rawCategory = data['equipment_category'] as String?;
+        return _normalizeCategory(rawCategory) == normalizedTargetCategory;
+      }).toList();
 
       Map<String, int> modelActiveCount = {}; // normalized model -> count
       Map<String, String> modelCaseMapping =
@@ -23,9 +31,11 @@ class CategoryService {
       int activeItems = 0;
       int reservedItems = 0;
       int deliveredItems = 0;
+      int demoItems = 0;
+      int returnedItems = 0;
 
       // Process each inventory item in this category
-      for (final doc in inventorySnapshot.docs) {
+      for (final doc in categoryDocs) {
         final data = doc.data();
         final model = data['model'] as String? ?? 'Unknown';
         final size = _extractSizeFromInventoryData(data);
@@ -60,6 +70,12 @@ class CategoryService {
             break;
           case 'Delivered':
             deliveredItems++;
+            break;
+          case 'Demo':
+            demoItems++;
+            break;
+          case 'Returned':
+            returnedItems++;
             break;
         }
       }
@@ -121,6 +137,8 @@ class CategoryService {
         'active_items': activeItems,
         'reserved_items': reservedItems,
         'delivered_items': deliveredItems,
+        'demo_items': demoItems,
+        'returned_items': returnedItems,
         'models': sortedModels
             .map((entry) => {'model': entry.key, 'active_count': entry.value})
             .toList(),
@@ -238,5 +256,15 @@ class CategoryService {
     }
 
     return null; // Could not determine size
+  }
+
+  /// Normalize category name to handle spaces and underscores consistently
+  String _normalizeCategory(String? category) {
+    if (category == null || category.isEmpty) {
+      return 'unknown';
+    }
+
+    // Convert to lowercase and replace underscores with spaces for consistency
+    return category.toLowerCase().replaceAll('_', ' ');
   }
 }

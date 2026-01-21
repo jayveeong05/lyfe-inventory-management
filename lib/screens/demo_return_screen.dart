@@ -44,6 +44,7 @@ class _DemoReturnScreenState extends State<DemoReturnScreen> {
       final demos = await demoService.getDemoHistory(
         status: 'Active',
         limit: 100,
+        fetchItems: true, // Fetch items for serial number search
       );
 
       if (mounted) {
@@ -76,12 +77,23 @@ class _DemoReturnScreenState extends State<DemoReturnScreen> {
       final demoPurpose = (demo['demo_purpose'] ?? '').toString().toLowerCase();
       final dealer = (demo['customer_dealer'] ?? '').toString().toLowerCase();
       final client = (demo['customer_client'] ?? '').toString().toLowerCase();
+
+      // Check serial numbers
+      final serialNumbers =
+          (demo['serial_numbers'] as List<dynamic>?)
+              ?.map((e) => e.toString().toLowerCase())
+              .toList() ??
+          [];
+
       final query = _searchQuery.toLowerCase();
+
+      final matchesSerial = serialNumbers.any((sn) => sn.contains(query));
 
       return demoNumber.contains(query) ||
           demoPurpose.contains(query) ||
           dealer.contains(query) ||
-          client.contains(query);
+          client.contains(query) ||
+          matchesSerial;
     }).toList();
   }
 
@@ -133,8 +145,7 @@ class _DemoReturnScreenState extends State<DemoReturnScreen> {
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                hintText:
-                    'Search demos by number, purpose, dealer, or client...',
+                hintText: 'Search by number, serial, dealer, or client...',
                 prefixIcon: const Icon(Icons.search),
                 suffixIcon: _searchQuery.isNotEmpty
                     ? IconButton(
@@ -326,8 +337,8 @@ class _DemoReturnScreenState extends State<DemoReturnScreen> {
                     backgroundColor: Colors.green,
                     foregroundColor: Colors.white,
                   ),
-                  icon: const Icon(Icons.visibility, size: 18),
-                  label: const Text('View Details'),
+                  icon: const Icon(Icons.assignment_return, size: 18),
+                  label: const Text('Return'),
                 ),
               ],
             ),
@@ -343,6 +354,55 @@ class _DemoReturnScreenState extends State<DemoReturnScreen> {
                   ? '$itemCount items remaining (of $totalItems)'
                   : '$itemCount items',
             ),
+
+            // Display Serial Numbers
+            if (demo['serial_numbers'] != null &&
+                (demo['serial_numbers'] as List).isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Serial Numbers:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey[700],
+                        fontSize: 14, // Same size as other labels roughly
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: (demo['serial_numbers'] as List).map((sn) {
+                        return Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
+                              color: Colors.blue.withOpacity(0.3),
+                            ),
+                          ),
+                          child: Text(
+                            sn.toString(),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.blue[700],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
+              ),
+
             _buildDetailRow('Created', createdDateStr),
             _buildDetailRow('Expected Return', expectedReturnStr),
 

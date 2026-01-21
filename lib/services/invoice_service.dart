@@ -28,10 +28,12 @@ class InvoiceService {
   }
 
   /// Get orders for invoicing (Reserved and Invoiced status only)
-  Future<List<Map<String, dynamic>>> getOrdersForInvoicing() async {
+  Future<List<Map<String, dynamic>>> getOrdersForInvoicing({
+    bool fetchItems = true,
+  }) async {
     try {
       // Use OrderService method that handles both dual status and legacy single status systems
-      return await _orderService.getOrdersForInvoicing();
+      return await _orderService.getOrdersForInvoicing(fetchItems: fetchItems);
     } catch (e) {
       return [];
     }

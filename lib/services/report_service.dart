@@ -713,6 +713,16 @@ class ReportService {
               transactionLoc.isNotEmpty &&
               transactionLoc != 'Unknown') {
             currentLocation = transactionLoc;
+          } else {
+            // Fallback: Check any transaction in history for a valid location
+            // This fixes persistent "Unknown" locations if the latest transaction didn't have location data
+            for (final transaction in itemTransactions) {
+              final loc = transaction['location'] as String?;
+              if (loc != null && loc.isNotEmpty && loc != 'Unknown') {
+                currentLocation = loc;
+                break;
+              }
+            }
           }
         }
 
@@ -754,16 +764,19 @@ class ReportService {
       inventoryItems.add(itemData);
 
       // Update statistics
-      String category = data['equipment_category'] as String? ?? 'Unknown';
-      if (category == 'Unknown' && itemTransactions.isNotEmpty) {
+      String rawCategory = data['equipment_category'] as String? ?? 'Unknown';
+      if (rawCategory == 'Unknown' && itemTransactions.isNotEmpty) {
         final transactionCat =
             itemTransactions.first['equipment_category'] as String?;
         if (transactionCat != null &&
             transactionCat.isNotEmpty &&
             transactionCat != 'Unknown') {
-          category = transactionCat;
+          rawCategory = transactionCat;
         }
       }
+
+      // Normalize category for consistent statistics
+      final category = _normalizeCategory(rawCategory);
 
       categoryStats[category] =
           categoryStats[category] ??
@@ -1117,23 +1130,60 @@ class ReportService {
     try {
       final inventoryItems =
           reportData['inventory_items'] as List<dynamic>? ?? [];
+      final summary = reportData['summary'] as Map<String, dynamic>? ?? {};
+      final categoryBreakdown =
+          reportData['category_breakdown'] as List<dynamic>? ?? [];
 
       // Prepare CSV data
-      List<List<dynamic>> csvData = [
-        // Header row
-        [
-          'Serial Number',
-          'Equipment Category',
-          'Model',
-          'Size',
-          'Current Status',
-          'Current Location',
-          'Last Activity',
-          'Transaction Count',
-        ],
-      ];
+      List<List<dynamic>> csvData = [];
 
-      // Data rows
+      // 1. Report Header
+      csvData.add(['Inventory Status Report']);
+      csvData.add([
+        'Generated',
+        DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now()),
+      ]);
+      csvData.add([]); // Empty row
+
+      // 2. Executive Summary
+      csvData.add(['EXECUTIVE SUMMARY']);
+      csvData.add(['Metric', 'Count']);
+      csvData.add(['Total Items', summary['total_items'] ?? 0]);
+      csvData.add(['Active Stock', summary['active_items'] ?? 0]);
+      csvData.add(['Reserved / Pending', summary['reserved_items'] ?? 0]);
+      csvData.add(['Delivered / Sold', summary['delivered_items'] ?? 0]);
+      csvData.add(['On Demo', summary['demo_items'] ?? 0]);
+      csvData.add(['Returned / Defective', summary['returned_items'] ?? 0]);
+      csvData.add([]); // Empty row
+
+      // 3. Category Breakdown
+      if (categoryBreakdown.isNotEmpty) {
+        csvData.add(['CATEGORY BREAKDOWN']);
+        csvData.add(['Category', 'Total', 'Active', 'Stocked Out']);
+        for (final cat in categoryBreakdown) {
+          csvData.add([
+            cat['category'] ?? 'Unknown',
+            cat['total'] ?? 0,
+            cat['active'] ?? 0,
+            cat['stocked_out'] ?? 0,
+          ]);
+        }
+        csvData.add([]); // Empty row
+      }
+
+      // 4. Detailed Inventory List
+      csvData.add(['DETAILED INVENTORY LIST']);
+      csvData.add([
+        'Serial Number',
+        'Category', // Simplified from 'Equipment Category'
+        'Model',
+        'Size',
+        'Status', // Simplified from 'Current Status'
+        'Current Location',
+        'Last Updated', // More friendly than 'Last Activity'
+        'Movements', // More friendly than 'Transaction Count'
+      ]);
+
       for (final item in inventoryItems) {
         final lastActivity = item['last_activity'] as DateTime?;
         csvData.add([
@@ -1144,7 +1194,7 @@ class ReportService {
           item['current_status'] ?? '',
           item['current_location'] ?? '',
           lastActivity != null
-              ? DateFormat('yyyy-MM-dd HH:mm:ss').format(lastActivity)
+              ? DateFormat('yyyy-MM-dd HH:mm').format(lastActivity)
               : '',
           item['transaction_count'] ?? 0,
         ]);
@@ -1250,18 +1300,30 @@ class ReportService {
       ]);
 
       for (var item in stockInItems) {
+        // Safe date parsing
+        DateTime? date;
+        final dateValue = item['date'];
+        if (dateValue is Timestamp) {
+          date = dateValue.toDate();
+        } else if (dateValue is String) {
+          date = DateTime.tryParse(dateValue);
+        }
+
+        // Format remark to prevent Excel auto-formatting (e.g. 1/5 -> 5-Jan)
+        String remark = item['remark'] ?? '';
+        if (remark.isNotEmpty) {
+          // Prepending a tab forces Excel to treat as text
+          remark = '\t$remark';
+        }
+
         csvData.add([
           item['serial_number'] ?? '',
           item['equipment_category'] ?? '',
           item['model'] ?? '',
           item['size'] ?? '',
           item['location'] ?? '',
-          item['date'] != null
-              ? DateFormat(
-                  'yyyy-MM-dd',
-                ).format((item['date'] as Timestamp).toDate())
-              : '',
-          item['remark'] ?? '',
+          date != null ? DateFormat('yyyy-MM-dd').format(date) : '',
+          remark,
         ]);
       }
 
@@ -1281,18 +1343,29 @@ class ReportService {
       ]);
 
       for (var item in stockOutItems) {
+        // Safe date parsing
+        DateTime? date;
+        final dateValue = item['date'];
+        if (dateValue is Timestamp) {
+          date = dateValue.toDate();
+        } else if (dateValue is String) {
+          date = DateTime.tryParse(dateValue);
+        }
+
+        // Format remark to prevent Excel auto-formatting
+        String remark = item['remark'] ?? '';
+        if (remark.isNotEmpty) {
+          remark = '\t$remark';
+        }
+
         csvData.add([
           item['serial_number'] ?? '',
           item['equipment_category'] ?? '',
           item['model'] ?? '',
           item['size'] ?? '',
           item['customer_dealer'] ?? '',
-          item['date'] != null
-              ? DateFormat(
-                  'yyyy-MM-dd',
-                ).format((item['date'] as Timestamp).toDate())
-              : '',
-          item['remark'] ?? '',
+          date != null ? DateFormat('yyyy-MM-dd').format(date) : '',
+          remark,
         ]);
       }
 

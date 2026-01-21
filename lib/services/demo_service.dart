@@ -452,6 +452,7 @@ class DemoService {
   Future<List<Map<String, dynamic>>> getDemoHistory({
     int limit = 50,
     String? status,
+    bool fetchItems = false,
   }) async {
     try {
       Query query = _firestore
@@ -464,11 +465,65 @@ class DemoService {
 
       final querySnapshot = await query.limit(limit).get();
 
-      return querySnapshot.docs.map((doc) {
+      final demos = querySnapshot.docs.map((doc) {
         final data = doc.data() as Map<String, dynamic>;
         data['id'] = doc.id; // Add document ID
         return data;
       }).toList();
+
+      if (fetchItems && demos.isNotEmpty) {
+        // Collect all transaction IDs from all demos
+        final allTransactionIds = <int>{};
+        for (final demo in demos) {
+          final tIds = List<int>.from(demo['transaction_ids'] ?? []);
+          allTransactionIds.addAll(tIds);
+        }
+
+        if (allTransactionIds.isNotEmpty) {
+          final allIdsList = allTransactionIds.toList();
+          final transactionDataMap = <int, Map<String, dynamic>>{};
+
+          // Batch fetch transactions (limit 30 per query for 'whereIn')
+          // Using 10 to be safe and consistent with other parts of the app
+          for (var i = 0; i < allIdsList.length; i += 10) {
+            final end = (i + 10 < allIdsList.length)
+                ? i + 10
+                : allIdsList.length;
+            final batch = allIdsList.sublist(i, end);
+
+            final tSnapshot = await _firestore
+                .collection('transactions')
+                .where('transaction_id', whereIn: batch)
+                .get();
+
+            for (final doc in tSnapshot.docs) {
+              final data = doc.data();
+              transactionDataMap[data['transaction_id'] as int] = data;
+            }
+          }
+
+          // Attach items to demos
+          for (final demo in demos) {
+            final tIds = List<int>.from(demo['transaction_ids'] ?? []);
+            final items = <Map<String, dynamic>>[];
+            final serialNumbers = <String>[];
+
+            for (final tId in tIds) {
+              if (transactionDataMap.containsKey(tId)) {
+                final itemData = transactionDataMap[tId]!;
+                items.add(itemData);
+                if (itemData['serial_number'] != null) {
+                  serialNumbers.add(itemData['serial_number'].toString());
+                }
+              }
+            }
+            demo['items'] = items;
+            demo['serial_numbers'] = serialNumbers;
+          }
+        }
+      }
+
+      return demos;
     } catch (e) {
       debugPrint('Error getting demo history: $e');
       return [];

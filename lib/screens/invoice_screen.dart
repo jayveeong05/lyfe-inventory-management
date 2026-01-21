@@ -12,6 +12,7 @@ import '../services/file_service.dart';
 import '../services/order_service.dart';
 import '../providers/auth_provider.dart';
 import '../utils/platform_features.dart';
+import 'package:dropdown_search/dropdown_search.dart';
 
 class InvoiceScreen extends StatefulWidget {
   const InvoiceScreen({super.key});
@@ -81,7 +82,10 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
       );
 
       // Load orders with 'Reserved' or 'Invoiced' status only
-      final orders = await invoiceService.getOrdersForInvoicing();
+      // Optimize: Don't fetch items initially
+      final orders = await invoiceService.getOrdersForInvoicing(
+        fetchItems: false,
+      );
 
       setState(() {
         _allPOs = orders;
@@ -117,6 +121,9 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
 
       final invoice = await invoiceService.getInvoiceByOrderId(poId);
 
+      // Lazy load full order details (items) when order is selected
+      await _loadSelectedOrderDetails(poId);
+
       setState(() {
         _currentInvoice = invoice;
         _isLoadingInvoice = false;
@@ -146,6 +153,24 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
           ),
         );
       }
+    }
+  }
+
+  Future<void> _loadSelectedOrderDetails(String orderId) async {
+    try {
+      // Check if we already have items (optional optimization)
+      // But for now, just fetch to be safe
+      final fullOrder = await _orderService.getOrderById(orderId);
+      if (fullOrder != null && mounted) {
+        setState(() {
+          final index = _allPOs.indexWhere((po) => po['id'] == orderId);
+          if (index != -1) {
+            _allPOs[index] = fullOrder;
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading order details: $e');
     }
   }
 
@@ -1257,100 +1282,32 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                 border: Border.all(color: Colors.grey.shade300),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: DropdownButtonFormField<String>(
-                initialValue: _selectedPOId,
-                decoration: const InputDecoration(
-                  hintText: 'Choose an Order',
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                ),
-                isExpanded: true,
-                items: _allPOs.isEmpty
-                    ? [
-                        const DropdownMenuItem<String>(
-                          value: null,
-                          child: Text(
-                            'No orders available',
-                            style: TextStyle(color: Colors.grey),
-                          ),
-                        ),
-                      ]
-                    : _allPOs.map((po) {
-                        // Support both old single status and new dual status system
-                        final status = po['status'] as String? ?? 'Unknown';
-                        final invoiceStatus =
-                            po['invoice_status'] as String? ?? status;
-                        final deliveryStatus =
-                            po['delivery_status'] as String? ?? 'Pending';
-
-                        final isReserved = invoiceStatus == 'Reserved';
-                        final isInvoiced = invoiceStatus == 'Invoiced';
-
-                        return DropdownMenuItem<String>(
-                          value: po['id'] as String,
-                          enabled: true, // Enable all POs for selection
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 8,
-                                height: 8,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: isReserved
-                                      ? Colors.orange
-                                      : isInvoiced
-                                      ? Colors.green
-                                      : Colors.grey,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  'Order: ${po['order_number'] ?? 'N/A'}',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w500,
-                                    color: isReserved
-                                        ? Colors.black87
-                                        : Colors.grey[600],
-                                  ),
-                                ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: isReserved
-                                      ? Colors.orange.shade100
-                                      : isInvoiced
-                                      ? Colors.green.shade100
-                                      : Colors.grey.shade100,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  invoiceStatus,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w500,
-                                    color: isReserved
-                                        ? Colors.orange.shade800
-                                        : isInvoiced
-                                        ? Colors.green.shade800
-                                        : Colors.grey.shade800,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      }).toList(),
+              child: DropdownSearch<Map<String, dynamic>>(
+                items: (filter, loadProps) {
+                  if (filter.isEmpty) {
+                    return _allPOs;
+                  }
+                  return _allPOs.where((po) {
+                    final orderNumber = (po['order_number'] ?? '')
+                        .toString()
+                        .toLowerCase();
+                    final dealer = (po['customer_dealer'] ?? '')
+                        .toString()
+                        .toLowerCase();
+                    final client = (po['customer_client'] ?? '')
+                        .toString()
+                        .toLowerCase();
+                    final search = filter.toLowerCase();
+                    return orderNumber.contains(search) ||
+                        dealer.contains(search) ||
+                        client.contains(search);
+                  }).toList();
+                },
+                compareFn: (item1, item2) => item1['id'] == item2['id'],
+                selectedItem: _selectedPO,
                 onChanged: (value) {
                   setState(() {
-                    _selectedPOId = value;
+                    _selectedPOId = value?['id'];
                     _currentInvoice = null;
                     _isReplaceMode = false;
                     // Reset form
@@ -1363,9 +1320,9 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
 
                   // Load invoice data if PO is invoiced
                   if (value != null) {
-                    final selectedPO = _allPOs.firstWhere(
-                      (po) => po['id'] == value,
-                    );
+                    final selectedPO = value;
+                    final poId = selectedPO['id'] as String;
+
                     // Check if order is invoiced (support both dual and legacy status)
                     final invoiceStatus =
                         selectedPO['invoice_status'] as String?;
@@ -1375,15 +1332,159 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                         (legacyStatus == 'Invoiced');
 
                     if (isInvoiced) {
-                      _loadInvoiceForPO(value);
+                      _loadInvoiceForPO(poId);
+                    } else {
+                      // Just load details if not invoiced (otherwise _loadInvoiceForPO does it)
+                      _loadSelectedOrderDetails(poId);
                     }
                   }
                 },
-                validator: (value) {
-                  if (value == null) {
-                    return 'Please select an order';
+                decoratorProps: const DropDownDecoratorProps(
+                  decoration: InputDecoration(
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                  ),
+                ),
+                popupProps: PopupProps.menu(
+                  showSearchBox: true,
+                  searchFieldProps: const TextFieldProps(
+                    decoration: InputDecoration(
+                      labelText: "Search Order",
+                      hintText: "Search by Number, Dealer, etc.",
+                      prefixIcon: Icon(Icons.search),
+                    ),
+                  ),
+                  itemBuilder: (context, po, isSelected, isDisabled) {
+                    // Support both old single status and new dual status system
+                    final status = po['status'] as String? ?? 'Unknown';
+                    final invoiceStatus =
+                        po['invoice_status'] as String? ?? status;
+
+                    final isReserved = invoiceStatus == 'Reserved';
+                    final isInvoiced = invoiceStatus == 'Invoiced';
+
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isSelected ? Colors.blue.withOpacity(0.1) : null,
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: isReserved
+                                  ? Colors.orange
+                                  : isInvoiced
+                                  ? Colors.green
+                                  : Colors.grey,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Order: ${po['order_number'] ?? 'N/A'}',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w500,
+                                    color: isReserved
+                                        ? Colors.black87
+                                        : Colors.grey[600],
+                                  ),
+                                ),
+                                Text(
+                                  '${po['customer_dealer'] ?? 'Unknown'} → ${po['customer_client'] ?? 'Unknown'}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isReserved
+                                  ? Colors.orange.shade100
+                                  : isInvoiced
+                                  ? Colors.green.shade100
+                                  : Colors.grey.shade100,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              invoiceStatus,
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w500,
+                                color: isReserved
+                                    ? Colors.orange.shade800
+                                    : isInvoiced
+                                    ? Colors.green.shade800
+                                    : Colors.grey.shade800,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+                dropdownBuilder: (context, po) {
+                  if (po == null) {
+                    return const Text(
+                      'Choose an Order',
+                      style: TextStyle(color: Colors.black54),
+                    );
                   }
-                  return null;
+                  final status = po['status'] as String? ?? 'Unknown';
+                  final invoiceStatus =
+                      po['invoice_status'] as String? ?? status;
+                  final isReserved = invoiceStatus == 'Reserved';
+                  final isInvoiced = invoiceStatus == 'Invoiced';
+
+                  return Row(
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: isReserved
+                              ? Colors.orange
+                              : isInvoiced
+                              ? Colors.green
+                              : Colors.grey,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Order: ${po['order_number'] ?? 'N/A'}',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w500,
+                            color: isReserved
+                                ? Colors.black87
+                                : Colors.grey[600],
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  );
                 },
               ),
             ),

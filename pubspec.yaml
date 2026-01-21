@@ -90,6 +90,7 @@ dependencies:
   
   # Charts for analytics visualization
   fl_chart: ^0.69.0
+  dropdown_search: ^6.0.2
 
 
 dev_dependencies:

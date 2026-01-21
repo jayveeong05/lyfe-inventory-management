@@ -433,6 +433,34 @@ class OrderService {
     }
   }
 
+  /// Get order by ID
+  Future<Map<String, dynamic>?> getOrderById(String orderId) async {
+    try {
+      final doc = await _firestore.collection('orders').doc(orderId).get();
+
+      if (doc.exists) {
+        final data = doc.data() as Map<String, dynamic>;
+        final orderData = <String, dynamic>{'id': doc.id, ...data};
+
+        // Get item details from transaction IDs
+        if (data['transaction_ids'] != null) {
+          final items = await getItemsFromTransactionIds(
+            List<int>.from(data['transaction_ids']),
+          );
+          orderData['items'] = items;
+        } else {
+          // Fallback for old format (items array)
+          orderData['items'] = data['items'] ?? [];
+        }
+
+        return orderData;
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   /// Get order by order number
   Future<Map<String, dynamic>?> getOrder(String orderNumber) async {
     try {
@@ -472,6 +500,7 @@ class OrderService {
     String? invoiceStatus, // New invoice status filter
     String? deliveryStatus, // New delivery status filter
     int? limit,
+    bool fetchItems = true, // New parameter for lazy loading
   }) async {
     try {
       print('🔍 getAllOrders: Starting query...');
@@ -509,14 +538,20 @@ class OrderService {
         final orderData = <String, dynamic>{'id': doc.id, ...data};
 
         // Get item details from transaction IDs
-        if (data['transaction_ids'] != null) {
-          final items = await getItemsFromTransactionIds(
-            List<int>.from(data['transaction_ids']),
-          );
-          orderData['items'] = items;
+        if (fetchItems) {
+          if (data['transaction_ids'] != null) {
+            final items = await getItemsFromTransactionIds(
+              List<int>.from(data['transaction_ids']),
+            );
+            orderData['items'] = items;
+          } else {
+            // Fallback for old format (items array)
+            orderData['items'] = data['items'] ?? [];
+          }
         } else {
-          // Fallback for old format (items array)
-          orderData['items'] = data['items'] ?? [];
+          // If not fetching items, initialize with empty list or raw data
+          // We keep transaction_ids if available, but don't fetch full details
+          orderData['items'] = [];
         }
 
         orders.add(orderData);
@@ -530,12 +565,14 @@ class OrderService {
   }
 
   /// Get orders for invoice operations (Reserved and Invoiced invoice status)
-  Future<List<Map<String, dynamic>>> getOrdersForInvoicing() async {
+  Future<List<Map<String, dynamic>>> getOrdersForInvoicing({
+    bool fetchItems = true,
+  }) async {
     try {
       print('🔍 getOrdersForInvoicing: Starting...');
       // Get all orders and filter for invoice operations
       // This handles both new dual status and legacy single status systems
-      final allOrders = await getAllOrders();
+      final allOrders = await getAllOrders(fetchItems: fetchItems);
       print('🔍 getOrdersForInvoicing: Got ${allOrders.length} orders');
       final invoiceOrders = allOrders.where((order) {
         // First check if order is cancelled - exclude cancelled orders
@@ -580,11 +617,13 @@ class OrderService {
   }
 
   /// Get orders for delivery operations (Invoiced invoice status with various delivery statuses)
-  Future<List<Map<String, dynamic>>> getOrdersForDelivery() async {
+  Future<List<Map<String, dynamic>>> getOrdersForDelivery({
+    bool fetchItems = true,
+  }) async {
     try {
       // Get all orders and filter for delivery operations
       // This handles both new dual status and legacy single status systems
-      final allOrders = await getAllOrders();
+      final allOrders = await getAllOrders(fetchItems: fetchItems);
 
       final deliveryOrders = allOrders.where((order) {
         // First check if order is cancelled - exclude cancelled orders
