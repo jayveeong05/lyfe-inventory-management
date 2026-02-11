@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
+import 'firebase_options_dev.dart';
 import 'providers/auth_provider.dart';
 import 'utils/system_ui_manager.dart';
 import 'screens/login_screen.dart';
@@ -25,10 +26,21 @@ void main() async {
   await SystemUIManager.initialize();
 
   // Initialize Firebase with error handling
+  // Use dev project when running with: --dart-define=FLUTTER_FIREBASE_ENV=dev
+  const env = String.fromEnvironment(
+    'FLUTTER_FIREBASE_ENV',
+    defaultValue: 'production',
+  );
+  final useDevFirebase = env == 'dev';
   try {
     await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
+      options: useDevFirebase
+          ? DevFirebaseOptions.currentPlatform
+          : DefaultFirebaseOptions.currentPlatform,
     );
+    if (useDevFirebase) {
+      debugPrint('Firebase: using DEV project (Firestore/Auth/Storage are isolated from production).');
+    }
   } catch (e) {
     debugPrint('Firebase initialization error: $e');
   }

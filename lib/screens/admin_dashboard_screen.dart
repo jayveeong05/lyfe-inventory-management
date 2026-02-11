@@ -660,19 +660,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
               ),
             ),
           ),
-          if (kDebugMode)
-            _buildMenuOption(
-              'Update References',
-              Icons.edit_note,
-              Colors.purple,
-              'Update order/demo numbers',
-              () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const UpdateReferenceScreen(),
-                ),
+          _buildMenuOption(
+            'Update References',
+            Icons.edit_note,
+            Colors.purple,
+            'Edit order/demo details',
+            () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const UpdateReferenceScreen(),
               ),
             ),
+          ),
         ],
       );
     } else {
@@ -758,20 +757,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
                           ),
                         ),
                       ),
-                      if (kDebugMode)
-                        _buildMenuOption(
-                          'Update References',
-                          Icons.edit_note,
-                          Colors.purple,
-                          'Update order/demo numbers',
-                          () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) =>
-                                  const UpdateReferenceScreen(),
-                            ),
+                      _buildMenuOption(
+                        'Update References',
+                        Icons.edit_note,
+                        Colors.purple,
+                        'Edit order/demo details',
+                        () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                const UpdateReferenceScreen(),
                           ),
                         ),
+                      ),
                       const SizedBox(height: 16),
                       // Back button at the bottom
                       Container(

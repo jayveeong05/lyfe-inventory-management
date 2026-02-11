@@ -530,6 +530,88 @@ class DemoService {
     }
   }
 
+  /// Get a page of demos for pagination (e.g. infinite scroll).
+  Future<Map<String, Object?>> getDemosPage({
+    int limit = 25,
+    DocumentSnapshot? startAfter,
+  }) async {
+    try {
+      Query<Map<String, dynamic>> query = _firestore
+          .collection('demos')
+          .orderBy('created_date', descending: true)
+          .limit(limit);
+
+      if (startAfter != null) {
+        query = query.startAfterDocument(startAfter);
+      }
+
+      final querySnapshot = await query.get();
+      final demos = querySnapshot.docs.map((doc) {
+        final data = doc.data();
+        data['id'] = doc.id;
+        return data;
+      }).toList();
+
+      final lastDoc = querySnapshot.docs.isNotEmpty
+          ? querySnapshot.docs.last
+          : null;
+
+      return {'demos': demos, 'lastDoc': lastDoc};
+    } catch (e) {
+      debugPrint('Error getDemosPage: $e');
+      return {'demos': <Map<String, dynamic>>[], 'lastDoc': null};
+    }
+  }
+
+  /// Update demo details (dealer, client, purpose, location, remarks, expected return date).
+  Future<Map<String, dynamic>> updateDemoDetails({
+    required String demoNumber,
+    String? customerDealer,
+    String? customerClient,
+    String? demoPurpose,
+    String? location,
+    String? remarks,
+    DateTime? expectedReturnDate,
+  }) async {
+    try {
+      final currentUser = _authService.currentUser;
+      if (currentUser == null) {
+        return {'success': false, 'error': 'User not authenticated.'};
+      }
+
+      final demoQuery = await _firestore
+          .collection('demos')
+          .where('demo_number', isEqualTo: demoNumber)
+          .limit(1)
+          .get();
+
+      if (demoQuery.docs.isEmpty) {
+        return {'success': false, 'error': 'Demo $demoNumber not found.'};
+      }
+
+      final updateData = <String, dynamic>{
+        'updated_at': FieldValue.serverTimestamp(),
+      };
+      if (customerDealer != null) updateData['customer_dealer'] = customerDealer;
+      if (customerClient != null) updateData['customer_client'] = customerClient;
+      if (demoPurpose != null) updateData['demo_purpose'] = demoPurpose;
+      if (location != null) updateData['location'] = location;
+      if (remarks != null) updateData['remarks'] = remarks;
+      if (expectedReturnDate != null) {
+        updateData['expected_return_date'] = Timestamp.fromDate(expectedReturnDate);
+      }
+
+      await demoQuery.docs.first.reference.update(updateData);
+
+      return {'success': true, 'message': 'Demo details updated.'};
+    } catch (e) {
+      return {
+        'success': false,
+        'error': 'Failed to update demo details: ${e.toString()}',
+      };
+    }
+  }
+
   /// Get recent demos for development/admin purposes
   Future<List<Map<String, dynamic>>> getRecentDemosForDeletion({
     int limit = 10,

@@ -1,9 +1,10 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
-import '../services/order_service.dart';
 import '../services/demo_service.dart';
-import 'package:intl/intl.dart';
+import '../services/order_service.dart';
 
 class UpdateReferenceScreen extends StatefulWidget {
   const UpdateReferenceScreen({super.key});
@@ -20,16 +21,23 @@ class _UpdateReferenceScreenState extends State<UpdateReferenceScreen>
 
   final TextEditingController _orderSearchController = TextEditingController();
   final TextEditingController _demoSearchController = TextEditingController();
+  final ScrollController _orderScrollController = ScrollController();
+  final ScrollController _demoScrollController = ScrollController();
 
-  // Data sources
+  static const int _pageSize = 25;
+
   List<Map<String, dynamic>> _allOrders = [];
   List<Map<String, dynamic>> _allDemos = [];
-
-  // Filtered results
   List<Map<String, dynamic>> _filteredOrders = [];
   List<Map<String, dynamic>> _filteredDemos = [];
 
+  DocumentSnapshot? _ordersLastDoc;
+  DocumentSnapshot? _demosLastDoc;
+  bool _hasMoreOrders = true;
+  bool _hasMoreDemos = true;
   bool _isLoadingData = true;
+  bool _loadingMoreOrders = false;
+  bool _loadingMoreDemos = false;
   bool _isUpdating = false;
 
   @override
@@ -40,11 +48,13 @@ class _UpdateReferenceScreenState extends State<UpdateReferenceScreen>
     _orderService = OrderService(authService: authProvider.authService);
     _demoService = DemoService(authService: authProvider.authService);
 
-    // Setup listeners for search-as-you-type
-    _orderSearchController.addListener(_filterOrders);
-    _demoSearchController.addListener(_filterDemos);
+    _orderSearchController.addListener(_applyOrderFilter);
+    _demoSearchController.addListener(_applyDemoFilter);
 
-    _loadAllData();
+    _orderScrollController.addListener(_onOrderScroll);
+    _demoScrollController.addListener(_onDemoScroll);
+
+    _loadFirstPage();
   }
 
   @override
@@ -52,248 +62,494 @@ class _UpdateReferenceScreenState extends State<UpdateReferenceScreen>
     _tabController.dispose();
     _orderSearchController.dispose();
     _demoSearchController.dispose();
+    _orderScrollController.dispose();
+    _demoScrollController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadAllData() async {
-    setState(() => _isLoadingData = true);
+  void _applyOrderFilter() {
+    final query = _orderSearchController.text.toLowerCase().trim();
+    setState(() {
+      if (query.isEmpty) {
+        _filteredOrders = List.from(_allOrders);
+      } else {
+        _filteredOrders = _allOrders.where((order) {
+          final number = (order['order_number'] ?? '').toString().toLowerCase();
+          final dealer =
+              (order['customer_dealer'] ?? '').toString().toLowerCase();
+          return number.contains(query) || dealer.contains(query);
+        }).toList();
+      }
+    });
+  }
+
+  void _applyDemoFilter() {
+    final query = _demoSearchController.text.toLowerCase().trim();
+    setState(() {
+      if (query.isEmpty) {
+        _filteredDemos = List.from(_allDemos);
+      } else {
+        _filteredDemos = _allDemos.where((demo) {
+          final number = (demo['demo_number'] ?? '').toString().toLowerCase();
+          final dealer =
+              (demo['customer_dealer'] ?? '').toString().toLowerCase();
+          return number.contains(query) || dealer.contains(query);
+        }).toList();
+      }
+    });
+  }
+
+  void _onOrderScroll() {
+    if (_loadingMoreOrders || !_hasMoreOrders) return;
+    final pos = _orderScrollController.position;
+    if (pos.pixels >= pos.maxScrollExtent - 200) {
+      _loadMoreOrders();
+    }
+  }
+
+  void _onDemoScroll() {
+    if (_loadingMoreDemos || !_hasMoreDemos) return;
+    final pos = _demoScrollController.position;
+    if (pos.pixels >= pos.maxScrollExtent - 200) {
+      _loadMoreDemos();
+    }
+  }
+
+  Future<void> _loadFirstPage() async {
+    setState(() {
+      _isLoadingData = true;
+      _allOrders = [];
+      _allDemos = [];
+      _filteredOrders = [];
+      _filteredDemos = [];
+      _ordersLastDoc = null;
+      _demosLastDoc = null;
+      _hasMoreOrders = true;
+      _hasMoreDemos = true;
+    });
+
     try {
-      // Fetch all orders and demos once for client-side filtering
-      // This enables "quicker" search experience (instant feedback)
-      final orders = await _orderService.getAllOrders();
-      final demos = await _demoService.getDemoHistory(
-        limit: 1000,
-      ); // 1000 limit for now
+      final results = await Future.wait([
+        _orderService.getOrdersPage(limit: _pageSize),
+        _demoService.getDemosPage(limit: _pageSize),
+      ]);
+
+      final orderResult = results[0];
+      final demoResult = results[1];
+
+      final orders = (orderResult['orders'] ?? <Map<String, dynamic>>[]) as List<Map<String, dynamic>>;
+      final demos = (demoResult['demos'] ?? <Map<String, dynamic>>[]) as List<Map<String, dynamic>>;
 
       if (mounted) {
         setState(() {
           _allOrders = orders;
           _allDemos = demos;
-          _filteredOrders =
-              orders; // Show all initially or none? Let's show all or recent.
-          _filteredDemos = demos;
+          _filteredOrders = List.from(orders);
+          _filteredDemos = List.from(demos);
+          _ordersLastDoc = orderResult['lastDoc'] as DocumentSnapshot?;
+          _demosLastDoc = demoResult['lastDoc'] as DocumentSnapshot?;
+          _hasMoreOrders = orders.length >= _pageSize;
+          _hasMoreDemos = demos.length >= _pageSize;
           _isLoadingData = false;
         });
       }
     } catch (e) {
       if (mounted) {
         setState(() => _isLoadingData = false);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error loading data: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading data: $e')),
+        );
       }
     }
   }
 
-  void _filterOrders() {
-    final query = _orderSearchController.text.toLowerCase().trim();
-    setState(() {
-      if (query.isEmpty) {
-        _filteredOrders = _allOrders;
-      } else {
-        _filteredOrders = _allOrders.where((order) {
-          final number = (order['order_number'] ?? '').toString().toLowerCase();
-          final dealer = (order['customer_dealer'] ?? '')
-              .toString()
-              .toLowerCase();
-          return number.contains(query) || dealer.contains(query);
-        }).toList();
+  Future<void> _loadMoreOrders() async {
+    if (_loadingMoreOrders || !_hasMoreOrders || _ordersLastDoc == null) return;
+    setState(() => _loadingMoreOrders = true);
+    try {
+      final result = await _orderService.getOrdersPage(
+        limit: _pageSize,
+        startAfter: _ordersLastDoc,
+      );
+      final orders = result['orders'] as List<Map<String, dynamic>>;
+      if (mounted) {
+        setState(() {
+          if (orders.isNotEmpty) {
+            _allOrders = [..._allOrders, ...orders];
+            _ordersLastDoc = result['lastDoc'] as DocumentSnapshot?;
+          }
+          _hasMoreOrders = orders.length >= _pageSize;
+          _loadingMoreOrders = false;
+        });
+        _applyOrderFilter();
       }
-    });
+    } catch (e) {
+      if (mounted) setState(() => _loadingMoreOrders = false);
+    }
   }
 
-  void _filterDemos() {
-    final query = _demoSearchController.text.toLowerCase().trim();
-    setState(() {
-      if (query.isEmpty) {
-        _filteredDemos = _allDemos;
-      } else {
-        _filteredDemos = _allDemos.where((demo) {
-          final number = (demo['demo_number'] ?? '').toString().toLowerCase();
-          final dealer = (demo['customer_dealer'] ?? '')
-              .toString()
-              .toLowerCase();
-          return number.contains(query) || dealer.contains(query);
-        }).toList();
+  Future<void> _loadMoreDemos() async {
+    if (_loadingMoreDemos || !_hasMoreDemos || _demosLastDoc == null) return;
+    setState(() => _loadingMoreDemos = true);
+    try {
+      final result = await _demoService.getDemosPage(
+        limit: _pageSize,
+        startAfter: _demosLastDoc,
+      );
+      final demos = result['demos'] as List<Map<String, dynamic>>;
+      if (mounted) {
+        setState(() {
+          if (demos.isNotEmpty) {
+            _allDemos = [..._allDemos, ...demos];
+            _demosLastDoc = result['lastDoc'] as DocumentSnapshot?;
+          }
+          _hasMoreDemos = demos.length >= _pageSize;
+          _loadingMoreDemos = false;
+        });
+        _applyDemoFilter();
       }
-    });
+    } catch (e) {
+      if (mounted) setState(() => _loadingMoreDemos = false);
+    }
   }
 
-  Future<void> _updateOrderNumber(Map<String, dynamic> order) async {
-    final oldNumber = order['order_number'];
-    final newNumberController = TextEditingController(text: oldNumber);
+  Future<void> _openEditOrder(Map<String, dynamic> order) async {
+    final orderNumberController = TextEditingController(
+      text: order['order_number']?.toString() ?? '',
+    );
+    final dealerController = TextEditingController(
+      text: order['customer_dealer']?.toString() ?? '',
+    );
+    final clientController = TextEditingController(
+      text: order['customer_client']?.toString() ?? '',
+    );
+    final remarksController = TextEditingController(
+      text: order['order_remarks']?.toString() ?? '',
+    );
 
-    final confirmed = await showDialog<bool>(
+    final saved = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Update Order Number'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Current Number: $oldNumber'),
-            const SizedBox(height: 16),
-            TextField(
-              controller: newNumberController,
-              decoration: const InputDecoration(
-                labelText: 'New Order Number',
-                border: OutlineInputBorder(),
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit Order'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: orderNumberController,
+                decoration: const InputDecoration(
+                  labelText: 'Order Number *',
+                  border: OutlineInputBorder(),
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Warning: This checks uniqueness and updates all related files.',
-              style: TextStyle(color: Colors.red, fontSize: 12),
-            ),
-          ],
+              const SizedBox(height: 12),
+              TextField(
+                controller: dealerController,
+                decoration: const InputDecoration(
+                  labelText: 'Dealer Name',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: clientController,
+                decoration: const InputDecoration(
+                  labelText: 'Client Name (Optional)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: remarksController,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                  labelText: 'Remarks (Optional)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Cancel'),
           ),
           ElevatedButton(
             onPressed: () {
-              if (newNumberController.text.trim().isEmpty) return;
-              Navigator.pop(context, true);
+              if (orderNumberController.text.trim().isEmpty) return;
+              Navigator.pop(ctx, true);
             },
-            child: const Text('Update'),
+            child: const Text('Save'),
           ),
         ],
       ),
     );
 
-    if (confirmed == true) {
-      final newNumber = newNumberController.text.trim();
-      if (newNumber == oldNumber) return;
+    if (saved != true || !mounted) return;
 
-      setState(() => _isUpdating = true);
+    setState(() => _isUpdating = true);
+    final oldNumber = order['order_number']?.toString() ?? '';
+    final newNumber = orderNumberController.text.trim();
+    final dealer = dealerController.text.trim();
+    final client = clientController.text.trim();
+    final remarks = remarksController.text.trim();
 
-      try {
-        final result = await _orderService.updateOrderNumber(
+    try {
+      if (newNumber != oldNumber) {
+        final numberResult = await _orderService.updateOrderNumber(
           oldOrderNumber: oldNumber,
           newOrderNumber: newNumber,
         );
-
-        if (mounted) {
-          if (result['success']) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(result['message']),
-                backgroundColor: Colors.green,
-              ),
-            );
-            // Reload data to reflect changes
-            _loadAllData();
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(result['error']),
-                backgroundColor: Colors.red,
-              ),
-            );
-          }
-        }
-      } catch (e) {
-        if (mounted) {
+        if (numberResult['success'] != true && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Error updating order: $e'),
+              content: Text(numberResult['error'] ?? 'Failed to update number'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          setState(() => _isUpdating = false);
+          return;
+        }
+      }
+
+      final detailsResult = await _orderService.updateOrderDetails(
+        orderNumber: newNumber,
+        customerDealer: dealer.isNotEmpty ? dealer : null,
+        customerClient: client.isNotEmpty ? client : null,
+        orderRemarks: remarks.isNotEmpty ? remarks : null,
+      );
+
+      if (mounted) {
+        if (detailsResult['success'] == true) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Order updated.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          _loadFirstPage();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(detailsResult['error'] ?? 'Update failed'),
               backgroundColor: Colors.red,
             ),
           );
         }
-      } finally {
-        if (mounted) setState(() => _isUpdating = false);
       }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUpdating = false);
     }
   }
 
-  Future<void> _updateDemoNumber(Map<String, dynamic> demo) async {
-    final oldNumber = demo['demo_number'];
-    final newNumberController = TextEditingController(text: oldNumber);
+  Future<void> _openEditDemo(Map<String, dynamic> demo) async {
+    DateTime? expectedReturnDate;
+    final exp = demo['expected_return_date'];
+    if (exp != null) {
+      if (exp is DateTime) {
+        expectedReturnDate = exp;
+      } else if (exp.runtimeType.toString() == 'Timestamp') {
+        expectedReturnDate = (exp as dynamic).toDate();
+      }
+    }
 
-    final confirmed = await showDialog<bool>(
+    final demoNumberController = TextEditingController(
+      text: demo['demo_number']?.toString() ?? '',
+    );
+    final dealerController = TextEditingController(
+      text: demo['customer_dealer']?.toString() ?? '',
+    );
+    final clientController = TextEditingController(
+      text: demo['customer_client']?.toString() ?? '',
+    );
+    final purposeController = TextEditingController(
+      text: demo['demo_purpose']?.toString() ?? '',
+    );
+    final locationController = TextEditingController(
+      text: demo['location']?.toString() ?? '',
+    );
+    final remarksController = TextEditingController(
+      text: demo['remarks']?.toString() ?? '',
+    );
+
+    final saved = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Update Demo Number'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Current Number: $oldNumber'),
-            const SizedBox(height: 16),
-            TextField(
-              controller: newNumberController,
-              decoration: const InputDecoration(
-                labelText: 'New Demo Number',
-                border: OutlineInputBorder(),
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('Edit Demo'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: demoNumberController,
+                    decoration: const InputDecoration(
+                      labelText: 'Demo Number *',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: dealerController,
+                    decoration: const InputDecoration(
+                      labelText: 'Dealer Name',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: clientController,
+                    decoration: const InputDecoration(
+                      labelText: 'Client Name (Optional)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: purposeController,
+                    decoration: const InputDecoration(
+                      labelText: 'Demo Purpose',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: locationController,
+                    decoration: const InputDecoration(
+                      labelText: 'Location',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: remarksController,
+                    maxLines: 2,
+                    decoration: const InputDecoration(
+                      labelText: 'Remarks (Optional)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ListTile(
+                    title: const Text('Expected return date'),
+                    subtitle: Text(
+                      expectedReturnDate != null
+                          ? DateFormat('yyyy-MM-dd').format(expectedReturnDate!)
+                          : 'Not set',
+                    ),
+                    trailing: const Icon(Icons.calendar_today),
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate:
+                            expectedReturnDate ?? DateTime.now().add(const Duration(days: 7)),
+                        firstDate: DateTime.now(),
+                        lastDate: DateTime.now().add(const Duration(days: 365)),
+                      );
+                      if (picked != null) {
+                        setDialogState(() => expectedReturnDate = picked);
+                      }
+                    },
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 8),
-            const Text(
-              'Warning: This checks uniqueness and updates return transactions.',
-              style: TextStyle(color: Colors.red, fontSize: 12),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (newNumberController.text.trim().isEmpty) return;
-              Navigator.pop(context, true);
-            },
-            child: const Text('Update'),
-          ),
-        ],
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  if (demoNumberController.text.trim().isEmpty) return;
+                  Navigator.pop(ctx, true);
+                },
+                child: const Text('Save'),
+              ),
+            ],
+          );
+        },
       ),
     );
 
-    if (confirmed == true) {
-      final newNumber = newNumberController.text.trim();
-      if (newNumber == oldNumber) return;
+    if (saved != true || !mounted) return;
 
-      setState(() => _isUpdating = true);
+    setState(() => _isUpdating = true);
+    final oldNumber = demo['demo_number']?.toString() ?? '';
+    final newNumber = demoNumberController.text.trim();
 
-      try {
-        final result = await _demoService.updateDemoNumber(
+    try {
+      if (newNumber != oldNumber) {
+        final numberResult = await _demoService.updateDemoNumber(
           oldDemoNumber: oldNumber,
           newDemoNumber: newNumber,
         );
-
-        if (mounted) {
-          if (result['success']) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(result['message']),
-                backgroundColor: Colors.green,
-              ),
-            );
-            // Reload data
-            _loadAllData();
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(result['error']),
-                backgroundColor: Colors.red,
-              ),
-            );
-          }
-        }
-      } catch (e) {
-        if (mounted) {
+        if (numberResult['success'] != true && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Error updating demo: $e'),
+              content: Text(numberResult['error'] ?? 'Failed to update number'),
+              backgroundColor: Colors.red,
+            ),
+          );
+          setState(() => _isUpdating = false);
+          return;
+        }
+      }
+
+      final detailsResult = await _demoService.updateDemoDetails(
+        demoNumber: newNumber,
+        customerDealer: dealerController.text.trim().isNotEmpty
+            ? dealerController.text.trim()
+            : null,
+        customerClient: clientController.text.trim().isNotEmpty
+            ? clientController.text.trim()
+            : null,
+        demoPurpose: purposeController.text.trim().isNotEmpty
+            ? purposeController.text.trim()
+            : null,
+        location: locationController.text.trim().isNotEmpty
+            ? locationController.text.trim()
+            : null,
+        remarks: remarksController.text.trim().isNotEmpty
+            ? remarksController.text.trim()
+            : null,
+        expectedReturnDate: expectedReturnDate,
+      );
+
+      if (mounted) {
+        if (detailsResult['success'] == true) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Demo updated.'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          _loadFirstPage();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(detailsResult['error'] ?? 'Update failed'),
               backgroundColor: Colors.red,
             ),
           );
         }
-      } finally {
-        if (mounted) setState(() => _isUpdating = false);
       }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUpdating = false);
     }
   }
 
@@ -316,7 +572,7 @@ class _UpdateReferenceScreenState extends State<UpdateReferenceScreen>
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _loadAllData,
+            onPressed: _isLoadingData ? null : _loadFirstPage,
             tooltip: 'Refresh Data',
           ),
         ],
@@ -327,7 +583,7 @@ class _UpdateReferenceScreenState extends State<UpdateReferenceScreen>
             controller: _tabController,
             children: [_buildOrderTab(), _buildDemoTab()],
           ),
-          if (_isUpdating || _isLoadingData)
+          if (_isUpdating)
             Container(
               color: Colors.black54,
               child: const Center(child: CircularProgressIndicator()),
@@ -338,6 +594,9 @@ class _UpdateReferenceScreenState extends State<UpdateReferenceScreen>
   }
 
   Widget _buildOrderTab() {
+    if (_isLoadingData) {
+      return const Center(child: CircularProgressIndicator());
+    }
     return Column(
       children: [
         Padding(
@@ -356,8 +615,17 @@ class _UpdateReferenceScreenState extends State<UpdateReferenceScreen>
           child: _filteredOrders.isEmpty
               ? const Center(child: Text('No matching orders found'))
               : ListView.builder(
-                  itemCount: _filteredOrders.length,
+                  controller: _orderScrollController,
+                  itemCount: _filteredOrders.length + (_hasMoreOrders ? 1 : 0),
                   itemBuilder: (context, index) {
+                    if (index >= _filteredOrders.length) {
+                      return Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: _loadingMoreOrders
+                            ? const Center(child: CircularProgressIndicator())
+                            : const SizedBox.shrink(),
+                      );
+                    }
                     final order = _filteredOrders[index];
                     return Card(
                       margin: const EdgeInsets.symmetric(
@@ -374,9 +642,9 @@ class _UpdateReferenceScreenState extends State<UpdateReferenceScreen>
                         ),
                         trailing: IconButton(
                           icon: const Icon(Icons.edit, color: Colors.blue),
-                          onPressed: () => _updateOrderNumber(order),
+                          onPressed: () => _openEditOrder(order),
                         ),
-                        onTap: () => _updateOrderNumber(order),
+                        onTap: () => _openEditOrder(order),
                       ),
                     );
                   },
@@ -387,6 +655,9 @@ class _UpdateReferenceScreenState extends State<UpdateReferenceScreen>
   }
 
   Widget _buildDemoTab() {
+    if (_isLoadingData) {
+      return const Center(child: CircularProgressIndicator());
+    }
     return Column(
       children: [
         Padding(
@@ -405,8 +676,17 @@ class _UpdateReferenceScreenState extends State<UpdateReferenceScreen>
           child: _filteredDemos.isEmpty
               ? const Center(child: Text('No matching demos found'))
               : ListView.builder(
-                  itemCount: _filteredDemos.length,
+                  controller: _demoScrollController,
+                  itemCount: _filteredDemos.length + (_hasMoreDemos ? 1 : 0),
                   itemBuilder: (context, index) {
+                    if (index >= _filteredDemos.length) {
+                      return Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: _loadingMoreDemos
+                            ? const Center(child: CircularProgressIndicator())
+                            : const SizedBox.shrink(),
+                      );
+                    }
                     final demo = _filteredDemos[index];
                     return Card(
                       margin: const EdgeInsets.symmetric(
@@ -423,9 +703,9 @@ class _UpdateReferenceScreenState extends State<UpdateReferenceScreen>
                         ),
                         trailing: IconButton(
                           icon: const Icon(Icons.edit, color: Colors.blue),
-                          onPressed: () => _updateDemoNumber(demo),
+                          onPressed: () => _openEditDemo(demo),
                         ),
-                        onTap: () => _updateDemoNumber(demo),
+                        onTap: () => _openEditDemo(demo),
                       ),
                     );
                   },

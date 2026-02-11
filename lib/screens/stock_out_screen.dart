@@ -21,6 +21,7 @@ class _StockOutScreenState extends State<StockOutScreen> {
   final _poNumberController = TextEditingController();
   final _dealerNameController = TextEditingController();
   final _clientNameController = TextEditingController();
+  final _remarkController = TextEditingController();
   final _serialNumberController = TextEditingController();
 
   String? _selectedLocation;
@@ -73,6 +74,7 @@ class _StockOutScreenState extends State<StockOutScreen> {
     _poNumberController.dispose();
     _dealerNameController.dispose();
     _clientNameController.dispose();
+    _remarkController.dispose();
     _serialNumberController.dispose();
     super.dispose();
   }
@@ -390,12 +392,14 @@ class _StockOutScreenState extends State<StockOutScreen> {
       final orderService = OrderService(authService: authProvider.authService);
 
       // Create the multi-item order
+      final remark = _remarkController.text.trim();
       final result = await orderService.createMultiItemStockOutOrder(
         orderNumber: _poNumberController.text.trim(),
         dealerName: _dealerNameController.text.trim(),
         clientName: _clientNameController.text.trim(),
         location: _selectedLocation!,
         selectedItems: _selectedItems,
+        orderRemarks: remark.isEmpty ? null : remark,
       );
 
       if (mounted) {
@@ -415,6 +419,7 @@ class _StockOutScreenState extends State<StockOutScreen> {
           _poNumberController.clear();
           _dealerNameController.clear();
           _clientNameController.clear();
+          _remarkController.clear();
           _serialNumberController.clear();
           setState(() {
             _selectedItems.clear();
@@ -910,6 +915,18 @@ class _StockOutScreenState extends State<StockOutScreen> {
                       ),
                       const SizedBox(height: 24),
                     ],
+
+                    // Remark Input (Optional)
+                    TextFormField(
+                      controller: _remarkController,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'Remarks (Optional)',
+                        hintText: 'Enter any remarks for this order',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
 
                     // Save Button
                     SizedBox(

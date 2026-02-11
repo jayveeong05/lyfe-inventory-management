@@ -62,6 +62,9 @@ android/local.properties
 
 # Firebase configuration (contains sensitive API keys)
 lib/firebase_options.dart
+lib/firebase_options_dev.dart
+lib/main_migration.dart
+lib/migration_app.dart
 
 # Environment variables and API keys
 .env

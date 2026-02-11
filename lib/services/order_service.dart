@@ -22,6 +22,7 @@ class OrderService {
     required String clientName,
     required String location,
     required List<Map<String, dynamic>> selectedItems,
+    String? orderRemarks,
   }) async {
     try {
       final currentUser = _authService.currentUser;
@@ -158,6 +159,9 @@ class OrderService {
         'created_by_uid': currentUser.uid,
         'created_at': FieldValue.serverTimestamp(),
         'updated_at': FieldValue.serverTimestamp(),
+        // Optional order-level remarks
+        if (orderRemarks != null && orderRemarks.trim().isNotEmpty)
+          'order_remarks': orderRemarks.trim(),
         // File reference fields for new file-based status system
         'invoice_file_id': null, // Will be set when invoice PDF is uploaded
         'delivery_file_id':
@@ -561,6 +565,87 @@ class OrderService {
     } catch (e) {
       print('🔍 getAllOrders: Error: $e');
       return [];
+    }
+  }
+
+  /// Get a page of orders for pagination (e.g. infinite scroll).
+  /// Does not fetch item details. Returns orders and last document snapshot for next page.
+  Future<Map<String, Object?>> getOrdersPage({
+    int limit = 25,
+    DocumentSnapshot? startAfter,
+    bool fetchItems = false,
+  }) async {
+    try {
+      Query<Map<String, dynamic>> query = _firestore
+          .collection('orders')
+          .orderBy('created_date', descending: true)
+          .limit(limit);
+
+      if (startAfter != null) {
+        query = query.startAfterDocument(startAfter);
+      }
+
+      final querySnapshot = await query.get();
+      final orders = <Map<String, dynamic>>[];
+
+      for (final doc in querySnapshot.docs) {
+        final data = doc.data();
+        final orderData = <String, dynamic>{'id': doc.id, ...data};
+        orderData['items'] = [];
+        orders.add(orderData);
+      }
+
+      final lastDoc = querySnapshot.docs.isNotEmpty
+          ? querySnapshot.docs.last
+          : null;
+
+      return {'orders': orders, 'lastDoc': lastDoc};
+    } catch (e) {
+      return {'orders': <Map<String, dynamic>>[], 'lastDoc': null};
+    }
+  }
+
+  /// Update order details (dealer, client, remarks). Does not change order number.
+  Future<Map<String, dynamic>> updateOrderDetails({
+    required String orderNumber,
+    String? customerDealer,
+    String? customerClient,
+    String? orderRemarks,
+  }) async {
+    try {
+      final currentUser = _authService.currentUser;
+      if (currentUser == null) {
+        return {'success': false, 'error': 'User not authenticated.'};
+      }
+
+      final orderQuery = await _firestore
+          .collection('orders')
+          .where('order_number', isEqualTo: orderNumber)
+          .limit(1)
+          .get();
+
+      if (orderQuery.docs.isEmpty) {
+        return {'success': false, 'error': 'Order $orderNumber not found.'};
+      }
+
+      final updateData = <String, dynamic>{
+        'updated_at': FieldValue.serverTimestamp(),
+      };
+      if (customerDealer != null) updateData['customer_dealer'] = customerDealer;
+      if (customerClient != null) updateData['customer_client'] = customerClient;
+      if (orderRemarks != null) updateData['order_remarks'] = orderRemarks;
+
+      await orderQuery.docs.first.reference.update(updateData);
+
+      return {
+        'success': true,
+        'message': 'Order details updated.',
+      };
+    } catch (e) {
+      return {
+        'success': false,
+        'error': 'Failed to update order details: ${e.toString()}',
+      };
     }
   }
 
