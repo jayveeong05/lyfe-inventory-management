@@ -33,6 +33,7 @@ class CategoryService {
       int deliveredItems = 0;
       int demoItems = 0;
       int returnedItems = 0;
+      int disposedItems = 0;
 
       // Process each inventory item in this category
       for (final doc in categoryDocs) {
@@ -76,6 +77,9 @@ class CategoryService {
             break;
           case 'Returned':
             returnedItems++;
+            break;
+          case 'Disposed':
+            disposedItems++;
             break;
         }
       }
@@ -139,6 +143,7 @@ class CategoryService {
         'delivered_items': deliveredItems,
         'demo_items': demoItems,
         'returned_items': returnedItems,
+        'disposed_items': disposedItems,
         'models': sortedModels
             .map((entry) => {'model': entry.key, 'active_count': entry.value})
             .toList(),

@@ -25,6 +25,7 @@ import 'demo_return_screen.dart';
 import 'key_metrics_screen.dart';
 import 'category_details_screen.dart';
 import 'item_returned_screen.dart';
+import 'item_dispose_screen.dart';
 import 'profile_screen.dart';
 import 'update_reference_screen.dart';
 
@@ -281,10 +282,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       child: Column(
         children: [
           const SizedBox(height: 20),
-          _buildNavItem(Icons.flash_on, 'Actions', 0, _showActionsMenu),
-          _buildNavItem(Icons.settings, 'Manage', 1, _showManageMenu),
-          _buildNavItem(Icons.bar_chart, 'Reports', 2, _showReportsMenu),
-          _buildNavItem(Icons.analytics, 'Analytics', 3, _showAnalyticsMenu),
+          _buildNavItem(Icons.shopping_cart, 'Orders', 0, _showOrdersMenu),
+          _buildNavItem(Icons.play_circle_outline, 'Demo', 1, _showDemoMenu),
+          _buildNavItem(Icons.inventory_2, 'Inventory', 2, _showInventoryMenu),
+          _buildNavItem(Icons.settings, 'System', 3, _showSystemMenu),
+          _buildNavItem(Icons.bar_chart, 'Reports', 4, _showReportsMenu),
+          _buildNavItem(Icons.analytics, 'Analytics', 5, _showAnalyticsMenu),
         ],
       ),
     );
@@ -327,22 +330,33 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         setState(() => _selectedNavIndex = index);
         switch (index) {
           case 0:
-            _showActionsMenu();
+            _showOrdersMenu();
             break;
           case 1:
-            _showManageMenu();
+            _showDemoMenu();
             break;
           case 2:
-            _showReportsMenu();
+            _showInventoryMenu();
             break;
           case 3:
+            _showSystemMenu();
+            break;
+          case 4:
+            _showReportsMenu();
+            break;
+          case 5:
             _showAnalyticsMenu();
             break;
         }
       },
       items: const [
-        BottomNavigationBarItem(icon: Icon(Icons.flash_on), label: 'Actions'),
-        BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'Manage'),
+        BottomNavigationBarItem(
+            icon: Icon(Icons.shopping_cart), label: 'Orders'),
+        BottomNavigationBarItem(
+            icon: Icon(Icons.play_circle_outline), label: 'Demo'),
+        BottomNavigationBarItem(
+            icon: Icon(Icons.inventory_2), label: 'Inventory'),
+        BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'System'),
         BottomNavigationBarItem(icon: Icon(Icons.bar_chart), label: 'Reports'),
         BottomNavigationBarItem(
           icon: Icon(Icons.analytics),
@@ -352,198 +366,119 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     );
   }
 
-  void _showActionsMenu() {
+  void _showOrdersMenu() {
     final isDesktop = MediaQuery.of(context).size.width > 768;
-
-    if (isDesktop) {
-      _showDesktopMenu(
-        title: 'Core Operations',
-        buttonIndex: 0, // Actions button is first (index 0)
-        menuItems: [
-          _buildMenuOption(
-            'Stock In',
-            Icons.add_box,
-            Colors.green,
-            'Add new inventory items',
-            () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const StockInScreen()),
-            ),
-          ),
-          _buildMenuOption(
-            'Order',
-            Icons.remove_circle_outline,
-            Colors.red,
-            'Create orders',
-            () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const StockOutScreen()),
-            ),
-          ),
-          _buildMenuOption(
-            'Invoice',
-            Icons.receipt,
-            Colors.blue,
-            'Upload PDF invoices',
-            () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const InvoiceScreen()),
-            ),
-          ),
-          _buildMenuOption(
-            'Delivery Order',
-            Icons.local_shipping,
-            Colors.orange,
-            'Upload delivery documents',
-            () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const DeliveryOrderScreen(),
-              ),
-            ),
-          ),
-          _buildMenuOption(
-            'Demo',
-            Icons.play_circle_outline,
-            Colors.purple,
-            'Record demo transactions',
-            () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const DemoScreen()),
-            ),
-          ),
-          _buildMenuOption(
-            'Demo Return',
-            Icons.keyboard_return,
-            Colors.indigo,
-            'Process demo returns',
-            () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const DemoReturnScreen()),
-            ),
-          ),
-        ],
-      );
-    } else {
-      showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        builder: (context) => Container(
-          padding: const EdgeInsets.all(16),
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.8,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Core Operations',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 16),
-              Flexible(
-                child: SingleChildScrollView(
-                  child: Column(
-                    children: [
-                      _buildMenuOption(
-                        'Stock In',
-                        Icons.add_box,
-                        Colors.green,
-                        'Add new inventory items',
-                        () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const StockInScreen(),
-                          ),
-                        ),
-                      ),
-                      _buildMenuOption(
-                        'Order',
-                        Icons.remove_circle_outline,
-                        Colors.red,
-                        'Create orders',
-                        () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const StockOutScreen(),
-                          ),
-                        ),
-                      ),
-                      _buildMenuOption(
-                        'Invoice',
-                        Icons.receipt,
-                        Colors.blue,
-                        'Upload PDF invoices',
-                        () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const InvoiceScreen(),
-                          ),
-                        ),
-                      ),
-                      _buildMenuOption(
-                        'Delivery Order',
-                        Icons.local_shipping,
-                        Colors.orange,
-                        'Upload delivery documents',
-                        () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const DeliveryOrderScreen(),
-                          ),
-                        ),
-                      ),
-                      _buildMenuOption(
-                        'Demo',
-                        Icons.play_circle_outline,
-                        Colors.purple,
-                        'Record demo transactions',
-                        () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const DemoScreen(),
-                          ),
-                        ),
-                      ),
-                      _buildMenuOption(
-                        'Demo Return',
-                        Icons.undo,
-                        Colors.indigo,
-                        'Process demo returns',
-                        () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const DemoReturnScreen(),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      // Back button at the bottom
-                      Container(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: () => Navigator.of(context).pop(),
-                          icon: const Icon(Icons.arrow_back),
-                          label: const Text('Back'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.grey.shade600,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+    final ordersItems = [
+      _buildMenuOption(
+        'Stock In',
+        Icons.add_box,
+        Colors.green,
+        'Add new inventory items',
+        () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const StockInScreen()),
+        ),
+      ),
+      _buildMenuOption(
+        'Order',
+        Icons.remove_circle_outline,
+        Colors.red,
+        'Create orders',
+        () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const StockOutScreen()),
+        ),
+      ),
+      _buildMenuOption(
+        'Invoice',
+        Icons.receipt,
+        Colors.blue,
+        'Upload PDF invoices',
+        () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const InvoiceScreen()),
+        ),
+      ),
+      _buildMenuOption(
+        'Delivery Order',
+        Icons.local_shipping,
+        Colors.orange,
+        'Upload delivery documents',
+        () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const DeliveryOrderScreen(),
           ),
         ),
+      ),
+      _buildMenuOption(
+        'Cancel Order',
+        Icons.cancel,
+        Colors.red,
+        'Cancel existing orders',
+        () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const CancelOrderScreen(),
+          ),
+        ),
+      ),
+      _buildMenuOption(
+        'Update References',
+        Icons.edit_note,
+        Colors.purple,
+        'Edit order/demo details',
+        () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const UpdateReferenceScreen(),
+          ),
+        ),
+      ),
+    ];
+    if (isDesktop) {
+      _showDesktopMenu(
+        title: 'Orders',
+        buttonIndex: 0,
+        menuItems: ordersItems,
       );
+    } else {
+      _showBottomSheetMenu(title: 'Orders', menuItems: ordersItems);
+    }
+  }
+
+  void _showDemoMenu() {
+    final isDesktop = MediaQuery.of(context).size.width > 768;
+    final demoItems = [
+      _buildMenuOption(
+        'Demo',
+        Icons.play_circle_outline,
+        Colors.purple,
+        'Record demo transactions',
+        () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const DemoScreen()),
+        ),
+      ),
+      _buildMenuOption(
+        'Demo Return',
+        Icons.keyboard_return,
+        Colors.indigo,
+        'Process demo returns',
+        () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const DemoReturnScreen()),
+        ),
+      ),
+    ];
+    if (isDesktop) {
+      _showDesktopMenu(
+        title: 'Demo',
+        buttonIndex: 1,
+        menuItems: demoItems,
+      );
+    } else {
+      _showBottomSheetMenu(title: 'Demo', menuItems: demoItems);
     }
   }
 
@@ -592,449 +527,233 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
     );
   }
 
-  void _showManageMenu() {
-    final isDesktop = MediaQuery.of(context).size.width > 768;
-
-    if (isDesktop) {
-      _showDesktopMenu(
-        title: 'System Management',
-        buttonIndex: 1, // Manage button is second (index 1)
-        menuItems: [
-          _buildMenuOption(
-            'Inventory Management',
-            Icons.inventory,
-            Colors.teal,
-            'Manage inventory items',
-            () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const InventoryManagementScreen(),
-              ),
+  void _showBottomSheetMenu({
+    required String title,
+    required List<Widget> menuItems,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(16),
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.8,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                  fontSize: 20, fontWeight: FontWeight.bold),
             ),
-          ),
-          _buildMenuOption(
-            'User Management',
-            Icons.people,
-            Colors.blue,
-            'Manage user accounts',
-            () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const UserManagementScreen(),
-              ),
-            ),
-          ),
-          _buildMenuOption(
-            'File History',
-            Icons.history,
-            Colors.grey,
-            'View uploaded files',
-            () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const FileHistoryScreen(),
-              ),
-            ),
-          ),
-          _buildMenuOption(
-            'Item Returned',
-            Icons.assignment_return,
-            Colors.deepOrange,
-            'Process returned items',
-            () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const ItemReturnedScreen(),
-              ),
-            ),
-          ),
-          _buildMenuOption(
-            'Cancel Order',
-            Icons.cancel,
-            Colors.red,
-            'Cancel existing orders',
-            () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const CancelOrderScreen(),
-              ),
-            ),
-          ),
-          _buildMenuOption(
-            'Update References',
-            Icons.edit_note,
-            Colors.purple,
-            'Edit order/demo details',
-            () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const UpdateReferenceScreen(),
-              ),
-            ),
-          ),
-        ],
-      );
-    } else {
-      showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        builder: (context) => Container(
-          padding: const EdgeInsets.all(16),
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.8,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'System Management',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 16),
-              Flexible(
-                child: SingleChildScrollView(
-                  child: Column(
-                    children: [
-                      _buildMenuOption(
-                        'Inventory Management',
-                        Icons.inventory,
-                        Colors.teal,
-                        'Manage inventory items',
-                        () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) =>
-                                const InventoryManagementScreen(),
+            const SizedBox(height: 16),
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    ...menuItems,
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.arrow_back),
+                        label: const Text('Back'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.grey.shade600,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
                           ),
                         ),
                       ),
-                      _buildMenuOption(
-                        'User Management',
-                        Icons.people,
-                        Colors.blue,
-                        'Manage user accounts',
-                        () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const UserManagementScreen(),
-                          ),
-                        ),
-                      ),
-                      _buildMenuOption(
-                        'File History',
-                        Icons.folder,
-                        Colors.orange,
-                        'View uploaded files',
-                        () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const FileHistoryScreen(),
-                          ),
-                        ),
-                      ),
-                      _buildMenuOption(
-                        'Item Returned',
-                        Icons.assignment_return,
-                        Colors.deepOrange,
-                        'Process returned items',
-                        () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const ItemReturnedScreen(),
-                          ),
-                        ),
-                      ),
-                      _buildMenuOption(
-                        'Cancel Order',
-                        Icons.cancel,
-                        Colors.red,
-                        'Cancel existing orders',
-                        () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const CancelOrderScreen(),
-                          ),
-                        ),
-                      ),
-                      _buildMenuOption(
-                        'Update References',
-                        Icons.edit_note,
-                        Colors.purple,
-                        'Edit order/demo details',
-                        () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) =>
-                                const UpdateReferenceScreen(),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      // Back button at the bottom
-                      Container(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: () => Navigator.of(context).pop(),
-                          icon: const Icon(Icons.arrow_back),
-                          label: const Text('Back'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.grey.shade600,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
-            ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showInventoryMenu() {
+    final isDesktop = MediaQuery.of(context).size.width > 768;
+    final inventoryItems = [
+      _buildMenuOption(
+        'Inventory Management',
+        Icons.inventory,
+        Colors.teal,
+        'Manage inventory items',
+        () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const InventoryManagementScreen(),
           ),
         ),
+      ),
+      _buildMenuOption(
+        'Item Returned',
+        Icons.assignment_return,
+        Colors.deepOrange,
+        'Process returned items',
+        () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const ItemReturnedScreen(),
+          ),
+        ),
+      ),
+      _buildMenuOption(
+        'Dispose Item',
+        Icons.delete_forever,
+        Colors.brown,
+        'Mark items as disposed',
+        () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const ItemDisposeScreen(),
+          ),
+        ),
+      ),
+    ];
+    if (isDesktop) {
+      _showDesktopMenu(
+        title: 'Inventory',
+        buttonIndex: 2,
+        menuItems: inventoryItems,
       );
+    } else {
+      _showBottomSheetMenu(title: 'Inventory', menuItems: inventoryItems);
+    }
+  }
+
+  void _showSystemMenu() {
+    final isDesktop = MediaQuery.of(context).size.width > 768;
+    final systemItems = [
+      _buildMenuOption(
+        'User Management',
+        Icons.people,
+        Colors.blue,
+        'Manage user accounts',
+        () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const UserManagementScreen(),
+          ),
+        ),
+      ),
+      _buildMenuOption(
+        'File History',
+        Icons.history,
+        Colors.grey,
+        'View uploaded files',
+        () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const FileHistoryScreen(),
+          ),
+        ),
+      ),
+    ];
+    if (isDesktop) {
+      _showDesktopMenu(
+        title: 'System',
+        buttonIndex: 3,
+        menuItems: systemItems,
+      );
+    } else {
+      _showBottomSheetMenu(title: 'System', menuItems: systemItems);
     }
   }
 
   void _showReportsMenu() {
     final isDesktop = MediaQuery.of(context).size.width > 768;
-
+    final reportsItems = [
+      _buildMenuOption(
+        'Sales Report',
+        Icons.trending_up,
+        Colors.green,
+        'View sales analytics',
+        () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const SalesReportScreen(),
+          ),
+        ),
+      ),
+      _buildMenuOption(
+        'Inventory Report',
+        Icons.inventory_2,
+        Colors.blue,
+        'View inventory analytics',
+        () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const InventoryReportScreen(),
+          ),
+        ),
+      ),
+      _buildMenuOption(
+        'Monthly Activity',
+        Icons.calendar_month,
+        Colors.orange,
+        'View monthly activity report',
+        () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const MonthlyInventoryActivityScreen(),
+          ),
+        ),
+      ),
+      _buildMenuOption(
+        'Demo Tracking',
+        Icons.track_changes,
+        Colors.purple,
+        'Track active demo items',
+        () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const DemoReportScreen()),
+        ),
+      ),
+    ];
     if (isDesktop) {
       _showDesktopMenu(
         title: 'Reports',
-        buttonIndex: 2, // Reports button is third (index 2)
-        menuItems: [
-          _buildMenuOption(
-            'Sales Report',
-            Icons.trending_up,
-            Colors.green,
-            'View sales analytics',
-            () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const SalesReportScreen(),
-              ),
-            ),
-          ),
-          _buildMenuOption(
-            'Inventory Report',
-            Icons.inventory_2,
-            Colors.blue,
-            'View inventory analytics',
-            () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const InventoryReportScreen(),
-              ),
-            ),
-          ),
-          _buildMenuOption(
-            'Monthly Activity',
-            Icons.calendar_month,
-            Colors.orange,
-            'View monthly activity report',
-            () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const MonthlyInventoryActivityScreen(),
-              ),
-            ),
-          ),
-          _buildMenuOption(
-            'Demo Tracking',
-            Icons.track_changes,
-            Colors.purple,
-            'Track active demo items',
-            () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const DemoReportScreen()),
-            ),
-          ),
-        ],
+        buttonIndex: 4,
+        menuItems: reportsItems,
       );
     } else {
-      showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        builder: (context) => Container(
-          padding: const EdgeInsets.all(16),
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.8,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Reports',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 16),
-              Flexible(
-                child: SingleChildScrollView(
-                  child: Column(
-                    children: [
-                      _buildMenuOption(
-                        'Sales Report',
-                        Icons.trending_up,
-                        Colors.green,
-                        'View sales analytics',
-                        () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const SalesReportScreen(),
-                          ),
-                        ),
-                      ),
-                      _buildMenuOption(
-                        'Inventory Report',
-                        Icons.assessment,
-                        Colors.blue,
-                        'View inventory status',
-                        () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const InventoryReportScreen(),
-                          ),
-                        ),
-                      ),
-                      _buildMenuOption(
-                        'Monthly Activity',
-                        Icons.calendar_month,
-                        Colors.purple,
-                        'View monthly statistics',
-                        () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) =>
-                                const MonthlyInventoryActivityScreen(),
-                          ),
-                        ),
-                      ),
-                      _buildMenuOption(
-                        'Demo Tracking',
-                        Icons.track_changes,
-                        Colors.indigo,
-                        'Track active demo items',
-                        () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const DemoReportScreen(),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      // Back button at the bottom
-                      Container(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: () => Navigator.of(context).pop(),
-                          icon: const Icon(Icons.arrow_back),
-                          label: const Text('Back'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.grey.shade600,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
+      _showBottomSheetMenu(title: 'Reports', menuItems: reportsItems);
     }
   }
 
   void _showAnalyticsMenu() {
     final isDesktop = MediaQuery.of(context).size.width > 768;
-
+    final analyticsItems = [
+      _buildMenuOption(
+        'Key Metrics',
+        Icons.dashboard,
+        Colors.teal,
+        'View detailed analytics',
+        () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const KeyMetricsScreen()),
+        ),
+      ),
+    ];
     if (isDesktop) {
       _showDesktopMenu(
         title: 'Analytics',
-        buttonIndex: 3, // Analytics button is fourth (index 3)
-        menuItems: [
-          _buildMenuOption(
-            'Key Metrics',
-            Icons.dashboard,
-            Colors.teal,
-            'View detailed analytics',
-            () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const KeyMetricsScreen()),
-            ),
-          ),
-        ],
+        buttonIndex: 5,
+        menuItems: analyticsItems,
       );
     } else {
-      showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        builder: (context) => Container(
-          padding: const EdgeInsets.all(16),
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.8,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Analytics',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 16),
-              Flexible(
-                child: SingleChildScrollView(
-                  child: Column(
-                    children: [
-                      _buildMenuOption(
-                        'Key Metrics',
-                        Icons.dashboard,
-                        Colors.teal,
-                        'View detailed analytics',
-                        () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const KeyMetricsScreen(),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      // Back button at the bottom
-                      Container(
-                        width: double.infinity,
-                        child: ElevatedButton.icon(
-                          onPressed: () => Navigator.of(context).pop(),
-                          icon: const Icon(Icons.arrow_back),
-                          label: const Text('Back'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.grey.shade600,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
+      _showBottomSheetMenu(title: 'Analytics', menuItems: analyticsItems);
     }
   }
 

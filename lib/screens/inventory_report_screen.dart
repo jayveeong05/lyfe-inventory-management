@@ -31,6 +31,8 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
     'Issued',
     'Delivered',
     'Demo',
+    'Returned',
+    'Disposed',
   ];
 
   // Pagination variables
@@ -411,6 +413,12 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
                   Icons.keyboard_return,
                   Colors.teal,
                 ),
+                _buildSummaryCard(
+                  'Disposed Items',
+                  '${summary['disposed_items'] ?? 0}',
+                  Icons.delete_forever,
+                  Colors.brown,
+                ),
               ],
             );
           },
@@ -742,6 +750,18 @@ class _InventoryReportScreenState extends State<InventoryReportScreen> {
                 case 'Delivered':
                   statusColor = Colors.purple;
                   statusIcon = Icons.local_shipping;
+                  break;
+                case 'Demo':
+                  statusColor = Colors.indigo;
+                  statusIcon = Icons.play_circle_outline;
+                  break;
+                case 'Returned':
+                  statusColor = Colors.teal;
+                  statusIcon = Icons.keyboard_return;
+                  break;
+                case 'Disposed':
+                  statusColor = Colors.brown;
+                  statusIcon = Icons.delete_forever;
                   break;
                 default:
                   statusColor = Colors.grey;

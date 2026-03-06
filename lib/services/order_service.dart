@@ -197,6 +197,51 @@ class OrderService {
     }
   }
 
+  /// Helper: query a Firestore collection by serial_number with case-insensitive
+  /// fallback. Tries exact → uppercase → lowercase.
+  Future<QuerySnapshot<Map<String, dynamic>>> _queryBySerialInsensitive(
+    String collection,
+    String serial, {
+    List<List<Object>>? additionalWhereConditions,
+    List<List<Object>>? orderByConditions,
+    int limit = 1,
+  }) async {
+    final trimmed = serial.trim();
+    final variants = <String>{
+      trimmed,
+      trimmed.toUpperCase(),
+      trimmed.toLowerCase(),
+    };
+
+    for (final variant in variants) {
+      Query<Map<String, dynamic>> query = _firestore
+          .collection(collection)
+          .where('serial_number', isEqualTo: variant);
+
+      if (additionalWhereConditions != null) {
+        for (final cond in additionalWhereConditions) {
+          query = query.where(cond[0] as String, isEqualTo: cond[1]);
+        }
+      }
+      if (orderByConditions != null) {
+        for (final ob in orderByConditions) {
+          query = query.orderBy(ob[0] as String, descending: ob[1] as bool);
+        }
+      }
+      query = query.limit(limit);
+
+      final result = await query.get();
+      if (result.docs.isNotEmpty) return result;
+    }
+
+    // Return the last empty result
+    return await _firestore
+        .collection(collection)
+        .where('serial_number', isEqualTo: trimmed)
+        .limit(1)
+        .get();
+  }
+
   /// Process an item return and replacement
   /// Creates a 'Returned' transaction for the old item
   /// Creates a 'Stock_Out' transaction for the replacement item
@@ -206,19 +251,25 @@ class OrderService {
     required String dealerName,
     required String remarks,
     required String userUid,
+    bool isBroken = true,
   }) async {
     try {
       final batch = _firestore.batch();
       final timestamp = Timestamp.now();
 
-      // 0. Fetch original transaction to get correct dealer/client info and entry_no
-      final originalTransactionQuery = await _firestore
-          .collection('transactions')
-          .where('serial_number', isEqualTo: returnedSerial)
-          .where('type', isEqualTo: 'Stock_Out')
-          .orderBy('date', descending: true)
-          .limit(1)
-          .get();
+      final returnedStatus = isBroken ? 'Returned' : 'Active';
+
+      // 0. Fetch original transaction (case-insensitive) to get correct info
+      final originalTransactionQuery = await _queryBySerialInsensitive(
+        'transactions',
+        returnedSerial,
+        additionalWhereConditions: [
+          ['type', 'Stock_Out'],
+        ],
+        orderByConditions: [
+          ['date', true],
+        ],
+      );
 
       String customerDealer = dealerName;
       String customerClient = 'N/A';
@@ -231,9 +282,13 @@ class OrderService {
       String? warrantyType;
       int? warrantyPeriod;
       Timestamp? deliveryDate;
+      String? originalStatus;
+      int? originalTransactionId;
 
       if (originalTransactionQuery.docs.isNotEmpty) {
         final originalData = originalTransactionQuery.docs.first.data();
+        originalStatus = originalData['status'] as String?;
+        originalTransactionId = originalData['transaction_id'] as int?;
         customerDealer = originalData['customer_dealer'] ?? dealerName;
         customerClient = originalData['customer_client'] ?? 'N/A';
         originalEntryNo = originalData['entry_no'];
@@ -254,7 +309,16 @@ class OrderService {
             warrantyPeriod = int.tryParse(match.group(1)!);
           }
         }
-        deliveryDate = originalData['delivery_date'] as Timestamp?;
+        // delivery_date may be stored as Timestamp or as String (e.g. "2024-07-24 00:00:00")
+        final rawDeliveryDate = originalData['delivery_date'];
+        if (rawDeliveryDate is Timestamp) {
+          deliveryDate = rawDeliveryDate;
+        } else if (rawDeliveryDate is String) {
+          final parsed = DateTime.tryParse(rawDeliveryDate);
+          if (parsed != null) {
+            deliveryDate = Timestamp.fromDate(parsed);
+          }
+        }
       }
 
       // 1. Create 'Returned' transaction for the old item
@@ -267,7 +331,7 @@ class OrderService {
         'transaction_id': returnedTransactionId,
         'serial_number': returnedSerial.trim().toUpperCase(),
         'type': 'Returned',
-        'status': 'Returned',
+        'status': returnedStatus,
         'customer_dealer': customerDealer,
         'customer_client': customerClient,
         'remarks': 'Replaced by $replacementSerial. $remarks',
@@ -279,20 +343,20 @@ class OrderService {
       batch.set(returnedTransactionRef, returnedData);
 
       // 2. Create 'Stock_Out' transaction for the replacement item
-      // We need a new transaction ID (incremented)
       final replacementTransactionId = returnedTransactionId + 1;
-      // Use original entry_no if available, otherwise generate new one
       final replacementEntryNo = originalEntryNo ?? await getNextEntryNumber();
       final replacementTransactionRef = _firestore
           .collection('transactions')
           .doc();
+
+      final replacementStatus = originalStatus ?? 'Delivered';
 
       final replacementData = {
         'transaction_id': replacementTransactionId,
         'entry_no': replacementEntryNo,
         'serial_number': replacementSerial.trim().toUpperCase(),
         'type': 'Stock_Out',
-        'status': 'Delivered', // Status is Delivered as requested
+        'status': replacementStatus, // Follow original status
         'customer_dealer': customerDealer,
         'customer_client': customerClient,
         'remarks': 'Replacement for $returnedSerial',
@@ -313,31 +377,51 @@ class OrderService {
 
       batch.set(replacementTransactionRef, replacementData);
 
-      // 3. Update Inventory Status
-      // Returned item becomes 'Returned' (needs inspection/action)
-      final returnedInventoryQuery = await _firestore
-          .collection('inventory')
-          .where('serial_number', isEqualTo: returnedSerial)
-          .limit(1)
-          .get();
-
+      // 3. Update Inventory Status (case-insensitive lookups)
+      // Returned item status depends on isBroken
+      final returnedInventoryQuery = await _queryBySerialInsensitive(
+        'inventory',
+        returnedSerial,
+      );
       if (returnedInventoryQuery.docs.isNotEmpty) {
         batch.update(returnedInventoryQuery.docs.first.reference, {
-          'status': 'Returned',
+          'status': returnedStatus,
         });
       }
 
-      // Replacement item becomes 'Reserved' (out of stock)
-      final replacementInventoryQuery = await _firestore
-          .collection('inventory')
-          .where('serial_number', isEqualTo: replacementSerial)
-          .limit(1)
-          .get();
-
+      // Replacement item becomes original status
+      final replacementInventoryQuery = await _queryBySerialInsensitive(
+        'inventory',
+        replacementSerial,
+      );
       if (replacementInventoryQuery.docs.isNotEmpty) {
         batch.update(replacementInventoryQuery.docs.first.reference, {
-          'status': 'Delivered', // Synced with transaction status
+          'status': replacementStatus,
         });
+      }
+
+      // 4. Update Order Document if exists
+      if (originalTransactionId != null) {
+        final orderQuery = await _firestore
+            .collection('orders')
+            .where('transaction_ids', arrayContains: originalTransactionId)
+            .limit(1)
+            .get();
+
+        if (orderQuery.docs.isNotEmpty) {
+          final orderDoc = orderQuery.docs.first;
+          final orderData = orderDoc.data();
+          List<int> transIds = List<int>.from(
+            orderData['transaction_ids'] ?? [],
+          );
+          transIds.remove(originalTransactionId);
+          transIds.add(replacementTransactionId);
+
+          batch.update(orderDoc.reference, {
+            'transaction_ids': transIds,
+            'updated_at': FieldValue.serverTimestamp(),
+          });
+        }
       }
 
       await batch.commit();
@@ -345,6 +429,87 @@ class OrderService {
       return {'success': true, 'message': 'Return processed successfully'};
     } catch (e) {
       return {'success': false, 'error': 'Failed to process return: $e'};
+    }
+  }
+
+  /// Process disposal of one or more items. Creates a 'Disposed' transaction per
+  /// serial and sets inventory status to 'Disposed'.
+  /// Uses exact serial (as stored) for inventory query so the inventory document is found.
+  Future<Map<String, dynamic>> processDisposeItems({
+    required List<String> serialNumbers,
+    String remarks = '',
+    required String userUid,
+  }) async {
+    try {
+      if (serialNumbers.isEmpty) {
+        return {'success': false, 'error': 'No serial numbers provided.'};
+      }
+
+      final currentUser = _authService.currentUser;
+      if (currentUser == null) {
+        return {'success': false, 'error': 'User not authenticated.'};
+      }
+
+      final trimmed = serialNumbers
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+      if (trimmed.isEmpty) {
+        return {'success': false, 'error': 'No valid serial numbers.'};
+      }
+
+      final batch = _firestore.batch();
+      final timestamp = Timestamp.now();
+      final transactionIds = await _getNextTransactionIds(trimmed.length);
+
+      for (int i = 0; i < trimmed.length; i++) {
+        final serialAsStored = trimmed[i];
+        final serialForTransaction = serialAsStored.toUpperCase();
+        final transactionId = transactionIds[i];
+
+        final ref = _firestore.collection('transactions').doc();
+        final data = {
+          'transaction_id': transactionId,
+          'serial_number': serialForTransaction,
+          'type': 'Disposed',
+          'status': 'Disposed',
+          'remarks': remarks.trim().isEmpty ? 'Item disposed' : remarks.trim(),
+          'date': timestamp,
+          'uploaded_at': FieldValue.serverTimestamp(),
+          'uploaded_by_uid': userUid,
+        };
+        batch.set(ref, data);
+
+        // Query inventory with exact serial as stored (case-sensitive) so we find the document
+        final invQuery = await _firestore
+            .collection('inventory')
+            .where('serial_number', isEqualTo: serialAsStored)
+            .limit(1)
+            .get();
+        if (invQuery.docs.isEmpty) {
+          // Fallback: try uppercase in case inventory stores normalized
+          final invQueryUpper = await _firestore
+              .collection('inventory')
+              .where('serial_number', isEqualTo: serialForTransaction)
+              .limit(1)
+              .get();
+          if (invQueryUpper.docs.isNotEmpty) {
+            batch.update(invQueryUpper.docs.first.reference, {
+              'status': 'Disposed',
+            });
+          }
+        } else {
+          batch.update(invQuery.docs.first.reference, {'status': 'Disposed'});
+        }
+      }
+
+      await batch.commit();
+      return {
+        'success': true,
+        'message': '${trimmed.length} item(s) disposed successfully.',
+      };
+    } catch (e) {
+      return {'success': false, 'error': 'Failed to process disposal: $e'};
     }
   }
 
@@ -631,16 +796,15 @@ class OrderService {
       final updateData = <String, dynamic>{
         'updated_at': FieldValue.serverTimestamp(),
       };
-      if (customerDealer != null) updateData['customer_dealer'] = customerDealer;
-      if (customerClient != null) updateData['customer_client'] = customerClient;
+      if (customerDealer != null)
+        updateData['customer_dealer'] = customerDealer;
+      if (customerClient != null)
+        updateData['customer_client'] = customerClient;
       if (orderRemarks != null) updateData['order_remarks'] = orderRemarks;
 
       await orderQuery.docs.first.reference.update(updateData);
 
-      return {
-        'success': true,
-        'message': 'Order details updated.',
-      };
+      return {'success': true, 'message': 'Order details updated.'};
     } catch (e) {
       return {
         'success': false,

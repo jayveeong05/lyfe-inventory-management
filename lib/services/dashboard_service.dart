@@ -103,6 +103,8 @@ class DashboardService {
       int reservedItems = 0;
       int deliveredItems = 0;
       int demoItems = 0;
+      int returnedItems = 0;
+      int disposedItems = 0;
 
       for (final doc in inventorySnapshot.docs) {
         final data = doc.data();
@@ -121,6 +123,12 @@ class DashboardService {
           case 'Demo':
             demoItems++;
             break;
+          case 'Returned':
+            returnedItems++;
+            break;
+          case 'Disposed':
+            disposedItems++;
+            break;
         }
       }
 
@@ -132,6 +140,8 @@ class DashboardService {
         'reservedItems': reservedItems,
         'deliveredItems': deliveredItems,
         'demoItems': demoItems,
+        'returnedItems': returnedItems,
+        'disposedItems': disposedItems,
       };
     } catch (e) {
       print('Error fetching inventory stats: $e');
@@ -142,6 +152,8 @@ class DashboardService {
         'reservedItems': 0,
         'deliveredItems': 0,
         'demoItems': 0,
+        'returnedItems': 0,
+        'disposedItems': 0,
       };
     }
   }

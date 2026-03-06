@@ -63,6 +63,7 @@ class _ItemActivityScreenState extends State<ItemActivityScreen> {
     }
     if (type == 'Demo') return Colors.indigo;
     if (type == 'Returned') return Colors.teal;
+    if (type == 'Disposed') return Colors.brown;
     if (type == 'Cancellation') return Colors.red;
     return Colors.grey;
   }
@@ -77,6 +78,7 @@ class _ItemActivityScreenState extends State<ItemActivityScreen> {
     }
     if (type == 'Demo') return Icons.play_circle_outline;
     if (type == 'Returned') return Icons.keyboard_return;
+    if (type == 'Disposed') return Icons.delete_forever;
     if (type == 'Cancellation') return Icons.cancel;
     return Icons.circle;
   }

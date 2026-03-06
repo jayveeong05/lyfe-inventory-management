@@ -228,7 +228,7 @@ class InventoryManagementService {
         'categories': categories.toList()..sort(),
         'sizes': sizes.toList()..sort(),
         'locations': currentLocations.toList()..sort(),
-        'statuses': ['Active', 'Reserved', 'Delivered'],
+        'statuses': ['Active', 'Reserved', 'Delivered', 'Demo', 'Returned', 'Disposed'],
       };
     } catch (e) {
       print('Error getting filter options: $e');
@@ -269,6 +269,9 @@ class InventoryManagementService {
       int activeItems = 0;
       int reservedItems = 0;
       int deliveredItems = 0;
+      int demoItems = 0;
+      int returnedItems = 0;
+      int disposedItems = 0;
 
       for (final doc in inventorySnapshot.docs) {
         final data = doc.data();
@@ -287,6 +290,15 @@ class InventoryManagementService {
           case 'Delivered':
             deliveredItems++;
             break;
+          case 'Demo':
+            demoItems++;
+            break;
+          case 'Returned':
+            returnedItems++;
+            break;
+          case 'Disposed':
+            disposedItems++;
+            break;
         }
       }
 
@@ -296,6 +308,9 @@ class InventoryManagementService {
         'active_items': activeItems,
         'reserved_items': reservedItems,
         'delivered_items': deliveredItems,
+        'demo_items': demoItems,
+        'returned_items': returnedItems,
+        'disposed_items': disposedItems,
       };
     } catch (e) {
       print('Error getting inventory summary: $e');
@@ -306,6 +321,9 @@ class InventoryManagementService {
         'active_items': 0,
         'reserved_items': 0,
         'delivered_items': 0,
+        'demo_items': 0,
+        'returned_items': 0,
+        'disposed_items': 0,
       };
     }
   }
@@ -545,6 +563,11 @@ class InventoryManagementService {
           }
         } else if (type == 'Returned') {
           activityDescription = 'Item returned from customer';
+          if (customerInfo.isNotEmpty) {
+            activityDescription += ' ($customerInfo)';
+          }
+        } else if (type == 'Disposed') {
+          activityDescription = 'Item disposed';
           if (customerInfo.isNotEmpty) {
             activityDescription += ' ($customerInfo)';
           }

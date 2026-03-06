@@ -50,6 +50,7 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
     'Delivered',
     'Demo',
     'Returned',
+    'Disposed',
   ];
 
   @override
@@ -618,8 +619,8 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
                 _buildDetailRow('Size', item['size'] ?? 'N/A'),
                 _buildDetailRow('Batch', item['batch'] ?? 'N/A'),
                 _buildDetailRow(
-                  'Transaction Count',
-                  '${item['transaction_count'] ?? 0}',
+                  'Activity history',
+                  _formatActivityCount(item['transaction_count'] ?? 0),
                 ),
                 if (item['last_activity'] != null)
                   _buildDetailRow(
@@ -672,6 +673,8 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
         return Colors.cyan;
       case 'returned':
         return Colors.red;
+      case 'disposed':
+        return Colors.brown;
       default:
         return Colors.grey;
     }
@@ -693,6 +696,8 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
         return Icons.play_circle_outline;
       case 'returned':
         return Icons.assignment_return;
+      case 'disposed':
+        return Icons.delete_forever;
       default:
         return Icons.help;
     }
@@ -701,6 +706,11 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
   String _formatDate(DateTime? date) {
     if (date == null) return 'N/A';
     return '${date.day}/${date.month}/${date.year}';
+  }
+
+  /// User-friendly label for transaction count (e.g. "4 entries", "1 entry").
+  String _formatActivityCount(int count) {
+    return count == 1 ? '1 entry' : '$count entries';
   }
 
   void _handleItemAction(String action, Map<String, dynamic> item) {
@@ -740,8 +750,8 @@ class _InventoryManagementScreenState extends State<InventoryManagementScreen> {
             _buildDetailRow('Status', item['current_status'] ?? 'N/A'),
             _buildDetailRow('Location', item['current_location'] ?? 'N/A'),
             _buildDetailRow(
-              'Transactions',
-              '${item['transaction_count'] ?? 0}',
+              'Activity history',
+              _formatActivityCount(item['transaction_count'] ?? 0),
             ),
           ],
         ),

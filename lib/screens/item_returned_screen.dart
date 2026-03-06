@@ -31,6 +31,7 @@ class _ItemReturnedScreenState extends State<ItemReturnedScreen> {
   bool _showReplacementSearchList = false;
   bool _showSerialSearchList = false;
   bool _isLoading = true;
+  bool _isBroken = true;
 
   // Data storage
   final Set<String> _allDealersAndClients = {};
@@ -86,13 +87,59 @@ class _ItemReturnedScreenState extends State<ItemReturnedScreen> {
 
   Future<void> _fetchDealersAndClients() async {
     try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('transactions')
-          .where('type', isEqualTo: 'Stock_Out')
+      // 1. Fetch all orders to get current transaction_ids
+      final ordersSnapshot = await FirebaseFirestore.instance
+          .collection('orders')
           .get();
 
-      for (final doc in snapshot.docs) {
+      // Collect all transaction IDs currently in orders
+      final Set<int> activeTransactionIds = {};
+      for (final orderDoc in ordersSnapshot.docs) {
+        final data = orderDoc.data();
+        final transIds = data['transaction_ids'] as List<dynamic>?;
+        if (transIds != null) {
+          for (final id in transIds) {
+            if (id is int) {
+              activeTransactionIds.add(id);
+            } else if (id is num) {
+              activeTransactionIds.add(id.toInt());
+            }
+          }
+        }
+      }
+
+      if (activeTransactionIds.isEmpty) {
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+
+      // 2. Fetch transactions matching those IDs
+      // Firestore 'whereIn' has a limit of 30, so we batch the queries
+      final transIdList = activeTransactionIds.toList();
+      final allTransactionDocs =
+          <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+
+      for (int i = 0; i < transIdList.length; i += 30) {
+        final batchIds = transIdList.sublist(
+          i,
+          i + 30 > transIdList.length ? transIdList.length : i + 30,
+        );
+        final batchSnapshot = await FirebaseFirestore.instance
+            .collection('transactions')
+            .where('transaction_id', whereIn: batchIds)
+            .get();
+        allTransactionDocs.addAll(batchSnapshot.docs);
+      }
+
+      // 3. Build dealer/client and serial number maps from active order items only
+      for (final doc in allTransactionDocs) {
         final data = doc.data();
+        final type = data['type'] as String?;
+        if (type != 'Stock_Out')
+          continue; // Only include Stock_Out transactions
+
         final dealer = data['customer_dealer'] as String?;
         final client = data['customer_client'] as String?;
         final serialNumber = data['serial_number']
@@ -105,7 +152,6 @@ class _ItemReturnedScreenState extends State<ItemReturnedScreen> {
             _allDealersAndClients.add(dealer);
             _dealerToSerialNumbers.putIfAbsent(dealer, () => {});
             _dealerToSerialNumbers[dealer]!.add(serialNumber);
-            // Track that this entity is recorded as a Dealer
             _entityRoles.putIfAbsent(dealer, () => {});
             _entityRoles[dealer]!.add('Dealer');
           }
@@ -113,7 +159,6 @@ class _ItemReturnedScreenState extends State<ItemReturnedScreen> {
             _allDealersAndClients.add(client);
             _dealerToSerialNumbers.putIfAbsent(client, () => {});
             _dealerToSerialNumbers[client]!.add(serialNumber);
-            // Track that this entity is recorded as a Client
             _entityRoles.putIfAbsent(client, () => {});
             _entityRoles[client]!.add('Client');
           }
@@ -124,7 +169,7 @@ class _ItemReturnedScreenState extends State<ItemReturnedScreen> {
         _isLoading = false;
       });
     } catch (e) {
-      print('Error fetching transactions: $e');
+      print('Error fetching order items: $e');
       setState(() {
         _isLoading = false;
       });
@@ -152,8 +197,9 @@ class _ItemReturnedScreenState extends State<ItemReturnedScreen> {
         _dealerSearchResults = [];
         _showDealerSearchList = false;
       } else {
+        final query = value.toLowerCase();
         _dealerSearchResults = _allDealersAndClients
-            .where((name) => name.toLowerCase().contains(value.toLowerCase()))
+            .where((name) => name.toLowerCase().contains(query))
             .toList();
         _showDealerSearchList = true;
       }
@@ -177,8 +223,9 @@ class _ItemReturnedScreenState extends State<ItemReturnedScreen> {
         _clientSearchResults = [];
         _showClientSearchList = false;
       } else {
+        final query = value.toLowerCase();
         _clientSearchResults = _allDealersAndClients
-            .where((name) => name.toLowerCase().contains(value.toLowerCase()))
+            .where((name) => name.toLowerCase().contains(query))
             .toList();
         _showClientSearchList = true;
       }
@@ -214,10 +261,9 @@ class _ItemReturnedScreenState extends State<ItemReturnedScreen> {
       if (value.isEmpty) {
         _serialSearchResults = List.from(_availableSerialNumbers);
       } else {
+        final query = value.toLowerCase();
         _serialSearchResults = _availableSerialNumbers
-            .where(
-              (serial) => serial.toLowerCase().contains(value.toLowerCase()),
-            )
+            .where((serial) => serial.toLowerCase().contains(query))
             .toList();
       }
       _showSerialSearchList = true;
@@ -230,11 +276,12 @@ class _ItemReturnedScreenState extends State<ItemReturnedScreen> {
         _replacementSearchResults = [];
         _showReplacementSearchList = false;
       } else {
+        final query = value.toLowerCase();
         _replacementSearchResults = _activeInventoryItems
             .where((item) {
               final serial =
                   item['serial_number']?.toString().toLowerCase() ?? '';
-              return serial.contains(value.toLowerCase());
+              return serial.contains(query);
             })
             .map((item) => item['serial_number'] as String)
             .toList();
@@ -293,6 +340,7 @@ class _ItemReturnedScreenState extends State<ItemReturnedScreen> {
         dealerName: dealerName,
         remarks: _remarkController.text,
         userUid: user.uid,
+        isBroken: _isBroken,
       );
 
       if (result['success'] == true) {
@@ -303,7 +351,10 @@ class _ItemReturnedScreenState extends State<ItemReturnedScreen> {
               backgroundColor: Colors.green,
             ),
           );
-          // Clear form
+          // Reload data first so list is up to date, then clear form
+          await _fetchDealersAndClients();
+          await _loadActiveInventoryItems();
+          if (!mounted) return;
           _dealerSearchController.clear();
           _clientSearchController.clear();
           _serialSearchController.clear();
@@ -312,12 +363,12 @@ class _ItemReturnedScreenState extends State<ItemReturnedScreen> {
           setState(() {
             _selectedSerialNumber = null;
             _availableSerialNumbers = [];
-            _activeInventoryItems =
-                []; // Clear active items to force reload if needed, or keep them
+            _serialSearchResults = []; // Clear returned serial dropdown so it doesn't show stale list
+            _replacementSearchResults = []; // Clear replacement dropdown so it doesn't show stale list
+            _showReplacementSearchList = false;
+            // Keep _activeInventoryItems as-is (already refreshed by await _loadActiveInventoryItems above)
+            _isBroken = true; // Reset to default
           });
-          // Reload data
-          _fetchDealersAndClients();
-          _loadActiveInventoryItems();
         }
       } else {
         if (mounted) {
@@ -694,6 +745,22 @@ class _ItemReturnedScreenState extends State<ItemReturnedScreen> {
             prefixIcon: Icon(Icons.note),
           ),
           maxLines: 3,
+        ),
+        const SizedBox(height: 16),
+        CheckboxListTile(
+          title: const Text('Item is Broken/Malfunctioning'),
+          subtitle: const Text(
+            'If checked, item status remains "Returned". If unchecked, status becomes "Active" and can be reused.',
+          ),
+          value: _isBroken,
+          onChanged: (bool? value) {
+            setState(() {
+              _isBroken = value ?? true;
+            });
+          },
+          controlAffinity: ListTileControlAffinity.leading,
+          contentPadding: EdgeInsets.zero,
+          activeColor: Colors.teal,
         ),
       ],
     );

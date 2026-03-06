@@ -805,6 +805,7 @@ class ReportService {
         'delivered_items': statusStats['Delivered'] ?? 0,
         'demo_items': statusStats['Demo'] ?? 0,
         'returned_items': statusStats['Returned'] ?? 0,
+        'disposed_items': statusStats['Disposed'] ?? 0,
         'categories_count': categoryStats.length,
         'locations_count': locationStats.length,
       },
@@ -1154,6 +1155,7 @@ class ReportService {
       csvData.add(['Delivered / Sold', summary['delivered_items'] ?? 0]);
       csvData.add(['On Demo', summary['demo_items'] ?? 0]);
       csvData.add(['Returned / Defective', summary['returned_items'] ?? 0]);
+      csvData.add(['Disposed', summary['disposed_items'] ?? 0]);
       csvData.add([]); // Empty row
 
       // 3. Category Breakdown
