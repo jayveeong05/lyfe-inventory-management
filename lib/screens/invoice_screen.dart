@@ -705,6 +705,93 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
     }
   }
 
+  /// Edit invoice remark
+  Future<void> _editInvoiceRemark() async {
+    if (_currentInvoice == null) return;
+
+    final remarkController = TextEditingController(
+      text: _currentInvoice!['invoice_remarks'] ?? '',
+    );
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Invoice Remark'),
+        content: TextField(
+          controller: remarkController,
+          decoration: const InputDecoration(
+            labelText: 'Remark',
+            hintText: 'Enter invoice remark',
+            border: OutlineInputBorder(),
+          ),
+          maxLines: 3,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      if (!mounted) return;
+      setState(() => _isUploading = true);
+
+      try {
+        final orderNumber = _currentInvoice!['order_number'];
+        final orderQuery = await FirebaseFirestore.instance
+            .collection('orders')
+            .where('order_number', isEqualTo: orderNumber)
+            .get();
+
+        if (orderQuery.docs.isNotEmpty) {
+          final newRemark = remarkController.text.trim();
+          await orderQuery.docs.first.reference.update({
+            'invoice_remarks': newRemark,
+            'updated_at': FieldValue.serverTimestamp(),
+          });
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Invoice remark updated successfully'),
+                backgroundColor: Colors.green,
+              ),
+            );
+            // Update local state to reflect change immediately
+            setState(() {
+              _currentInvoice!['invoice_remarks'] = newRemark;
+            });
+            // Also update the order in _allPOs list
+            final index = _allPOs.indexWhere((po) => po['id'] == _selectedPOId);
+            if (index != -1) {
+              _allPOs[index]['invoice_remarks'] = newRemark;
+            }
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error updating remark: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } finally {
+        if (mounted) {
+          setState(() => _isUploading = false);
+        }
+      }
+    }
+  }
+
   /// Delete invoice (development only)
   Future<void> _deleteInvoice() async {
     if (_currentInvoice == null) return;
@@ -1678,6 +1765,21 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                   label: const Text('Replace'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.orange,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    textStyle: const TextStyle(fontSize: 12),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton.icon(
+                  onPressed: _editInvoiceRemark,
+                  icon: const Icon(Icons.edit_note, size: 16),
+                  label: const Text('Edit Remark'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 12,

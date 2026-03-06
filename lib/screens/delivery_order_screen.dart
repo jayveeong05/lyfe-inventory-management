@@ -824,6 +824,88 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
     }
   }
 
+  /// Edit delivery remark
+  Future<void> _editDeliveryRemark() async {
+    if (_currentDeliveryOrder == null || _selectedOrder == null) return;
+
+    final remarkController = TextEditingController(
+      text: _currentDeliveryOrder!['delivery_remarks'] ?? '',
+    );
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Delivery Remark'),
+        content: TextField(
+          controller: remarkController,
+          decoration: const InputDecoration(
+            labelText: 'Remark',
+            hintText: 'Enter delivery remark',
+            border: OutlineInputBorder(),
+          ),
+          maxLines: 3,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      if (!mounted) return;
+      setState(() => _isUploading = true);
+
+      try {
+        final orderNumber = _selectedOrder!['order_number'];
+        final orderQuery = await FirebaseFirestore.instance
+            .collection('orders')
+            .where('order_number', isEqualTo: orderNumber)
+            .get();
+
+        if (orderQuery.docs.isNotEmpty) {
+          final newRemark = remarkController.text.trim();
+          await orderQuery.docs.first.reference.update({
+            'delivery_remarks': newRemark,
+            'updated_at': FieldValue.serverTimestamp(),
+          });
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Delivery remark updated successfully'),
+                backgroundColor: Colors.green,
+              ),
+            );
+            // Update local state to reflect change immediately
+            setState(() {
+              _currentDeliveryOrder!['delivery_remarks'] = newRemark;
+            });
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error updating remark: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } finally {
+        if (mounted) {
+          setState(() => _isUploading = false);
+        }
+      }
+    }
+  }
+
   /// Delete delivery PDFs and revert status
   Future<void> _deleteDeliveryData() async {
     if (_selectedOrder == null) return;
@@ -1822,6 +1904,21 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
                       textStyle: const TextStyle(fontSize: 12),
                     ),
                   ),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    onPressed: _editDeliveryRemark,
+                    icon: const Icon(Icons.edit_note, size: 16),
+                    label: const Text('Edit Remark'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                  ),
                 ] else ...[
                   ElevatedButton.icon(
                     onPressed: () {
@@ -2160,6 +2257,21 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
                     label: const Text('Replace'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.orange,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton.icon(
+                    onPressed: _editDeliveryRemark,
+                    icon: const Icon(Icons.edit_note, size: 16),
+                    label: const Text('Edit Remark'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(
                         horizontal: 12,
