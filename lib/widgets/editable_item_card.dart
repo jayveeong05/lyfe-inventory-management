@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/warranty_type_service.dart';
 import '../utils/platform_features.dart';
 import '../screens/qr_scanner_screen.dart';
 
@@ -32,12 +33,8 @@ class _EditableItemCardState extends State<EditableItemCard> {
   late int _warrantyPeriod;
   bool _isSaving = false;
 
-  final List<Map<String, dynamic>> _warrantyTypes = [
-    {'display': '1 Year', 'value': '1 year', 'period': 1},
-    {'display': '1+2 Year', 'value': '1+2 year', 'period': 3},
-    {'display': '1+3 Year', 'value': '1+3 year', 'period': 4},
-    {'display': '1+4 Year', 'value': '1+4 year', 'period': 5},
-  ];
+  // Dynamically loaded from Firestore via WarrantyTypeService
+  List<Map<String, dynamic>> _warrantyTypes = [];
 
   // Search state
   List<Map<String, dynamic>> _activeItems = [];
@@ -50,6 +47,26 @@ class _EditableItemCardState extends State<EditableItemCard> {
   void initState() {
     super.initState();
     _initEditingState();
+    _loadWarrantyTypes();
+  }
+
+  Future<void> _loadWarrantyTypes() async {
+    final types = await WarrantyTypeService().getWarrantyTypes();
+    if (mounted) {
+      setState(() {
+        _warrantyTypes = types;
+        // If the current warranty type from the record is not in the loaded
+        // list, add it so the dropdown doesn't show an invalid value.
+        if (_warrantyType != 'No Warranty' &&
+            !_warrantyTypes.any((w) => w['value'] == _warrantyType)) {
+          _warrantyTypes.add({
+            'display': _warrantyType,
+            'value': _warrantyType,
+            'period': _warrantyPeriod,
+          });
+        }
+      });
+    }
   }
 
   void _initEditingState() {
@@ -58,15 +75,6 @@ class _EditableItemCardState extends State<EditableItemCard> {
     );
     _warrantyType = widget.item['warranty_type'] ?? 'No Warranty';
     _warrantyPeriod = widget.item['warranty_period'] ?? 0;
-
-    if (_warrantyType != 'No Warranty' &&
-        !_warrantyTypes.any((w) => w['value'] == _warrantyType)) {
-      _warrantyTypes.add({
-        'display': _warrantyType,
-        'value': _warrantyType,
-        'period': _warrantyPeriod,
-      });
-    }
   }
 
   @override
@@ -452,38 +460,62 @@ class _EditableItemCardState extends State<EditableItemCard> {
 
         // Warranty Section
         if (widget.showWarranty) ...[
-          DropdownButtonFormField<String>(
-            decoration: const InputDecoration(
-              labelText: 'Warranty Type',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            value: _warrantyType == 'No Warranty' ? null : _warrantyType,
-            items: [
-              const DropdownMenuItem(value: null, child: Text('No Warranty')),
-              ..._warrantyTypes.map(
-                (w) => DropdownMenuItem(
-                  value: w['value'] as String,
-                  child: Text(w['display'] as String),
+          if (_warrantyTypes.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 8.0),
+              child: SizedBox(
+                height: 48,
+                child: Center(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      SizedBox(width: 8),
+                      Text('Loading warranty types…'),
+                    ],
+                  ),
                 ),
               ),
-            ],
-            onChanged: (val) {
-              setState(() {
-                if (val == null) {
-                  _warrantyType = 'No Warranty';
-                  _warrantyPeriod = 0;
-                } else {
-                  _warrantyType = val;
-                  _warrantyPeriod =
-                      _warrantyTypes.firstWhere(
-                            (w) => w['value'] == val,
-                          )['period']
-                          as int;
-                }
-              });
-            },
-          ),
+            )
+          else
+            DropdownButtonFormField<String>(
+              decoration: const InputDecoration(
+                labelText: 'Warranty Type',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              value: _warrantyTypes.any((w) => w['value'] == _warrantyType)
+                  ? _warrantyType
+                  : null,
+              items: [
+                const DropdownMenuItem(value: null, child: Text('No Warranty')),
+                ..._warrantyTypes.map(
+                  (w) => DropdownMenuItem(
+                    value: w['value'] as String,
+                    child: Text(w['display'] as String),
+                  ),
+                ),
+              ],
+              onChanged: (val) {
+                setState(() {
+                  if (val == null) {
+                    _warrantyType = 'No Warranty';
+                    _warrantyPeriod = 0;
+                  } else {
+                    _warrantyType = val;
+                    _warrantyPeriod =
+                        _warrantyTypes.firstWhere(
+                              (w) => w['value'] == val,
+                            )['period']
+                            as int;
+                  }
+                });
+              },
+            ),
           const SizedBox(height: 16),
         ],
 

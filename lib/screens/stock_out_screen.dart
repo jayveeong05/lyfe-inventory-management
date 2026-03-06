@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import '../services/order_service.dart';
+import '../services/warranty_type_service.dart';
 
 import '../providers/auth_provider.dart';
 import '../utils/platform_features.dart';
@@ -54,19 +55,22 @@ class _StockOutScreenState extends State<StockOutScreen> {
     {'name': 'Wilayah Persekutuan Putrajaya', 'abbreviation': 'PJY'},
   ];
 
-  // Warranty type options with their periods
-  final List<Map<String, dynamic>> _warrantyTypes = [
-    {'display': '1 Year', 'value': '1 year', 'period': 1},
-    {'display': '1+2 Year', 'value': '1+2 year', 'period': 3},
-    {'display': '1+3 Year', 'value': '1+3 year', 'period': 4},
-    {'display': '1+4 Year', 'value': '1+4 year', 'period': 5},
-  ];
+  // Warranty type options loaded dynamically from Firestore
+  List<Map<String, dynamic>> _warrantyTypes = [];
 
   @override
   void initState() {
     super.initState();
     _loadActiveItems();
     _loadNextEntryNumber();
+    _loadWarrantyTypes();
+  }
+
+  Future<void> _loadWarrantyTypes() async {
+    final types = await WarrantyTypeService().getWarrantyTypes();
+    if (mounted) {
+      setState(() => _warrantyTypes = types);
+    }
   }
 
   @override
@@ -814,45 +818,70 @@ class _StockOutScreenState extends State<StockOutScreen> {
                                             ),
                                             const SizedBox(width: 8),
                                             Expanded(
-                                              child: DropdownButtonFormField<String>(
-                                                initialValue:
-                                                    item['warranty_type'] ??
-                                                    '1 year',
-                                                decoration:
-                                                    const InputDecoration(
-                                                      border:
-                                                          OutlineInputBorder(),
-                                                      contentPadding:
-                                                          EdgeInsets.symmetric(
-                                                            horizontal: 8,
-                                                            vertical: 4,
-                                                          ),
-                                                      isDense: true,
-                                                    ),
-                                                items: _warrantyTypes.map((
-                                                  warranty,
-                                                ) {
-                                                  return DropdownMenuItem<
-                                                    String
-                                                  >(
-                                                    value: warranty['value'],
-                                                    child: Text(
-                                                      warranty['display'],
-                                                      style: const TextStyle(
-                                                        fontSize: 12,
+                                              child: _warrantyTypes.isEmpty
+                                                  ? const SizedBox(
+                                                      height: 36,
+                                                      child: Center(
+                                                        child: SizedBox(
+                                                          width: 16,
+                                                          height: 16,
+                                                          child:
+                                                              CircularProgressIndicator(
+                                                                strokeWidth: 2,
+                                                              ),
+                                                        ),
                                                       ),
+                                                    )
+                                                  : DropdownButtonFormField<
+                                                      String
+                                                    >(
+                                                      value:
+                                                          _warrantyTypes.any(
+                                                            (w) =>
+                                                                w['value'] ==
+                                                                item['warranty_type'],
+                                                          )
+                                                          ? item['warranty_type']
+                                                          : _warrantyTypes
+                                                                .first['value'],
+                                                      decoration: const InputDecoration(
+                                                        border:
+                                                            OutlineInputBorder(),
+                                                        contentPadding:
+                                                            EdgeInsets.symmetric(
+                                                              horizontal: 8,
+                                                              vertical: 4,
+                                                            ),
+                                                        isDense: true,
+                                                      ),
+                                                      items: _warrantyTypes.map((
+                                                        warranty,
+                                                      ) {
+                                                        return DropdownMenuItem<
+                                                          String
+                                                        >(
+                                                          value:
+                                                              warranty['value'],
+                                                          child: Text(
+                                                            warranty['display'],
+                                                            style:
+                                                                const TextStyle(
+                                                                  fontSize: 12,
+                                                                ),
+                                                          ),
+                                                        );
+                                                      }).toList(),
+                                                      onChanged:
+                                                          (String? newValue) {
+                                                            if (newValue !=
+                                                                null) {
+                                                              _updateItemWarranty(
+                                                                index,
+                                                                newValue,
+                                                              );
+                                                            }
+                                                          },
                                                     ),
-                                                  );
-                                                }).toList(),
-                                                onChanged: (String? newValue) {
-                                                  if (newValue != null) {
-                                                    _updateItemWarranty(
-                                                      index,
-                                                      newValue,
-                                                    );
-                                                  }
-                                                },
-                                              ),
                                             ),
                                           ],
                                         ),

@@ -28,6 +28,7 @@ import 'item_returned_screen.dart';
 import 'item_dispose_screen.dart';
 import 'profile_screen.dart';
 import 'update_reference_screen.dart';
+import 'warranty_type_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -351,11 +352,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       },
       items: const [
         BottomNavigationBarItem(
-            icon: Icon(Icons.shopping_cart), label: 'Orders'),
+          icon: Icon(Icons.shopping_cart),
+          label: 'Orders',
+        ),
         BottomNavigationBarItem(
-            icon: Icon(Icons.play_circle_outline), label: 'Demo'),
+          icon: Icon(Icons.play_circle_outline),
+          label: 'Demo',
+        ),
         BottomNavigationBarItem(
-            icon: Icon(Icons.inventory_2), label: 'Inventory'),
+          icon: Icon(Icons.inventory_2),
+          label: 'Inventory',
+        ),
         BottomNavigationBarItem(icon: Icon(Icons.settings), label: 'System'),
         BottomNavigationBarItem(icon: Icon(Icons.bar_chart), label: 'Reports'),
         BottomNavigationBarItem(
@@ -406,9 +413,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         'Upload delivery documents',
         () => Navigator.push(
           context,
-          MaterialPageRoute(
-            builder: (context) => const DeliveryOrderScreen(),
-          ),
+          MaterialPageRoute(builder: (context) => const DeliveryOrderScreen()),
         ),
       ),
       _buildMenuOption(
@@ -418,9 +423,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         'Cancel existing orders',
         () => Navigator.push(
           context,
-          MaterialPageRoute(
-            builder: (context) => const CancelOrderScreen(),
-          ),
+          MaterialPageRoute(builder: (context) => const CancelOrderScreen()),
         ),
       ),
       _buildMenuOption(
@@ -437,11 +440,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       ),
     ];
     if (isDesktop) {
-      _showDesktopMenu(
-        title: 'Orders',
-        buttonIndex: 0,
-        menuItems: ordersItems,
-      );
+      _showDesktopMenu(title: 'Orders', buttonIndex: 0, menuItems: ordersItems);
     } else {
       _showBottomSheetMenu(title: 'Orders', menuItems: ordersItems);
     }
@@ -472,11 +471,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
       ),
     ];
     if (isDesktop) {
-      _showDesktopMenu(
-        title: 'Demo',
-        buttonIndex: 1,
-        menuItems: demoItems,
-      );
+      _showDesktopMenu(title: 'Demo', buttonIndex: 1, menuItems: demoItems);
     } else {
       _showBottomSheetMenu(title: 'Demo', menuItems: demoItems);
     }
@@ -545,8 +540,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
           children: [
             Text(
               title,
-              style: const TextStyle(
-                  fontSize: 20, fontWeight: FontWeight.bold),
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
             Flexible(
@@ -603,9 +597,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         'Process returned items',
         () => Navigator.push(
           context,
-          MaterialPageRoute(
-            builder: (context) => const ItemReturnedScreen(),
-          ),
+          MaterialPageRoute(builder: (context) => const ItemReturnedScreen()),
         ),
       ),
       _buildMenuOption(
@@ -615,9 +607,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         'Mark items as disposed',
         () => Navigator.push(
           context,
-          MaterialPageRoute(
-            builder: (context) => const ItemDisposeScreen(),
-          ),
+          MaterialPageRoute(builder: (context) => const ItemDisposeScreen()),
         ),
       ),
     ];
@@ -642,9 +632,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         'Manage user accounts',
         () => Navigator.push(
           context,
-          MaterialPageRoute(
-            builder: (context) => const UserManagementScreen(),
-          ),
+          MaterialPageRoute(builder: (context) => const UserManagementScreen()),
         ),
       ),
       _buildMenuOption(
@@ -654,18 +642,22 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         'View uploaded files',
         () => Navigator.push(
           context,
-          MaterialPageRoute(
-            builder: (context) => const FileHistoryScreen(),
-          ),
+          MaterialPageRoute(builder: (context) => const FileHistoryScreen()),
+        ),
+      ),
+      _buildMenuOption(
+        'Warranty Types',
+        Icons.security,
+        Colors.green,
+        'Manage warranty type options',
+        () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const WarrantyTypeScreen()),
         ),
       ),
     ];
     if (isDesktop) {
-      _showDesktopMenu(
-        title: 'System',
-        buttonIndex: 3,
-        menuItems: systemItems,
-      );
+      _showDesktopMenu(title: 'System', buttonIndex: 3, menuItems: systemItems);
     } else {
       _showBottomSheetMenu(title: 'System', menuItems: systemItems);
     }
@@ -681,9 +673,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen>
         'View sales analytics',
         () => Navigator.push(
           context,
-          MaterialPageRoute(
-            builder: (context) => const SalesReportScreen(),
-          ),
+          MaterialPageRoute(builder: (context) => const SalesReportScreen()),
         ),
       ),
       _buildMenuOption(
