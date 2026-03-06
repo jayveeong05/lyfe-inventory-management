@@ -152,6 +152,7 @@ class OrderService {
         'created_date': timestamp,
         'customer_dealer': dealerName,
         'customer_client': effectiveClientName,
+        'location': location,
         'transaction_ids': transactionIds, // Only store transaction IDs
         'entry_no': entryNo, // Store entry_no in order as well for reference
         'total_items': selectedItems.length,
@@ -739,12 +740,23 @@ class OrderService {
     int limit = 25,
     DocumentSnapshot? startAfter,
     bool fetchItems = false,
+    String? invoiceStatus,
+    String? deliveryStatus,
   }) async {
     try {
       Query<Map<String, dynamic>> query = _firestore
           .collection('orders')
-          .orderBy('created_date', descending: true)
-          .limit(limit);
+          .orderBy('created_date', descending: true);
+
+      if (invoiceStatus != null) {
+        query = query.where('invoice_status', isEqualTo: invoiceStatus);
+      }
+
+      if (deliveryStatus != null) {
+        query = query.where('delivery_status', isEqualTo: deliveryStatus);
+      }
+
+      query = query.limit(limit);
 
       if (startAfter != null) {
         query = query.startAfterDocument(startAfter);
@@ -770,12 +782,14 @@ class OrderService {
     }
   }
 
-  /// Update order details (dealer, client, remarks). Does not change order number.
+  /// Update order details (dealer, client, remarks, location). Does not change order number.
+  /// Also syncs dealer, client, and location to all associated transaction records.
   Future<Map<String, dynamic>> updateOrderDetails({
     required String orderNumber,
     String? customerDealer,
     String? customerClient,
     String? orderRemarks,
+    String? location,
   }) async {
     try {
       final currentUser = _authService.currentUser;
@@ -793,16 +807,61 @@ class OrderService {
         return {'success': false, 'error': 'Order $orderNumber not found.'};
       }
 
+      final orderDoc = orderQuery.docs.first;
       final updateData = <String, dynamic>{
         'updated_at': FieldValue.serverTimestamp(),
       };
+
       if (customerDealer != null)
         updateData['customer_dealer'] = customerDealer;
       if (customerClient != null)
         updateData['customer_client'] = customerClient;
       if (orderRemarks != null) updateData['order_remarks'] = orderRemarks;
+      if (location != null) updateData['location'] = location;
 
-      await orderQuery.docs.first.reference.update(updateData);
+      final batch = _firestore.batch();
+      batch.update(orderDoc.reference, updateData);
+
+      // Sync metadata changes to transaction records
+      bool needsTransactionSync =
+          customerDealer != null || customerClient != null || location != null;
+
+      if (needsTransactionSync) {
+        final orderData = orderDoc.data();
+        final transactionIds = List<int>.from(
+          orderData['transaction_ids'] ?? [],
+        );
+
+        if (transactionIds.isNotEmpty) {
+          // Process in chunks of 10 for Firestore 'whereIn' limits
+          for (int i = 0; i < transactionIds.length; i += 10) {
+            final chunk = transactionIds.sublist(
+              i,
+              i + 10 > transactionIds.length ? transactionIds.length : i + 10,
+            );
+
+            final transactionsQuery = await _firestore
+                .collection('transactions')
+                .where('transaction_id', whereIn: chunk)
+                .get();
+
+            for (final txDoc in transactionsQuery.docs) {
+              final txUpdateData = <String, dynamic>{};
+              if (customerDealer != null)
+                txUpdateData['customer_dealer'] = customerDealer;
+              if (customerClient != null)
+                txUpdateData['customer_client'] = customerClient;
+              if (location != null) txUpdateData['location'] = location;
+
+              if (txUpdateData.isNotEmpty) {
+                batch.update(txDoc.reference, txUpdateData);
+              }
+            }
+          }
+        }
+      }
+
+      await batch.commit();
 
       return {'success': true, 'message': 'Order details updated.'};
     } catch (e) {
@@ -810,6 +869,110 @@ class OrderService {
         'success': false,
         'error': 'Failed to update order details: ${e.toString()}',
       };
+    }
+  }
+
+  /// Update an individual transaction item's serial number and warranty details.
+  Future<Map<String, dynamic>> updateTransactionItem({
+    required int transactionId,
+    required String newSerialNumber,
+    required String warrantyType,
+    required int warrantyPeriod,
+  }) async {
+    try {
+      final currentUser = _authService.currentUser;
+      if (currentUser == null) {
+        return {'success': false, 'error': 'User not authenticated.'};
+      }
+
+      // 1. Get the transaction to find the old serial number and status
+      final txQuery = await _firestore
+          .collection('transactions')
+          .where('transaction_id', isEqualTo: transactionId)
+          .limit(1)
+          .get();
+
+      if (txQuery.docs.isEmpty) {
+        return {'success': false, 'error': 'Transaction not found.'};
+      }
+
+      final txDoc = txQuery.docs.first;
+      final txData = txDoc.data();
+      final oldSerialNumber = txData['serial_number'] as String;
+      final txStatus = txData['status'] as String? ?? 'Reserved';
+
+      // If the serial number is the same, just update warranty details
+      if (oldSerialNumber.toUpperCase() ==
+          newSerialNumber.trim().toUpperCase()) {
+        await txDoc.reference.update({
+          'warranty_type': warrantyType,
+          'warranty_period': warrantyPeriod,
+          'updated_at': FieldValue.serverTimestamp(),
+        });
+        return {'success': true, 'message': 'Warranty details updated.'};
+      }
+
+      // 2. Fetch the new inventory item to ensure it exists and is Active
+      final newInventoryQuery = await _queryBySerialInsensitive(
+        'inventory',
+        newSerialNumber,
+      );
+
+      if (newInventoryQuery.docs.isEmpty) {
+        return {
+          'success': false,
+          'error': 'Serial number $newSerialNumber not found in inventory.',
+        };
+      }
+
+      final newInventoryDoc = newInventoryQuery.docs.first;
+      final newInventoryData = newInventoryDoc.data();
+
+      if (newInventoryData['status'] != 'Active') {
+        return {
+          'success': false,
+          'error':
+              'Item $newSerialNumber is not Active (Current status: ${newInventoryData['status']}).',
+        };
+      }
+
+      final batch = _firestore.batch();
+
+      // 3. Update Transaction document with new serial & equipment details & warranty
+      final updatedTxData = {
+        'serial_number': newSerialNumber.trim().toUpperCase(),
+        'warranty_type': warrantyType,
+        'warranty_period': warrantyPeriod,
+        'category': newInventoryData['equipment_category'] ?? 'Unknown',
+        'model': newInventoryData['model'] ?? 'Unknown',
+        'size': newInventoryData['size'],
+        'brand': newInventoryData['brand'] ?? 'Unknown',
+        'item_name': newInventoryData['item_name'] ?? 'Unknown',
+        'batch': newInventoryData['batch'],
+        'updated_at': FieldValue.serverTimestamp(),
+      };
+      batch.update(txDoc.reference, updatedTxData);
+
+      // 4. Update old inventory item back to Active
+      final oldInventoryQuery = await _queryBySerialInsensitive(
+        'inventory',
+        oldSerialNumber,
+      );
+      if (oldInventoryQuery.docs.isNotEmpty) {
+        batch.update(oldInventoryQuery.docs.first.reference, {
+          'status': 'Active',
+        });
+      }
+
+      // 5. Update new inventory item to match the transaction's current status
+      batch.update(newInventoryDoc.reference, {'status': txStatus});
+
+      await batch.commit();
+
+      return {'success': true, 'message': 'Item updated successfully.'};
+    } catch (e) {
+      debugPrint('Error modifying transaction item: $e');
+      return {'success': false, 'error': 'Failed to update item: $e'};
     }
   }
 
@@ -1013,6 +1176,8 @@ class OrderService {
                   0,
               // Ensure consistent fields
               'serial_number': inventoryData['serial_number'] ?? snString,
+              'item_name':
+                  inventoryData['item_name'] ?? transactionData['item_name'],
               'model': inventoryData['model'] ?? transactionData['model'],
               'equipment_category':
                   inventoryData['equipment_category'] ??
@@ -1029,6 +1194,7 @@ class OrderService {
               'transaction_date': transactionData['date'],
               // Map transaction fields to expected item fields
               'serial_number': snString,
+              'item_name': transactionData['item_name'] ?? 'Unknown Item',
               'model': transactionData['model'] ?? 'N/A',
               'equipment_category':
                   transactionData['equipment_category'] ?? 'N/A',

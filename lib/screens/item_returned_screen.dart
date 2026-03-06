@@ -351,20 +351,30 @@ class _ItemReturnedScreenState extends State<ItemReturnedScreen> {
               backgroundColor: Colors.green,
             ),
           );
+          // Clear cached state before refetching
+          _allDealersAndClients.clear();
+          _dealerToSerialNumbers.clear();
+          _entityRoles.clear();
+
           // Reload data first so list is up to date, then clear form
           await _fetchDealersAndClients();
           await _loadActiveInventoryItems();
+
           if (!mounted) return;
+
           _dealerSearchController.clear();
           _clientSearchController.clear();
           _serialSearchController.clear();
           _replacementSearchController.clear();
           _remarkController.clear();
+
           setState(() {
             _selectedSerialNumber = null;
             _availableSerialNumbers = [];
-            _serialSearchResults = []; // Clear returned serial dropdown so it doesn't show stale list
-            _replacementSearchResults = []; // Clear replacement dropdown so it doesn't show stale list
+            _serialSearchResults =
+                []; // Clear returned serial dropdown so it doesn't show stale list
+            _replacementSearchResults =
+                []; // Clear replacement dropdown so it doesn't show stale list
             _showReplacementSearchList = false;
             // Keep _activeInventoryItems as-is (already refreshed by await _loadActiveInventoryItems above)
             _isBroken = true; // Reset to default

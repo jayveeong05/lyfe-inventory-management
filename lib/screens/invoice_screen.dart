@@ -1527,6 +1527,9 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
             ..._buildStatusRows(_selectedPO!),
             _buildDetailRow('Dealer', _selectedPO!['customer_dealer'] ?? 'N/A'),
             _buildDetailRow('Client', _selectedPO!['customer_client'] ?? 'N/A'),
+            if (_selectedPO!['order_remarks'] != null &&
+                _selectedPO!['order_remarks'].toString().isNotEmpty)
+              _buildDetailRow('Order Remarks', _selectedPO!['order_remarks']),
             _buildItemDetails(_selectedPO!),
             if (_selectedPO!['created_date'] != null)
               _buildDetailRow(

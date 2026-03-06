@@ -51,7 +51,7 @@ class _StockOutScreenState extends State<StockOutScreen> {
     {'name': 'Sarawak', 'abbreviation': 'SWK'},
     {'name': 'Wilayah Persekutuan Kuala Lumpur', 'abbreviation': 'KUL'},
     {'name': 'Wilayah Persekutuan Labuan', 'abbreviation': 'LBN'},
-    {'name': 'Wilayah Persekutuan Putra Jaya', 'abbreviation': 'PJY'},
+    {'name': 'Wilayah Persekutuan Putrajaya', 'abbreviation': 'PJY'},
   ];
 
   // Warranty type options with their periods

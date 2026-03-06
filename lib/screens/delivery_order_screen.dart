@@ -1424,6 +1424,12 @@ class _DeliveryOrderScreenState extends State<DeliveryOrderScreen> {
               'Client',
               _selectedOrder!['customer_client'] ?? 'N/A',
             ),
+            if (_selectedOrder!['order_remarks'] != null &&
+                _selectedOrder!['order_remarks'].toString().isNotEmpty)
+              _buildDetailRow(
+                'Order Remarks',
+                _selectedOrder!['order_remarks'],
+              ),
             _buildItemDetails(_selectedOrder!),
             if (_selectedOrder!['created_date'] != null)
               _buildDetailRow(

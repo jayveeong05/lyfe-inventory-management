@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/demo_service.dart';
 import '../services/order_service.dart';
+import 'edit_order_screen.dart';
+import 'edit_demo_screen.dart';
 
 class UpdateReferenceScreen extends StatefulWidget {
   const UpdateReferenceScreen({super.key});
@@ -75,8 +77,9 @@ class _UpdateReferenceScreenState extends State<UpdateReferenceScreen>
       } else {
         _filteredOrders = _allOrders.where((order) {
           final number = (order['order_number'] ?? '').toString().toLowerCase();
-          final dealer =
-              (order['customer_dealer'] ?? '').toString().toLowerCase();
+          final dealer = (order['customer_dealer'] ?? '')
+              .toString()
+              .toLowerCase();
           return number.contains(query) || dealer.contains(query);
         }).toList();
       }
@@ -91,8 +94,9 @@ class _UpdateReferenceScreenState extends State<UpdateReferenceScreen>
       } else {
         _filteredDemos = _allDemos.where((demo) {
           final number = (demo['demo_number'] ?? '').toString().toLowerCase();
-          final dealer =
-              (demo['customer_dealer'] ?? '').toString().toLowerCase();
+          final dealer = (demo['customer_dealer'] ?? '')
+              .toString()
+              .toLowerCase();
           return number.contains(query) || dealer.contains(query);
         }).toList();
       }
@@ -130,15 +134,23 @@ class _UpdateReferenceScreenState extends State<UpdateReferenceScreen>
 
     try {
       final results = await Future.wait([
-        _orderService.getOrdersPage(limit: _pageSize),
+        _orderService.getOrdersPage(
+          limit: _pageSize,
+          invoiceStatus: 'Reserved',
+          deliveryStatus: 'Pending',
+        ),
         _demoService.getDemosPage(limit: _pageSize),
       ]);
 
       final orderResult = results[0];
       final demoResult = results[1];
 
-      final orders = (orderResult['orders'] ?? <Map<String, dynamic>>[]) as List<Map<String, dynamic>>;
-      final demos = (demoResult['demos'] ?? <Map<String, dynamic>>[]) as List<Map<String, dynamic>>;
+      final orders =
+          (orderResult['orders'] ?? <Map<String, dynamic>>[])
+              as List<Map<String, dynamic>>;
+      final demos =
+          (demoResult['demos'] ?? <Map<String, dynamic>>[])
+              as List<Map<String, dynamic>>;
 
       if (mounted) {
         setState(() {
@@ -156,9 +168,9 @@ class _UpdateReferenceScreenState extends State<UpdateReferenceScreen>
     } catch (e) {
       if (mounted) {
         setState(() => _isLoadingData = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading data: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error loading data: $e')));
       }
     }
   }
@@ -170,6 +182,8 @@ class _UpdateReferenceScreenState extends State<UpdateReferenceScreen>
       final result = await _orderService.getOrdersPage(
         limit: _pageSize,
         startAfter: _ordersLastDoc,
+        invoiceStatus: 'Reserved',
+        deliveryStatus: 'Pending',
       );
       final orders = result['orders'] as List<Map<String, dynamic>>;
       if (mounted) {
@@ -214,343 +228,21 @@ class _UpdateReferenceScreenState extends State<UpdateReferenceScreen>
   }
 
   Future<void> _openEditOrder(Map<String, dynamic> order) async {
-    final orderNumberController = TextEditingController(
-      text: order['order_number']?.toString() ?? '',
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => EditOrderScreen(order: order)),
     );
-    final dealerController = TextEditingController(
-      text: order['customer_dealer']?.toString() ?? '',
-    );
-    final clientController = TextEditingController(
-      text: order['customer_client']?.toString() ?? '',
-    );
-    final remarksController = TextEditingController(
-      text: order['order_remarks']?.toString() ?? '',
-    );
-
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Edit Order'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: orderNumberController,
-                decoration: const InputDecoration(
-                  labelText: 'Order Number *',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: dealerController,
-                decoration: const InputDecoration(
-                  labelText: 'Dealer Name',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: clientController,
-                decoration: const InputDecoration(
-                  labelText: 'Client Name (Optional)',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: remarksController,
-                maxLines: 2,
-                decoration: const InputDecoration(
-                  labelText: 'Remarks (Optional)',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (orderNumberController.text.trim().isEmpty) return;
-              Navigator.pop(ctx, true);
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-
-    if (saved != true || !mounted) return;
-
-    setState(() => _isUpdating = true);
-    final oldNumber = order['order_number']?.toString() ?? '';
-    final newNumber = orderNumberController.text.trim();
-    final dealer = dealerController.text.trim();
-    final client = clientController.text.trim();
-    final remarks = remarksController.text.trim();
-
-    try {
-      if (newNumber != oldNumber) {
-        final numberResult = await _orderService.updateOrderNumber(
-          oldOrderNumber: oldNumber,
-          newOrderNumber: newNumber,
-        );
-        if (numberResult['success'] != true && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(numberResult['error'] ?? 'Failed to update number'),
-              backgroundColor: Colors.red,
-            ),
-          );
-          setState(() => _isUpdating = false);
-          return;
-        }
-      }
-
-      final detailsResult = await _orderService.updateOrderDetails(
-        orderNumber: newNumber,
-        customerDealer: dealer.isNotEmpty ? dealer : null,
-        customerClient: client.isNotEmpty ? client : null,
-        orderRemarks: remarks.isNotEmpty ? remarks : null,
-      );
-
-      if (mounted) {
-        if (detailsResult['success'] == true) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Order updated.'),
-              backgroundColor: Colors.green,
-            ),
-          );
-          _loadFirstPage();
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(detailsResult['error'] ?? 'Update failed'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isUpdating = false);
-    }
+    // Refresh the list after editing just in case something major changed
+    _loadFirstPage();
   }
 
   Future<void> _openEditDemo(Map<String, dynamic> demo) async {
-    DateTime? expectedReturnDate;
-    final exp = demo['expected_return_date'];
-    if (exp != null) {
-      if (exp is DateTime) {
-        expectedReturnDate = exp;
-      } else if (exp.runtimeType.toString() == 'Timestamp') {
-        expectedReturnDate = (exp as dynamic).toDate();
-      }
-    }
-
-    final demoNumberController = TextEditingController(
-      text: demo['demo_number']?.toString() ?? '',
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => EditDemoScreen(demo: demo)),
     );
-    final dealerController = TextEditingController(
-      text: demo['customer_dealer']?.toString() ?? '',
-    );
-    final clientController = TextEditingController(
-      text: demo['customer_client']?.toString() ?? '',
-    );
-    final purposeController = TextEditingController(
-      text: demo['demo_purpose']?.toString() ?? '',
-    );
-    final locationController = TextEditingController(
-      text: demo['location']?.toString() ?? '',
-    );
-    final remarksController = TextEditingController(
-      text: demo['remarks']?.toString() ?? '',
-    );
-
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          return AlertDialog(
-            title: const Text('Edit Demo'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: demoNumberController,
-                    decoration: const InputDecoration(
-                      labelText: 'Demo Number *',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: dealerController,
-                    decoration: const InputDecoration(
-                      labelText: 'Dealer Name',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: clientController,
-                    decoration: const InputDecoration(
-                      labelText: 'Client Name (Optional)',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: purposeController,
-                    decoration: const InputDecoration(
-                      labelText: 'Demo Purpose',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: locationController,
-                    decoration: const InputDecoration(
-                      labelText: 'Location',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: remarksController,
-                    maxLines: 2,
-                    decoration: const InputDecoration(
-                      labelText: 'Remarks (Optional)',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  ListTile(
-                    title: const Text('Expected return date'),
-                    subtitle: Text(
-                      expectedReturnDate != null
-                          ? DateFormat('yyyy-MM-dd').format(expectedReturnDate!)
-                          : 'Not set',
-                    ),
-                    trailing: const Icon(Icons.calendar_today),
-                    onTap: () async {
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate:
-                            expectedReturnDate ?? DateTime.now().add(const Duration(days: 7)),
-                        firstDate: DateTime.now(),
-                        lastDate: DateTime.now().add(const Duration(days: 365)),
-                      );
-                      if (picked != null) {
-                        setDialogState(() => expectedReturnDate = picked);
-                      }
-                    },
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  if (demoNumberController.text.trim().isEmpty) return;
-                  Navigator.pop(ctx, true);
-                },
-                child: const Text('Save'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-
-    if (saved != true || !mounted) return;
-
-    setState(() => _isUpdating = true);
-    final oldNumber = demo['demo_number']?.toString() ?? '';
-    final newNumber = demoNumberController.text.trim();
-
-    try {
-      if (newNumber != oldNumber) {
-        final numberResult = await _demoService.updateDemoNumber(
-          oldDemoNumber: oldNumber,
-          newDemoNumber: newNumber,
-        );
-        if (numberResult['success'] != true && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(numberResult['error'] ?? 'Failed to update number'),
-              backgroundColor: Colors.red,
-            ),
-          );
-          setState(() => _isUpdating = false);
-          return;
-        }
-      }
-
-      final detailsResult = await _demoService.updateDemoDetails(
-        demoNumber: newNumber,
-        customerDealer: dealerController.text.trim().isNotEmpty
-            ? dealerController.text.trim()
-            : null,
-        customerClient: clientController.text.trim().isNotEmpty
-            ? clientController.text.trim()
-            : null,
-        demoPurpose: purposeController.text.trim().isNotEmpty
-            ? purposeController.text.trim()
-            : null,
-        location: locationController.text.trim().isNotEmpty
-            ? locationController.text.trim()
-            : null,
-        remarks: remarksController.text.trim().isNotEmpty
-            ? remarksController.text.trim()
-            : null,
-        expectedReturnDate: expectedReturnDate,
-      );
-
-      if (mounted) {
-        if (detailsResult['success'] == true) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Demo updated.'),
-              backgroundColor: Colors.green,
-            ),
-          );
-          _loadFirstPage();
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(detailsResult['error'] ?? 'Update failed'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isUpdating = false);
-    }
+    // Refresh the list after editing
+    _loadFirstPage();
   }
 
   @override
